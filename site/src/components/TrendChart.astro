@@ -1,0 +1,68 @@
+---
+import { t, type Lang } from '../lib/i18n';
+import { buildSparkline } from '../lib/chart';
+import { formatKm, formatUpdated } from '../lib/format';
+import type { HistoryPoint } from '../lib/types';
+
+interface Props {
+  lang: Lang;
+  history: HistoryPoint[];
+}
+const { lang, history } = Astro.props;
+const chart = buildSparkline(history);
+---
+
+<section class="trend container" aria-labelledby="trend-title">
+  <h2 class="trend__title" id="trend-title">{t(lang, 'trend.title')}</h2>
+
+  <div class="trend__chart-wrap">
+    <svg
+      id="trend-svg"
+      viewBox={`0 0 ${chart.width} ${chart.height}`}
+      role="img"
+      aria-labelledby="trend-desc"
+      preserveAspectRatio="none"
+      style="width: 100%; height: auto;"
+    >
+      <desc id="trend-desc">{t(lang, 'trend.queueLabel')}</desc>
+      <path id="trend-path-north" d={chart.northPath} fill="none" stroke="var(--color-accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+      <path id="trend-path-south" d={chart.southPath} fill="none" stroke="var(--color-unknown)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+    </svg>
+    <noscript>
+      <p>{t(lang, 'trend.noscript')}</p>
+    </noscript>
+    <div class="trend__legend">
+      <span class="trend__legend-item">
+        <span class="trend__legend-swatch" style="background: var(--color-accent);"></span>
+        {t(lang, 'trend.northLegend')}
+      </span>
+      <span class="trend__legend-item">
+        <span class="trend__legend-swatch" style="background: var(--color-unknown);"></span>
+        {t(lang, 'trend.southLegend')}
+      </span>
+    </div>
+  </div>
+
+  <details>
+    <summary>{t(lang, 'trend.queueLabel')} — {t(lang, 'nav.trend')}</summary>
+    <table class="data-table" id="trend-table">
+      <caption>{t(lang, 'trend.title')}</caption>
+      <thead>
+        <tr>
+          <th scope="col">{t(lang, 'hero.lastUpdated')}</th>
+          <th scope="col">{t(lang, 'portal.north')}</th>
+          <th scope="col">{t(lang, 'portal.south')}</th>
+        </tr>
+      </thead>
+      <tbody id="trend-table-body">
+        {history.map((point) => (
+          <tr>
+            <td>{formatUpdated(point.t, lang)}</td>
+            <td>{formatKm(point.northQueueKm, lang)}</td>
+            <td>{formatKm(point.southQueueKm, lang)}</td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </details>
+</section>

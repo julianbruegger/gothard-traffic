@@ -1,0 +1,35 @@
+---
+import { t, type Lang } from '../lib/i18n';
+import { statusLabel, formatUpdated, buildSummary } from '../lib/format';
+import type { GotthardData } from '../lib/types';
+
+interface Props {
+  lang: Lang;
+  data: GotthardData;
+}
+const { lang, data } = Astro.props;
+const summary = buildSummary(data, lang);
+const label = statusLabel(data.tunnel.status, lang);
+const updatedHuman = formatUpdated(data.updated, lang);
+---
+
+<section class="hero container" aria-labelledby="hero-heading">
+  <h1 id="hero-heading" class="visually-hidden">{t(lang, 'site.title')}</h1>
+
+  <div class="status-badge" id="status-badge" data-status={data.tunnel.status}>
+    <span class="status-badge__dot" aria-hidden="true"></span>
+    <span id="status-label"><!--SSR:status-label-->{label}<!--/SSR--></span>
+  </div>
+
+  <p class="hero__tagline" id="summary"><!--SSR:summary-->{summary}<!--/SSR--></p>
+
+  <p class="hero__meta">
+    <span class="pulse" aria-hidden="true"></span>
+    <span>{t(lang, 'hero.autoRefresh')}</span>
+    <span aria-hidden="true">·</span>
+    <span>
+      {t(lang, 'hero.lastUpdated')}:
+      <time id="hero-updated" datetime={data.updated ?? ''}><!--SSR:updated-human-->{updatedHuman}<!--/SSR--></time>
+    </span>
+  </p>
+</section>

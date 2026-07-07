@@ -1,0 +1,17 @@
+---
+import { t, type Lang } from '../lib/i18n';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+---
+
+<section class="info container" aria-labelledby="info-title">
+  <h2 class="info__title" id="info-title">{t(lang, 'info.title')}</h2>
+  <ul class="info__list">
+    <li>{t(lang, 'info.ruleOfThumb')}</li>
+    <li>{t(lang, 'info.alternatives')}</li>
+    <li>{t(lang, 'info.worstTimes')}</li>
+  </ul>
+</section>

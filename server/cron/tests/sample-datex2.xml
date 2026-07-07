@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<d2LogicalModel xmlns="http://datex2.eu/schema/3/messageContainer">
+  <payloadPublication xmlns:sit="http://datex2.eu/schema/3/situation" xsi:type="sit:SituationPublication">
+    <situation id="SIT001">
+      <situationRecord id="REC001" xsi:type="Congestion">
+        <situationRecordCreationTime>2026-07-07T12:30:00+02:00</situationRecordCreationTime>
+        <generalPublicComment>
+          <comment>
+            <values>
+              <value lang="de">Gotthard-Strassentunnel Richtung Süden, Nordportal Göschenen: hohes Verkehrsaufkommen</value>
+            </values>
+          </comment>
+        </generalPublicComment>
+        <groupOfLocations>
+          <locationDescriptor>A2 Gotthard Strassentunnel Göschenen</locationDescriptor>
+        </groupOfLocations>
+        <queueLength>4500</queueLength>
+        <delayTimeValue>2700</delayTimeValue>
+      </situationRecord>
+      <situationRecord id="REC002" xsi:type="Congestion">
+        <situationRecordCreationTime>2026-07-07T12:30:00+02:00</situationRecordCreationTime>
+        <generalPublicComment>
+          <comment>
+            <values>
+              <value lang="de">Gotthardpass: Passstrasse geoeffnet, keine Einschraenkungen</value>
+            </values>
+          </comment>
+        </generalPublicComment>
+        <groupOfLocations>
+          <locationDescriptor>Gotthardpass</locationDescriptor>
+        </groupOfLocations>
+      </situationRecord>
+      <situationRecord id="REC003" xsi:type="RoadOrCarriagewayOrLaneManagement">
+        <generalPublicComment>
+          <comment>
+            <values>
+              <value lang="de">A13 San Bernardino: Bauarbeiten, keine Auswirkung</value>
+            </values>
+          </comment>
+        </generalPublicComment>
+        <groupOfLocations>
+          <locationDescriptor>A13 San Bernardino</locationDescriptor>
+        </groupOfLocations>
+      </situationRecord>
+    </situation>
+  </payloadPublication>
+</d2LogicalModel>

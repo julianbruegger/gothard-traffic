@@ -1,0 +1,7 @@
+[
+  { "t": "2026-07-07T06:30:00+02:00", "northQueueKm": 0, "southQueueKm": 0, "northWaitMinutes": 0, "southWaitMinutes": 0 },
+  { "t": "2026-07-07T08:30:00+02:00", "northQueueKm": 1.2, "southQueueKm": 0, "northWaitMinutes": 10, "southWaitMinutes": 0 },
+  { "t": "2026-07-07T10:30:00+02:00", "northQueueKm": 2.8, "southQueueKm": 0.5, "northWaitMinutes": 25, "southWaitMinutes": 5 },
+  { "t": "2026-07-07T12:30:00+02:00", "northQueueKm": 3.6, "southQueueKm": 0, "northWaitMinutes": 35, "southWaitMinutes": 0 },
+  { "t": "2026-07-07T14:30:00+02:00", "northQueueKm": 4.5, "southQueueKm": 0, "northWaitMinutes": 45, "southWaitMinutes": 0 }
+]

@@ -1,0 +1,21 @@
+---
+import { t, type Lang } from '../lib/i18n';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+---
+
+<header class="site-header">
+  <div class="container site-header__bar">
+    <a class="site-header__brand" href="/">
+      <span class="site-header__mark" aria-hidden="true">GT</span>
+      <span>{t(lang, 'site.title')}</span>
+    </a>
+    <nav class="lang-switch" aria-label="Language">
+      <a href="/?lang=de" aria-current={lang === 'de' ? 'true' : 'false'} data-lang-link="de">DE</a>
+      <a href="/?lang=en" aria-current={lang === 'en' ? 'true' : 'false'} data-lang-link="en">EN</a>
+    </nav>
+  </div>
+</header>

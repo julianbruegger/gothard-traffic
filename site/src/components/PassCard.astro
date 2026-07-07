@@ -1,0 +1,25 @@
+---
+import { t, type Lang } from '../lib/i18n';
+import { passStatusLabel } from '../lib/format';
+import type { PassStatus } from '../lib/types';
+
+interface Props {
+  lang: Lang;
+  pass: PassStatus;
+}
+const { lang, pass } = Astro.props;
+const label = passStatusLabel(pass.status, lang);
+---
+
+<article class="card" aria-labelledby="pass-title">
+  <div class="card__header">
+    <h2 class="card__title" id="pass-title">{t(lang, 'pass.title')}</h2>
+  </div>
+  <div class="status-badge" id="pass-badge" data-status={pass.status}>
+    <span class="status-badge__dot" aria-hidden="true"></span>
+    <span id="pass-status-label"><!--SSR:pass-status-label-->{label}<!--/SSR--></span>
+  </div>
+  {pass.note && (
+    <p class="card__cause" id="pass-note"><!--SSR:pass-note-->{pass.note}<!--/SSR--></p>
+  )}
+</article>

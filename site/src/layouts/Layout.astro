@@ -1,0 +1,76 @@
+---
+import '../styles/global.css';
+import { DEFAULT_LANG, t, type Lang } from '../lib/i18n';
+
+interface Props {
+  lang?: Lang;
+  updatedIso?: string | null;
+}
+
+const { lang = DEFAULT_LANG, updatedIso = null } = Astro.props;
+
+const title = `${t(lang, 'site.title')} – ${t(lang, 'site.tagline')}`;
+const description = t(lang, 'meta.description');
+const siteUrl = Astro.site?.toString().replace(/\/$/, '') ?? '';
+const canonical = lang === DEFAULT_LANG ? siteUrl + '/' : `${siteUrl}/?lang=${lang}`;
+---
+
+<!doctype html>
+<html lang={lang} data-lang={lang}>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <link rel="canonical" href={canonical} />
+    <link rel="alternate" hreflang="de" href={`${siteUrl}/?lang=de`} />
+    <link rel="alternate" hreflang="en" href={`${siteUrl}/?lang=en`} />
+    <link rel="alternate" hreflang="x-default" href={`${siteUrl}/`} />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Gotthard Traffic Live" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:locale" content={lang === 'de' ? 'de_CH' : 'en_US'} />
+    <meta property="og:image" content={`${siteUrl}/og-image.png`} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={`${siteUrl}/og-image.png`} />
+
+    <!-- JSON-LD structured data: replaced server-side (index.php) with live values on deploy;
+         this default block keeps the page valid/self-describing when served as plain static HTML. -->
+    <script type="application/ld+json" id="ld-traffic" is:inline set:html={JSON.stringify({
+      '@context': 'https://schema.org',
+      '@type': 'Dataset',
+      name: 'Gotthard Tunnel & Pass Traffic Status',
+      description,
+      url: canonical,
+      dateModified: updatedIso ?? undefined,
+      creator: {
+        '@type': 'Organization',
+        name: 'Gotthard Traffic Live',
+        url: siteUrl,
+      },
+      isBasedOn: {
+        '@type': 'Dataset',
+        name: 'ASTRA / opentransportdata.swiss Traffic Situations',
+        url: 'https://opentransportdata.swiss/en/road-traffic/',
+      },
+      variableMeasured: ['queue length (km)', 'waiting time (min)', 'road status'],
+    })} />
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to content</a>
+    <slot />
+  </body>
+</html>

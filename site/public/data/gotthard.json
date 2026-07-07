@@ -1,0 +1,13 @@
+{
+  "updated": "2026-07-07T14:30:00+02:00",
+  "source": "opentransportdata.swiss (ASTRA Traffic Situations)",
+  "tunnel": {
+    "status": "congested",
+    "north": { "queueKm": 4.5, "waitMinutes": 45, "cause": "Hohes Verkehrsaufkommen" },
+    "south": { "queueKm": 0, "waitMinutes": 0, "cause": null }
+  },
+  "pass": {
+    "status": "open",
+    "note": "Passstrasse geöffnet, keine Einschränkungen gemeldet"
+  }
+}

@@ -1,0 +1,18 @@
+---
+import { t, type Lang } from '../lib/i18n';
+
+interface Props {
+  lang: Lang;
+  dataSource: string;
+}
+const { lang, dataSource } = Astro.props;
+---
+
+<footer class="site-footer container">
+  <p>{t(lang, 'footer.disclaimer')}</p>
+  <p>{t(lang, 'footer.dataSource')}: <span id="footer-source">{dataSource}</span></p>
+  <nav class="site-footer__links" aria-label="Footer">
+    <a href="https://github.com/julianbruegger/gothard-traffic" rel="noopener">{t(lang, 'footer.viewSource')}</a>
+    <a href="https://opentransportdata.swiss/en/road-traffic/" rel="noopener">ASTRA / opentransportdata.swiss</a>
+  </nav>
+</footer>

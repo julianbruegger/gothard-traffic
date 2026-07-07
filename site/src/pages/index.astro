@@ -1,0 +1,36 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Header from '../components/Header.astro';
+import StatusHero from '../components/StatusHero.astro';
+import PortalCard from '../components/PortalCard.astro';
+import PassCard from '../components/PassCard.astro';
+import TrendChart from '../components/TrendChart.astro';
+import InfoSection from '../components/InfoSection.astro';
+import Footer from '../components/Footer.astro';
+import { DEFAULT_LANG } from '../lib/i18n';
+import sampleData from '../data/sample-gotthard.json';
+import sampleHistory from '../data/sample-history.json';
+import type { GotthardData, HistoryPoint } from '../lib/types';
+
+const lang = DEFAULT_LANG;
+const data = sampleData as GotthardData;
+const history = sampleHistory as HistoryPoint[];
+---
+
+<Layout lang={lang} updatedIso={data.updated}>
+  <Header lang={lang} />
+  <main id="main">
+    <StatusHero lang={lang} data={data} />
+    <div class="container">
+      <div class="card-grid">
+        <PortalCard lang={lang} side="north" portal={data.tunnel.north} />
+        <PortalCard lang={lang} side="south" portal={data.tunnel.south} />
+        <PassCard lang={lang} pass={data.pass} />
+      </div>
+    </div>
+    <TrendChart lang={lang} history={history} />
+    <InfoSection lang={lang} />
+  </main>
+  <Footer lang={lang} dataSource={data.source} />
+  <script src="../scripts/live.ts"></script>
+</Layout>

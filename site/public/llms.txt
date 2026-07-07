@@ -1,0 +1,33 @@
+# Gotthard Traffic Live
+
+> Live waiting times, queue length, and road status for the Gotthard road tunnel (A2, Switzerland) and the Gotthard Pass mountain road, refreshed automatically from official Swiss traffic data.
+
+This is an independent, unofficial project. It is not affiliated with ASTRA (the Swiss Federal Roads Office) or any official authority. For safety-critical travel decisions, use official channels.
+
+## Pages
+- Dashboard, German (default): /
+- Dashboard, English: /?lang=en
+
+## Machine-readable data
+- Current status (JSON, refreshed every ~10-15 min): /data/gotthard.json
+- Queue length / wait time history, last 48h (JSON): /data/history.json
+
+The current-status JSON has this shape:
+
+```
+{
+  "updated": "<ISO 8601 timestamp>",
+  "source": "opentransportdata.swiss (ASTRA Traffic Situations)",
+  "tunnel": {
+    "status": "open | congested | restricted | closed | unknown",
+    "north": { "queueKm": <number|null>, "waitMinutes": <number|null>, "cause": "<string|null>" },
+    "south": { "queueKm": <number|null>, "waitMinutes": <number|null>, "cause": "<string|null>" }
+  },
+  "pass": { "status": "open | closed | restricted | unknown", "note": "<string|null>" }
+}
+```
+
+"north" refers to the Göschenen portal (Uri/German-speaking side), "south" to the Airolo portal (Ticino/Italian-speaking side). "queueKm" is the reported traffic queue length in kilometers; "waitMinutes" is the estimated additional waiting time.
+
+## Data source
+Traffic situations are sourced from the ASTRA / opentransportdata.swiss "Traffic Situations" open data feed: https://opentransportdata.swiss/en/road-traffic/

@@ -1,0 +1,38 @@
+---
+import { t, type Lang } from '../lib/i18n';
+import { formatKm, formatMinutes } from '../lib/format';
+import type { PortalStatus } from '../lib/types';
+
+interface Props {
+  lang: Lang;
+  side: 'north' | 'south';
+  portal: PortalStatus;
+}
+const { lang, side, portal } = Astro.props;
+const titleKey = side === 'north' ? 'portal.north' : 'portal.south';
+
+const open = (key: string) => `<!--SSR:${side}-${key}-->`;
+const close = `<!--/SSR-->`;
+---
+
+<article class="card" aria-labelledby={`${side}-title`}>
+  <div class="card__header">
+    <h2 class="card__title" id={`${side}-title`}>{t(lang, titleKey)}</h2>
+  </div>
+  <dl class="card__stats">
+    <div class="card__stat-row">
+      <dt class="card__stat-label">{t(lang, 'portal.queue')}</dt>
+      <dd class="card__stat-value" id={`${side}-queue`}
+        ><Fragment set:html={open('queue')} />{formatKm(portal.queueKm, lang)}<Fragment set:html={close} /></dd>
+    </div>
+    <div class="card__stat-row">
+      <dt class="card__stat-label">{t(lang, 'portal.wait')}</dt>
+      <dd class="card__stat-value" id={`${side}-wait`}
+        ><Fragment set:html={open('wait')} />{formatMinutes(portal.waitMinutes, lang)}<Fragment set:html={close} /></dd>
+    </div>
+  </dl>
+  {portal.cause && (
+    <p class="card__cause" id={`${side}-cause`}
+      ><Fragment set:html={open('cause')} />{portal.cause}<Fragment set:html={close} /></p>
+  )}
+</article>

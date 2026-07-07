@@ -1,0 +1,4 @@
+# Defense in depth: fetch-traffic.php already refuses non-CLI requests,
+# but block the whole folder over HTTP too in case CGI/FastCGI PHP is used
+# in a way that bypasses the php_sapi_name() check.
+Require all denied

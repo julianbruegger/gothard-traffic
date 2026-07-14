@@ -11,6 +11,7 @@ if (PHP_SAPI !== 'cli') {
 
 require __DIR__ . '/lib/DatexClient.php';
 require __DIR__ . '/lib/TrafficParser.php';
+require __DIR__ . '/lib/PassStatusClient.php';
 require __DIR__ . '/../lib/Db.php';
 require __DIR__ . '/../lib/SnapshotStore.php';
 
@@ -42,6 +43,33 @@ try {
         fwrite(STDOUT, 'Matched ' . count($result['debug']) . " record(s):\n");
         foreach ($result['debug'] as $i => $rawXml) {
             fwrite(STDOUT, "\n--- record " . ($i + 1) . " ---\n{$rawXml}\n");
+        }
+    }
+
+    // Secondary, advisory source for the PASS status (alpen-paesse.ch). DATEX
+    // (official ASTRA) stays authoritative; this only fills the pass status when
+    // DATEX carries no pass record (e.g. summer, pass simply open). Non-fatal.
+    if (($config['pass_source_enabled'] ?? true)) {
+        try {
+            $second = (new PassStatusClient($config))->fetch();
+            if ($second !== null) {
+                if ($debug) {
+                    fwrite(STDOUT, 'Pass 2nd source (alpen-paesse.ch): ' . json_encode($second, JSON_UNESCAPED_UNICODE) . "\n");
+                }
+                $datexStatus = $result['pass']['status'] ?? 'unknown';
+                if ($datexStatus === 'unknown') {
+                    $result['pass']['status'] = $second['status'];
+                    if (empty($result['pass']['note'])) {
+                        $result['pass']['note'] = $second['note'];
+                    }
+                } elseif ($debug && $datexStatus !== $second['status']) {
+                    fwrite(STDOUT, "  note: pass status differs — DATEX={$datexStatus}, alpen-paesse={$second['status']}\n");
+                }
+            }
+        } catch (Throwable $e) {
+            if ($debug) {
+                fwrite(STDOUT, 'Pass 2nd source failed: ' . $e->getMessage() . "\n");
+            }
         }
     }
 

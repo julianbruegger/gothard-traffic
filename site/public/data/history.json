@@ -1,26 +1,5 @@
 [
   {
-    "t": "2026-07-12T17:31:49.447Z",
-    "northQueueKm": 0,
-    "southQueueKm": 0,
-    "northWaitMinutes": 0,
-    "southWaitMinutes": 0
-  },
-  {
-    "t": "2026-07-12T17:41:49.522Z",
-    "northQueueKm": 0,
-    "southQueueKm": 0,
-    "northWaitMinutes": 0,
-    "southWaitMinutes": 0
-  },
-  {
-    "t": "2026-07-12T17:51:49.577Z",
-    "northQueueKm": 0,
-    "southQueueKm": 0,
-    "northWaitMinutes": 0,
-    "southWaitMinutes": 0
-  },
-  {
     "t": "2026-07-12T20:34:02.630Z",
     "northQueueKm": 0,
     "southQueueKm": 0,
@@ -92,6 +71,83 @@
   },
   {
     "t": "2026-07-14T17:12:26.525Z",
+    "northQueueKm": 0,
+    "southQueueKm": 0,
+    "northWaitMinutes": 0,
+    "southWaitMinutes": 0
+  },
+  {
+    "t": "2026-07-14T17:22:26.637Z",
+    "northQueueKm": 0,
+    "southQueueKm": 0,
+    "northWaitMinutes": 0,
+    "southWaitMinutes": 0
+  },
+  {
+    "t": "2026-07-14T17:32:26.739Z",
+    "northQueueKm": 0,
+    "southQueueKm": 0,
+    "northWaitMinutes": 0,
+    "southWaitMinutes": 0
+  },
+  {
+    "t": "2026-07-14T17:42:26.822Z",
+    "northQueueKm": 0,
+    "southQueueKm": 0,
+    "northWaitMinutes": 0,
+    "southWaitMinutes": 0
+  },
+  {
+    "t": "2026-07-14T17:52:26.911Z",
+    "northQueueKm": 0,
+    "southQueueKm": 0,
+    "northWaitMinutes": 0,
+    "southWaitMinutes": 0
+  },
+  {
+    "t": "2026-07-14T18:02:26.998Z",
+    "northQueueKm": 0,
+    "southQueueKm": 0,
+    "northWaitMinutes": 0,
+    "southWaitMinutes": 0
+  },
+  {
+    "t": "2026-07-14T18:12:27.077Z",
+    "northQueueKm": 0,
+    "southQueueKm": 0,
+    "northWaitMinutes": 0,
+    "southWaitMinutes": 0
+  },
+  {
+    "t": "2026-07-14T18:22:27.126Z",
+    "northQueueKm": 0,
+    "southQueueKm": 0,
+    "northWaitMinutes": 0,
+    "southWaitMinutes": 0
+  },
+  {
+    "t": "2026-07-14T18:32:27.217Z",
+    "northQueueKm": 0,
+    "southQueueKm": 0,
+    "northWaitMinutes": 0,
+    "southWaitMinutes": 0
+  },
+  {
+    "t": "2026-07-14T18:42:27.291Z",
+    "northQueueKm": 0,
+    "southQueueKm": 0,
+    "northWaitMinutes": 0,
+    "southWaitMinutes": 0
+  },
+  {
+    "t": "2026-07-14T18:52:27.355Z",
+    "northQueueKm": 0,
+    "southQueueKm": 0,
+    "northWaitMinutes": 0,
+    "southWaitMinutes": 0
+  },
+  {
+    "t": "2026-07-14T19:02:27.424Z",
     "northQueueKm": 0,
     "southQueueKm": 0,
     "northWaitMinutes": 0,

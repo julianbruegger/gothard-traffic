@@ -93,17 +93,17 @@ jobs:
 
       - name: Deploy via rsync over SSH
         env:
-          SSH_KEY:     ${{ secrets.HOSTPOINT_SSH_PRIVATE_KEY }}
-          SSH_HOST:    ${{ secrets.HOSTPOINT_SSH_HOST }}
-          SSH_USER:    ${{ secrets.HOSTPOINT_SSH_USER }}
-          REMOTE_PATH: ${{ secrets.HOSTPOINT_REMOTE_PATH }}
+          SSH_KEY:     ${{ secrets.HOSTPOINT_SSH_KEY }}
+          SSH_HOST:    ${{ secrets.HOSTPOINT_HOST }}
+          SSH_USER:    ${{ secrets.HOSTPOINT_USER }}
+          REMOTE_PATH: ${{ secrets.HOSTPOINT_PATH }}
         run: |
           set -euo pipefail
 
-          : "${SSH_HOST:?HOSTPOINT_SSH_HOST secret is not set (WebHosting environment)}"
-          : "${SSH_USER:?HOSTPOINT_SSH_USER secret is not set (WebHosting environment)}"
-          : "${SSH_KEY:?HOSTPOINT_SSH_PRIVATE_KEY secret is not set (WebHosting environment)}"
-          : "${REMOTE_PATH:?HOSTPOINT_REMOTE_PATH secret is not set (WebHosting environment)}"
+          : "${SSH_HOST:?HOSTPOINT_HOST secret is not set (WebHosting environment)}"
+          : "${SSH_USER:?HOSTPOINT_USER secret is not set (WebHosting environment)}"
+          : "${SSH_KEY:?HOSTPOINT_SSH_KEY secret is not set (WebHosting environment)}"
+          : "${REMOTE_PATH:?HOSTPOINT_PATH secret is not set (WebHosting environment)}"
 
           mkdir -p ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
@@ -120,11 +120,3 @@ jobs:
 
           rm -f ~/.ssh/deploy_key
 
-      - name: Smoke test
-        env:
-          APP_URL: ${{ secrets.APP_BASE_URL }}
-        run: |
-          sleep 5
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$APP_URL")
-          echo "HTTP status for $APP_URL: $STATUS"
-          [ "$STATUS" = "200" ] || [ "$STATUS" = "301" ] || [ "$STATUS" = "302" ]

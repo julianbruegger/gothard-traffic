@@ -9,7 +9,9 @@
 return [
     // ── DATEX II / opentransportdata.swiss ───────────────────────────────────
 
-    // Full URL of the DATEX II "TrafficSituations" pull endpoint.
+    // Full URL of the DATEX II "TrafficSituations" pull endpoint. This is a SOAP
+    // service: DatexClient issues a POST with a SOAPAction header and a SOAP
+    // envelope body (a plain GET returns HTTP 404).
     'api_url' => 'https://api.opentransportdata.swiss/TDP/Soap_Datex2/TrafficSituations/Pull',
 
     // Most opentransportdata.swiss APIs authenticate via a bearer token OR an
@@ -18,6 +20,11 @@ return [
     'api_token'   => 'YOUR_API_TOKEN_HERE',
     'auth_header' => 'Authorization', // or 'Ocp-Apim-Subscription-Key'
     'auth_prefix' => 'Bearer ',       // set to '' if using the subscription-key header
+
+    // SOAP request details (defaults match the opentransportdata.swiss cookbook;
+    // only override if the portal documents different values for your product).
+    'soap_action'  => 'http://opentransportdata.swiss/TDP/Soap_Datex2/Pull/v1/pullTrafficMessages',
+    'content_type' => 'application/soap+xml', // some tenants expect 'text/xml'
 
     // Case-insensitive keywords used to find Gotthard-related records in the feed.
     'keywords'      => ['gotthard', 'göschenen', 'goeschenen', 'airolo'],

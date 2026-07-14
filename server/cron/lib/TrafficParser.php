@@ -7,17 +7,48 @@ final class TrafficParseException extends RuntimeException
 }
 
 /**
- * Defensive DATEX II parser. The exact element names/namespaces returned by
- * opentransportdata.swiss can vary by feed version, and this project was
- * built without a live API token to verify against - so matching is done by
- * local-name() (namespace-agnostic) plus keyword search over each record's
- * full text content, rather than a strict schema-bound XPath. Run
- * `php fetch-traffic.php --debug` against your real feed and adjust the
- * KEYWORDS lists in config.php (or the field names below) if a value comes
- * back empty.
+ * Defensive DATEX II parser for the Gotthard ROAD TUNNEL (A2, Göschenen ↔ Airolo).
+ *
+ * The opentransportdata.swiss / FEDRO feed labels the *entire* A2 axis
+ * "Gotthard" (Basel ↔ Chiasso), so a bare "gotthard" keyword matches ~70+
+ * unrelated records (lane closures near Lugano, the Göschenenalp winter road,
+ * etc.). We therefore identify the tunnel by its proper name / portal names and
+ * explicitly exclude side roads, read closures from the *structured*
+ * RoadOrCarriagewayOrLaneManagementType field (not free text), and ignore
+ * records that are not currently valid or have been rescinded.
+ *
+ * Run `php fetch-traffic.php --debug` against the real feed and adjust the
+ * token lists below if a value comes back wrong.
  */
 final class TrafficParser
 {
+    // Proper-name / portal tokens that positively identify the road tunnel.
+    // (The A2 *axis* name "Gotthard"/"S. Gottardo"/"St-Gothard" is deliberately
+    // NOT here — it appears on every A2 record along the whole motorway.)
+    private const TUNNEL_TOKENS = [
+        'gotthard-strassentunnel', 'gotthard strassentunnel', 'gotthardtunnel', 'gotthard-tunnel',
+        'galleria del san gottardo', 'galleria autostradale del san gottardo', 'san gottardo',
+        'tunnel du gothard', 'tunnel routier du gothard',
+        'nordportal', 'südportal', 'suedportal', 'portale nord', 'portale sud',
+    ];
+
+    // If any of these appear the record is a *different* road/tunnel/pass, never
+    // the Gotthard road tunnel — exclude even if a tunnel token also matched.
+    private const EXCLUDE_TOKENS = [
+        'göschenenalp', 'goeschenenalp', 'abfrutt',
+        'gotthardpass', 'passstrasse', 'passo del gottardo', 'col du gothard',
+        's. nicolao', 'san nicolao', 'nicolao',
+    ];
+
+    // Status-prefix words the feed uses when a message is being withdrawn.
+    private const RESCINDED_TOKENS = [
+        'aufgehoben', 'aufhebung', 'révoqué', 'revoqué', 'revocato', 'annullato',
+    ];
+
+    // Structured closure types that mean the whole carriageway/road is shut
+    // (a *lane* closure — "laneClosures" / "rechter Fahrstreifen gesperrt" — is NOT one).
+    private const FULL_CLOSURE_TYPES = ['roadclosed', 'carriagewayclosed'];
+
     public function __construct(private readonly array $config)
     {
     }
@@ -43,8 +74,8 @@ final class TrafficParser
             $records = $xpath->query("//*[local-name()='situation']");
         }
 
-        $tunnelKeywords = array_map('mb_strtolower', $this->config['keywords'] ?? []);
         $passKeywords = array_map('mb_strtolower', $this->config['pass_keywords'] ?? []);
+        $now = new DateTimeImmutable('now', new DateTimeZone('UTC'));
 
         $north = ['queueKm' => null, 'waitMinutes' => null, 'cause' => null];
         $south = ['queueKm' => null, 'waitMinutes' => null, 'cause' => null];
@@ -58,17 +89,27 @@ final class TrafficParser
                 $text = mb_strtolower($record->textContent);
 
                 $isPass = self::containsAny($text, $passKeywords);
-                $isTunnelRelated = self::containsAny($text, $tunnelKeywords);
-                if (!$isPass && !$isTunnelRelated) {
+                $isTunnel = self::isTunnelRecord($text);
+                if (!$isPass && !$isTunnel) {
+                    continue;
+                }
+
+                // Ignore records that aren't in effect right now, or that the
+                // feed is withdrawing (e.g. "Aufgehoben: …").
+                $validityStatus = mb_strtolower(self::firstValue($xpath, $record, 'validityStatus'));
+                if (self::containsAny($text, self::RESCINDED_TOKENS)) {
+                    continue;
+                }
+                if (!self::isActiveNow($xpath, $record, $validityStatus, $now)) {
                     continue;
                 }
 
                 $debugMatches[] = $doc->saveXML($record);
 
                 if ($isPass) {
-                    if (self::containsAny($text, ['gesperrt', 'geschlossen', 'closed', 'wintersperre'])) {
+                    if (self::isFullClosure($xpath, $record) || self::containsAny($text, ['wintersperre', 'wintersperrung'])) {
                         $pass['status'] = 'closed';
-                    } elseif (self::containsAny($text, ['eingeschränkt', 'restricted', 'einspurig'])) {
+                    } elseif (self::containsAny($text, ['eingeschränkt', 'restricted', 'einspurig', 'nur mit'])) {
                         $pass['status'] = 'restricted';
                     } elseif ($pass['status'] === 'unknown') {
                         $pass['status'] = 'open';
@@ -77,21 +118,20 @@ final class TrafficParser
                     continue;
                 }
 
+                // Tunnel record. Full closure only from the structured type and
+                // only when the operator flags it currently active.
+                if ($validityStatus === 'active' && self::isFullClosure($xpath, $record)) {
+                    $tunnelClosed = true;
+                }
+
                 $side = self::detectSide($text);
                 $queueKm = self::extractQueueKm($xpath, $record, $text);
                 $waitMinutes = self::extractWaitMinutes($xpath, $record, $text);
                 $cause = self::extractComment($xpath, $record);
-                $closed = self::containsAny($text, ['tunnel gesperrt', 'tunnel closed', 'gesperrt', 'geschlossen', 'closed']);
-                if ($closed) {
-                    $tunnelClosed = true;
-                }
 
                 if ($side === 'south') {
                     $south = self::keepWorst($south, $queueKm, $waitMinutes, $cause);
                 } else {
-                    // Default to north when direction is ambiguous - Göschenen-side
-                    // congestion (southbound traffic queuing to enter) is the far
-                    // more common real-world case reported in these feeds.
                     $north = self::keepWorst($north, $queueKm, $waitMinutes, $cause);
                 }
             }
@@ -111,6 +151,60 @@ final class TrafficParser
         ];
     }
 
+    private static function isTunnelRecord(string $text): bool
+    {
+        if (self::containsAny($text, self::EXCLUDE_TOKENS)) {
+            return false;
+        }
+        return self::containsAny($text, self::TUNNEL_TOKENS);
+    }
+
+    /** Is the record currently in effect? Skips suspended, future and expired ones. */
+    private static function isActiveNow(DOMXPath $xpath, DOMElement $record, string $validityStatus, DateTimeImmutable $now): bool
+    {
+        if ($validityStatus === 'suspended') {
+            return false;
+        }
+        $start = self::parseDate(self::firstValue($xpath, $record, 'overallStartTime'));
+        if ($start !== null && $start > $now) {
+            return false; // planned / not started yet
+        }
+        $end = self::parseDate(self::firstValue($xpath, $record, 'overallEndTime'));
+        if ($end !== null && $end < $now) {
+            return false; // already over
+        }
+        return true;
+    }
+
+    private static function isFullClosure(DOMXPath $xpath, DOMElement $record): bool
+    {
+        $type = mb_strtolower(self::firstValue($xpath, $record, 'roadOrCarriagewayOrLaneManagementType'));
+        return $type !== '' && in_array($type, self::FULL_CLOSURE_TYPES, true);
+    }
+
+    private static function parseDate(string $value): ?DateTimeImmutable
+    {
+        $value = trim($value);
+        if ($value === '') {
+            return null;
+        }
+        try {
+            return new DateTimeImmutable($value);
+        } catch (Throwable) {
+            return null;
+        }
+    }
+
+    /** First descendant text by local-name(), or '' if none. */
+    private static function firstValue(DOMXPath $xpath, DOMElement $record, string $localName): string
+    {
+        $nodes = $xpath->query(".//*[local-name()='{$localName}']", $record);
+        if ($nodes !== false && $nodes->length > 0) {
+            return trim($nodes->item(0)->textContent);
+        }
+        return '';
+    }
+
     private static function containsAny(string $haystack, array $needles): bool
     {
         foreach ($needles as $needle) {
@@ -123,18 +217,31 @@ final class TrafficParser
 
     private static function detectSide(string $text): string
     {
-        if (str_contains($text, 'airolo') || str_contains($text, 'südportal') || str_contains($text, 'south portal')) {
+        // The queue forms at the *origin* portal. "Airolo -> …" = northbound,
+        // queue at the south portal (Airolo); "Göschenen -> …" = southbound,
+        // queue at the north portal (Göschenen).
+        if (preg_match('/airolo\s*-?\s*>/u', $text) === 1) {
             return 'south';
         }
+        if (preg_match('/göschenen\s*-?\s*>/u', $text) === 1) {
+            return 'north';
+        }
+        if (str_contains($text, 'südportal') || str_contains($text, 'suedportal') || str_contains($text, 'portale sud')) {
+            return 'south';
+        }
+        if (str_contains($text, 'nordportal') || str_contains($text, 'portale nord')) {
+            return 'north';
+        }
+        // Default to north (Göschenen-side southbound congestion is the common case).
         return 'north';
     }
 
     private static function extractQueueKm(DOMXPath $xpath, DOMElement $record, string $text): ?float
     {
         foreach (['queueLength', 'length'] as $name) {
-            $nodes = $xpath->query(".//*[local-name()='{$name}']", $record);
-            if ($nodes !== false && $nodes->length > 0) {
-                $meters = (float) trim($nodes->item(0)->textContent);
+            $value = self::firstValue($xpath, $record, $name);
+            if ($value !== '') {
+                $meters = (float) $value;
                 if ($meters > 0) {
                     return round($meters / 1000, 1);
                 }
@@ -149,9 +256,9 @@ final class TrafficParser
     private static function extractWaitMinutes(DOMXPath $xpath, DOMElement $record, string $text): ?int
     {
         foreach (['delayTimeValue', 'delay', 'estimatedDurationOfDelay'] as $name) {
-            $nodes = $xpath->query(".//*[local-name()='{$name}']", $record);
-            if ($nodes !== false && $nodes->length > 0) {
-                $seconds = (float) trim($nodes->item(0)->textContent);
+            $value = self::firstValue($xpath, $record, $name);
+            if ($value !== '') {
+                $seconds = (float) $value;
                 if ($seconds > 0) {
                     return (int) round($seconds / 60);
                 }

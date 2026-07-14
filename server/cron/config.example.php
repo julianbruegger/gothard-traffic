@@ -30,6 +30,13 @@ return [
     'keywords'      => ['gotthard', 'göschenen', 'goeschenen', 'airolo'],
     'pass_keywords' => ['gotthardpass', 'passstrasse', 'pass strasse', 'passo del gottardo'],
 
+    // ── Secondary pass-status source (alpen-paesse.ch) ────────────────────────
+    // Cross-checks / fills the Gotthard PASS status when the DATEX feed carries
+    // no pass record (typically summer). DATEX stays authoritative. Set
+    // 'pass_source_enabled' => false to disable the extra HTTP request.
+    'pass_source_enabled' => true,
+    'pass_source_url'     => 'https://www.alpen-paesse.ch/de/alpenpaesse/gotthardpass/',
+
     // ── Database (MySQL / MariaDB) ────────────────────────────────────────────
     // Run server/schema.sql once to create the required table.
 

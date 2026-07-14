@@ -1,13 +1,23 @@
 {
-  "updated": "2026-07-07T14:30:00+02:00",
+  "updated": "2026-07-14T17:21:26.630Z",
   "source": "opentransportdata.swiss (ASTRA Traffic Situations)",
   "tunnel": {
-    "status": "congested",
-    "north": { "queueKm": 4.5, "waitMinutes": 45, "cause": "Hohes Verkehrsaufkommen" },
-    "south": { "queueKm": 0, "waitMinutes": 0, "cause": null }
+    "status": "open",
+    "north": {
+      "queueKm": null,
+      "waitMinutes": null,
+      "cause": "Hohes Verkehrsaufkommen",
+      "closures": []
+    },
+    "south": {
+      "queueKm": null,
+      "waitMinutes": null,
+      "cause": "Hohes Verkehrsaufkommen",
+      "closures": []
+    }
   },
   "pass": {
-    "status": "open",
-    "note": "Passstrasse geöffnet, keine Einschränkungen gemeldet"
+    "status": "restricted",
+    "note": "Freigegeben: H2 Airolo <-> Göschenen zwischen Pass Gotthard-Pass und Ortschaft Motto Bartola Sachlage: Verkehrsbehinderung Baustelle Verkehrsführung: Fahrbahnverengung Zusatz 1: vorübergehende Begrenz"
   }
 }

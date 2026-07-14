@@ -1,4 +1,6 @@
 ---
+import { readFileSync, existsSync } from 'fs';
+import { join } from 'path';
 import Layout from '../layouts/Layout.astro';
 import Header from '../components/Header.astro';
 import StatusHero from '../components/StatusHero.astro';
@@ -13,8 +15,17 @@ import sampleHistory from '../data/sample-history.json';
 import type { GotthardData, HistoryPoint } from '../lib/types';
 
 const lang = DEFAULT_LANG;
-const data = sampleData as GotthardData;
-const history = sampleHistory as HistoryPoint[];
+
+function readJson<T>(path: string, fallback: T): T {
+  try {
+    if (existsSync(path)) return JSON.parse(readFileSync(path, 'utf8')) as T;
+  } catch {}
+  return fallback;
+}
+
+const root = join(process.cwd(), 'public/data');
+const data = readJson<GotthardData>(join(root, 'gotthard.json'), sampleData as GotthardData);
+const history = readJson<HistoryPoint[]>(join(root, 'history.json'), sampleHistory as HistoryPoint[]);
 ---
 
 <Layout lang={lang} updatedIso={data.updated}>
@@ -29,6 +40,18 @@ const history = sampleHistory as HistoryPoint[];
       </div>
     </div>
     <TrendChart lang={lang} history={history} />
+    <section class="forecast container" id="forecast-section" aria-labelledby="forecast-title">
+      <h2 class="forecast__title" id="forecast-title">{lang === 'de' ? 'Verkehrsvorhersage' : 'Traffic Forecast'}</h2>
+      <p class="forecast__subtitle">{lang === 'de' ? 'Typisches Verkehrsaufkommen · Basierend auf Wochentag, Jahreszeit und Ferienkalender' : 'Typical congestion · Based on weekday, season, and holiday calendar'}</p>
+      <div id="forecast-days" class="forecast__days" aria-live="polite"></div>
+      <div class="forecast__legend">
+        <span class="forecast__legend-dot" data-level="low"></span><span class="forecast__legend-label">{lang === 'de' ? 'Frei' : 'Clear'}</span>
+        <span class="forecast__legend-dot" data-level="moderate"></span><span class="forecast__legend-label">{lang === 'de' ? 'Mässig' : 'Moderate'}</span>
+        <span class="forecast__legend-dot" data-level="high"></span><span class="forecast__legend-label">{lang === 'de' ? 'Stau erwartet' : 'Congestion'}</span>
+        <span class="forecast__legend-dot" data-level="extreme"></span><span class="forecast__legend-label">{lang === 'de' ? 'Starker Stau' : 'Heavy jam'}</span>
+      </div>
+      <p class="forecast__disclaimer">{lang === 'de' ? 'Prognose basiert auf historischen Mustern. Aktuelle Ereignisse können abweichen.' : 'Forecast based on historical patterns. Current events may differ.'}</p>
+    </section>
     <InfoSection lang={lang} />
   </main>
   <Footer lang={lang} dataSource={data.source} />

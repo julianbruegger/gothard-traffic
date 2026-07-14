@@ -104,7 +104,7 @@ function buildDayCard(day: ForecastDay, isToday: boolean): string {
 
   const hourHeaders = SHOWN_HOURS.map(h => `<span class="forecast__hour-label">${h}</span>`).join('');
 
-  const makeRow = (dirLabel: string, levelKey: 'northLevel' | 'southLevel', idxKey: 'northIdx' | 'southIdx') => {
+  const makeRow = (dirLabel: string, levelKey: 'northLevel' | 'southLevel', _idxKey: 'northIdx' | 'southIdx') => {
     const cells = SHOWN_HOURS.map(h => {
       const hr = day.hours[h];
       const level = hr[levelKey];
@@ -145,7 +145,7 @@ function renderForecast() {
   const todayIso = forecast[0]?.isoDate;
 
   container.innerHTML = forecast
-    .map(day => buildDayCard(day, day.isoDate === todayIso))
+    .map((day: ForecastDay) => buildDayCard(day, day.isoDate === todayIso))
     .join('');
 }
 

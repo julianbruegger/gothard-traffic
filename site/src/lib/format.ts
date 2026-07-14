@@ -4,7 +4,7 @@ import type { GotthardData, RoadStatus } from './types';
 export function formatKm(km: number | null, lang: Lang): string {
   if (km === null || km === undefined) return '–';
   if (km <= 0) return t(lang, 'portal.noQueue');
-  return `${km.toLocaleString(lang === 'de' ? 'de-CH' : 'en-CH', { maximumFractionDigits: 1 })} km`;
+  return `${km.toLocaleString(lang === 'de' ? 'de-CH' : 'en-CH', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} km`;
 }
 
 export function formatMinutes(min: number | null, lang: Lang): string {

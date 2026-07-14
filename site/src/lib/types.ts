@@ -4,6 +4,7 @@ export interface PortalStatus {
   queueKm: number | null;
   waitMinutes: number | null;
   cause: string | null;
+  closures?: string[];
 }
 
 export interface PassStatus {

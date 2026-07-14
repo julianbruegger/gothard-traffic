@@ -35,4 +35,7 @@ const close = `<!--/SSR-->`;
     <p class="card__cause" id={`${side}-cause`}
       ><Fragment set:html={open('cause')} />{portal.cause}<Fragment set:html={close} /></p>
   )}
+  <ul class="card__closures" id={`${side}-closures`} hidden={!portal.closures?.length}>
+    {(portal.closures ?? []).map(c => <li class="card__closure-tag">{c}</li>)}
+  </ul>
 </article>

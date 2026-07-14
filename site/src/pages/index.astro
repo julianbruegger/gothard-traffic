@@ -7,6 +7,8 @@ import StatusHero from '../components/StatusHero.astro';
 import PortalCard from '../components/PortalCard.astro';
 import PassCard from '../components/PassCard.astro';
 import TrendChart from '../components/TrendChart.astro';
+import ForecastChart from '../components/ForecastChart.astro';
+import DiversionSection from '../components/DiversionSection.astro';
 import InfoSection from '../components/InfoSection.astro';
 import Footer from '../components/Footer.astro';
 import { DEFAULT_LANG } from '../lib/i18n';
@@ -39,7 +41,9 @@ const history = readJson<HistoryPoint[]>(join(root, 'history.json'), sampleHisto
         <PassCard lang={lang} pass={data.pass} />
       </div>
     </div>
+    <DiversionSection lang={lang} />
     <TrendChart lang={lang} history={history} />
+    <ForecastChart lang={lang} />
     <section class="forecast container" id="forecast-section" aria-labelledby="forecast-title">
       <h2 class="forecast__title" id="forecast-title">{lang === 'de' ? 'Verkehrsvorhersage' : 'Traffic Forecast'}</h2>
       <p class="forecast__subtitle">{lang === 'de' ? 'Typisches Verkehrsaufkommen · Basierend auf Wochentag, Jahreszeit und Ferienkalender' : 'Typical congestion · Based on weekday, season, and holiday calendar'}</p>

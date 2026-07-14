@@ -9,16 +9,21 @@ on:
       - '.github/workflows/deploy.yml'
   workflow_dispatch: {}
 
+concurrency:
+  group: deploy-hostpoint
+  cancel-in-progress: true
+
 jobs:
-  build:
-    name: Build Astro site
+  build-and-deploy:
     runs-on: ubuntu-latest
+    environment: WebHosting
+
     steps:
       - uses: actions/checkout@v4
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: '22'
           cache: npm
           cache-dependency-path: site/package-lock.json
 
@@ -50,12 +55,13 @@ jobs:
           # translations.json kept in sync with the Astro project
           cp site/src/data/translations.json deploy-staging/translations.json
 
-          # Cron scraper (minus local test fixtures)
+          # Cron scraper (minus local test fixtures and any stale config)
           mkdir -p deploy-staging/cron
           cp -r server/cron/. deploy-staging/cron/
           rm -rf deploy-staging/cron/tests
+          rm -f  deploy-staging/cron/config.php
 
-          find deploy-staging -maxdepth 2
+          echo "Deploy tree:" && find deploy-staging -maxdepth 2 -type d
 
       - name: Generate cron/config.php from secrets
         env:
@@ -82,40 +88,43 @@ jobs:
             ];
             \$php = '<?php' . PHP_EOL . 'return ' . var_export(\$config, true) . ';' . PHP_EOL;
             file_put_contents('deploy-staging/cron/config.php', \$php);
+            echo 'config.php generated (' . filesize('deploy-staging/cron/config.php') . ' bytes)' . PHP_EOL;
           "
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: deploy-bundle
-          path: deploy-staging
-          retention-days: 14
-
-  deploy:
-    name: Deploy via SSH
-    needs: build
-    runs-on: ubuntu-latest
-    if: ${{ vars.DEPLOY_ENABLED == 'true' }}
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: deploy-bundle
-          path: deploy-staging
-
-      - name: Set up SSH key
+      - name: Deploy via rsync over SSH
+        env:
+          SSH_KEY:     ${{ secrets.HOSTPOINT_SSH_PRIVATE_KEY }}
+          SSH_HOST:    ${{ secrets.HOSTPOINT_SSH_HOST }}
+          SSH_USER:    ${{ secrets.HOSTPOINT_SSH_USER }}
+          REMOTE_PATH: ${{ secrets.HOSTPOINT_REMOTE_PATH }}
         run: |
+          set -euo pipefail
+
+          : "${SSH_HOST:?HOSTPOINT_SSH_HOST secret is not set (WebHosting environment)}"
+          : "${SSH_USER:?HOSTPOINT_SSH_USER secret is not set (WebHosting environment)}"
+          : "${SSH_KEY:?HOSTPOINT_SSH_PRIVATE_KEY secret is not set (WebHosting environment)}"
+          : "${REMOTE_PATH:?HOSTPOINT_REMOTE_PATH secret is not set (WebHosting environment)}"
+
           mkdir -p ~/.ssh
-          echo "${{ secrets.HOSTPOINT_SSH_KEY }}" > ~/.ssh/deploy_key
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          ssh-keyscan -H "${{ secrets.HOSTPOINT_HOST }}" >> ~/.ssh/known_hosts
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
 
-      - name: Deploy via rsync
-        run: |
+          # --delete keeps the remote clean; data/ is preserved (cron writes there).
           rsync -az --delete \
             --exclude 'data/' \
-            -e "ssh -i ~/.ssh/deploy_key" \
+            --exclude '.well-known/' \
+            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
             deploy-staging/ \
-            "${{ secrets.HOSTPOINT_USER }}@${{ secrets.HOSTPOINT_HOST }}:${{ secrets.HOSTPOINT_PATH }}/"
+            "$SSH_USER@$SSH_HOST:$REMOTE_PATH/"
 
-      - name: Clean up SSH key
-        if: always()
-        run: rm -f ~/.ssh/deploy_key
+          rm -f ~/.ssh/deploy_key
+
+      - name: Smoke test
+        env:
+          APP_URL: ${{ secrets.APP_BASE_URL }}
+        run: |
+          sleep 5
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$APP_URL")
+          echo "HTTP status for $APP_URL: $STATUS"
+          [ "$STATUS" = "200" ] || [ "$STATUS" = "301" ] || [ "$STATUS" = "302" ]

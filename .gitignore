@@ -2,6 +2,7 @@ node_modules/
 site/dist/
 site/.astro/
 server/cron/config.php
+site/.env
 server/data/
 deploy-staging/
 *.log

@@ -1,0 +1,17 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+import YearlyForecastChart from '../components/YearlyForecastChart.astro';
+import { DEFAULT_LANG } from '../lib/i18n';
+
+const lang = DEFAULT_LANG;
+---
+
+<Layout lang={lang} updatedIso={null}>
+  <Header lang={lang} currentPage="forecasts" />
+  <main id="main">
+    <YearlyForecastChart lang={lang} />
+  </main>
+  <Footer lang={lang} dataSource="Verkehrsmodell (ASTRA-Daten)" />
+</Layout>

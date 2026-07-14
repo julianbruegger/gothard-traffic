@@ -36,28 +36,53 @@ jobs:
           rm -rf deploy-staging
           mkdir -p deploy-staging
 
-          # Astro's static output - the public HTML/CSS/JS. The sample
-          # data/*.json shipped for local dev must never overwrite the
-          # live, cron-maintained JSON files on the host, so it's dropped here.
+          # Static Astro output. Sample data/*.json is for local dev only;
+          # live data is served from the database via api/*.php.
           cp -r site/dist/. deploy-staging/
           rm -rf deploy-staging/data
 
-          # PHP SSR wrapper + shared libs, served from the same web root as
-          # the static output (index.php takes precedence over index.html
-          # on hosts with the usual DirectoryIndex order).
-          cp server/index.php deploy-staging/index.php
-          cp -r server/lib deploy-staging/lib
+          # PHP SSR wrapper + shared libs + DB-backed API endpoints
+          cp  server/index.php  deploy-staging/index.php
+          cp -r server/lib      deploy-staging/lib
+          cp -r server/api      deploy-staging/api
+          cp  server/schema.sql deploy-staging/schema.sql
 
-          # translations.json is authored once in the Astro project and
-          # copied here so the PHP layer always matches the latest strings.
+          # translations.json kept in sync with the Astro project
           cp site/src/data/translations.json deploy-staging/translations.json
 
-          # Cron scraper, minus local test fixtures.
+          # Cron scraper (minus local test fixtures)
           mkdir -p deploy-staging/cron
           cp -r server/cron/. deploy-staging/cron/
           rm -rf deploy-staging/cron/tests
 
           find deploy-staging -maxdepth 2
+
+      - name: Generate cron/config.php from secrets
+        env:
+          API_TOKEN: ${{ secrets.DATEX_API_TOKEN }}
+          DB_HOST:   ${{ secrets.DB_HOST }}
+          DB_NAME:   ${{ secrets.DB_NAME }}
+          DB_USER:   ${{ secrets.DB_USER }}
+          DB_PASS:   ${{ secrets.DB_PASS }}
+        run: |
+          # Use PHP itself to write the config so all values are properly escaped.
+          php -r "
+            \$config = [
+                'api_url'       => 'https://api.opentransportdata.swiss/TDP/Soap_Datex2/TrafficSituations/Pull',
+                'api_token'     => getenv('API_TOKEN'),
+                'auth_header'   => 'Authorization',
+                'auth_prefix'   => 'Bearer ',
+                'keywords'      => ['gotthard', 'göschenen', 'goeschenen', 'airolo'],
+                'pass_keywords' => ['gotthardpass', 'passstrasse', 'pass strasse', 'passo del gottardo'],
+                'db_host'       => getenv('DB_HOST'),
+                'db_name'       => getenv('DB_NAME'),
+                'db_user'       => getenv('DB_USER'),
+                'db_pass'       => getenv('DB_PASS'),
+                'error_log'     => __DIR__ . '/../data/fetch-error.log',
+            ];
+            \$php = '<?php' . PHP_EOL . 'return ' . var_export(\$config, true) . ';' . PHP_EOL;
+            file_put_contents('deploy-staging/cron/config.php', \$php);
+          "
 
       - uses: actions/upload-artifact@v4
         with:
@@ -66,13 +91,9 @@ jobs:
           retention-days: 14
 
   deploy:
-    name: Deploy over FTP
+    name: Deploy via SSH
     needs: build
     runs-on: ubuntu-latest
-    # Deploying requires FTP_SERVER / FTP_USERNAME / FTP_PASSWORD repo secrets.
-    # Gated behind a repo variable so pushes don't fail loudly before you've
-    # set those up: Settings -> Secrets and variables -> Actions -> Variables
-    # -> new variable DEPLOY_ENABLED = true.
     if: ${{ vars.DEPLOY_ENABLED == 'true' }}
     steps:
       - uses: actions/download-artifact@v4
@@ -80,14 +101,21 @@ jobs:
           name: deploy-bundle
           path: deploy-staging
 
-      - name: Upload over FTP
-        uses: SamKirkland/FTP-Deploy-Action@v4
-        with:
-          server: ${{ secrets.FTP_SERVER }}
-          username: ${{ secrets.FTP_USERNAME }}
-          password: ${{ secrets.FTP_PASSWORD }}
-          server-dir: ${{ vars.FTP_SERVER_DIR || '/' }}
-          local-dir: deploy-staging/
-          exclude: |
-            **/data/**
-            **/cron/config.php
+      - name: Set up SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.HOSTPOINT_SSH_KEY }}" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          ssh-keyscan -H "${{ secrets.HOSTPOINT_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Deploy via rsync
+        run: |
+          rsync -az --delete \
+            --exclude 'data/' \
+            -e "ssh -i ~/.ssh/deploy_key" \
+            deploy-staging/ \
+            "${{ secrets.HOSTPOINT_USER }}@${{ secrets.HOSTPOINT_HOST }}:${{ secrets.HOSTPOINT_PATH }}/"
+
+      - name: Clean up SSH key
+        if: always()
+        run: rm -f ~/.ssh/deploy_key

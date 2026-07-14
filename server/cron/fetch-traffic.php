@@ -11,86 +11,57 @@ if (PHP_SAPI !== 'cli') {
 
 require __DIR__ . '/lib/DatexClient.php';
 require __DIR__ . '/lib/TrafficParser.php';
-require __DIR__ . '/lib/JsonStore.php';
-require __DIR__ . '/lib/HistoryStore.php';
+require __DIR__ . '/../lib/Db.php';
+require __DIR__ . '/../lib/SnapshotStore.php';
 
 $debug = in_array('--debug', $argv, true);
 
 $configPath = __DIR__ . '/config.php';
 if (!is_file($configPath)) {
-    fwrite(STDERR, "Missing config.php. Copy config.example.php to config.php and add your API token.\n");
+    fwrite(STDERR, "Missing config.php. Copy config.example.php to config.php and fill in your credentials.\n");
     exit(1);
 }
 /** @var array $config */
 $config = require $configPath;
 
-$dataDir = rtrim((string) ($config['data_dir'] ?? __DIR__ . '/../data'), '/');
-$gotthardPath = $dataDir . '/gotthard.json';
-$historyPath = $dataDir . '/history.json';
-$errorLogPath = $dataDir . '/fetch-error.log';
+$errorLogPath = $config['error_log'] ?? __DIR__ . '/../data/fetch-error.log';
 
 function iso_now(): string
 {
-    return (new DateTimeImmutable('now'))->format(DateTimeInterface::ATOM);
-}
-
-function write_fallback(string $gotthardPath, array $config, string $reason): void
-{
-    $fallback = [
-        'updated' => iso_now(),
-        'source' => 'opentransportdata.swiss (ASTRA Traffic Situations)',
-        'tunnel' => [
-            'status' => 'unknown',
-            'north' => ['queueKm' => null, 'waitMinutes' => null, 'cause' => null],
-            'south' => ['queueKm' => null, 'waitMinutes' => null, 'cause' => null],
-        ],
-        'pass' => ['status' => 'unknown', 'note' => null],
-        'error' => $reason,
-    ];
-    JsonStore::write($gotthardPath, $fallback);
+    return (new DateTimeImmutable('now', new DateTimeZone('UTC')))->format(DateTimeInterface::ATOM);
 }
 
 try {
     $client = new DatexClient($config);
-    $xml = $client->fetchRaw();
+    $xml    = $client->fetchRaw();
 
     $parser = new TrafficParser($config);
     $result = $parser->parse($xml);
 
     if ($debug) {
-        fwrite(STDOUT, "Matched " . count($result['debug']) . " record(s):\n");
+        fwrite(STDOUT, 'Matched ' . count($result['debug']) . " record(s):\n");
         foreach ($result['debug'] as $i => $rawXml) {
             fwrite(STDOUT, "\n--- record " . ($i + 1) . " ---\n{$rawXml}\n");
         }
     }
 
     $now = iso_now();
-    $output = [
-        'updated' => $now,
-        'source' => 'opentransportdata.swiss (ASTRA Traffic Situations)',
-        'tunnel' => $result['tunnel'],
-        'pass' => $result['pass'],
-    ];
-    JsonStore::write($gotthardPath, $output);
 
-    $history = new HistoryStore(
-        $historyPath,
-        (int) ($config['history_retention_hours'] ?? 48),
-        (int) ($config['history_min_interval_minutes'] ?? 10),
-    );
-    $history->append([
-        't' => $now,
-        'northQueueKm' => $result['tunnel']['north']['queueKm'],
-        'southQueueKm' => $result['tunnel']['south']['queueKm'],
-        'northWaitMinutes' => $result['tunnel']['north']['waitMinutes'],
-        'southWaitMinutes' => $result['tunnel']['south']['waitMinutes'],
-    ]);
+    $pdo   = Db::connect($config);
+    $store = new SnapshotStore($pdo);
+    $store->insert($result, $now);
 
-    fwrite(STDOUT, "OK: wrote " . $gotthardPath . " at {$now}\n");
+    fwrite(STDOUT, "[{$now}] OK — north " . ($result['tunnel']['north']['queueKm'] ?? 0) . ' km'
+        . ', south ' . ($result['tunnel']['south']['queueKm'] ?? 0) . " km\n");
 } catch (Throwable $e) {
     $message = $e->getMessage();
     fwrite(STDERR, "fetch-traffic.php failed: {$message}\n");
-    @file_put_contents($errorLogPath, "[" . iso_now() . "] {$message}\n", FILE_APPEND);
-    write_fallback($gotthardPath, $config, $message);
+
+    $logDir = dirname($errorLogPath);
+    if (!is_dir($logDir)) {
+        @mkdir($logDir, 0775, true);
+    }
+    @file_put_contents($errorLogPath, '[' . iso_now() . "] {$message}\n", FILE_APPEND);
+
     exit(1);
 }

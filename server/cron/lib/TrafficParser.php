@@ -40,6 +40,20 @@ final class TrafficParser
         's. nicolao', 'san nicolao', 'nicolao',
     ];
 
+    // Positive tokens for the Gotthard PASS road (Tremola / Passhöhe). Kept
+    // deliberately specific: a bare "Passstrasse" also names the A13 San
+    // Bernardino pass-road junction ("Anschluss Passstrasse").
+    private const PASS_TOKENS = [
+        'gotthardpass', 'gotthard-pass', 'gotthard pass',
+        'passo del gottardo', 'passo del san gottardo',
+        'col du gothard', 'col du saint-gothard', 'tremola',
+    ];
+
+    // …but never the San Bernardino / A13 pass road.
+    private const PASS_EXCLUDE = [
+        'san bernardino', 's. bernardino', 'bernardino', 'a13', 'pian san giacomo',
+    ];
+
     // Status-prefix words the feed uses when a message is being withdrawn.
     private const RESCINDED_TOKENS = [
         'aufgehoben', 'aufhebung', 'révoqué', 'revoqué', 'revocato', 'annullato',
@@ -74,7 +88,6 @@ final class TrafficParser
             $records = $xpath->query("//*[local-name()='situation']");
         }
 
-        $passKeywords = array_map('mb_strtolower', $this->config['pass_keywords'] ?? []);
         $now = new DateTimeImmutable('now', new DateTimeZone('UTC'));
 
         $north = ['queueKm' => null, 'waitMinutes' => null, 'cause' => null];
@@ -88,7 +101,7 @@ final class TrafficParser
                 /** @var DOMElement $record */
                 $text = mb_strtolower($record->textContent);
 
-                $isPass = self::containsAny($text, $passKeywords);
+                $isPass = self::isPassRecord($text);
                 $isTunnel = self::isTunnelRecord($text);
                 if (!$isPass && !$isTunnel) {
                     continue;
@@ -159,15 +172,44 @@ final class TrafficParser
         return self::containsAny($text, self::TUNNEL_TOKENS);
     }
 
-    /** Is the record currently in effect? Skips suspended, future and expired ones. */
+    private static function isPassRecord(string $text): bool
+    {
+        if (self::containsAny($text, self::PASS_EXCLUDE)) {
+            return false;
+        }
+        return self::containsAny($text, self::PASS_TOKENS);
+    }
+
+    /**
+     * Is the record in effect *right now*? Skips suspended records, and — crucially —
+     * planned/scheduled ones. validityStatus="active" only means "published"; the
+     * real timing lives in <validPeriod> (e.g. a nightly closure 19.–20.07.), so when
+     * explicit periods exist the record is active only if NOW falls inside one.
+     */
     private static function isActiveNow(DOMXPath $xpath, DOMElement $record, string $validityStatus, DateTimeImmutable $now): bool
     {
         if ($validityStatus === 'suspended') {
             return false;
         }
+
+        $periods = $xpath->query(".//*[local-name()='validPeriod']", $record);
+        if ($periods !== false && $periods->length > 0) {
+            foreach ($periods as $period) {
+                $start = self::parseDate(self::nodeValue($xpath, $period, 'startOfPeriod'));
+                $end   = self::parseDate(self::nodeValue($xpath, $period, 'endOfPeriod'));
+                $afterStart = ($start === null || $start <= $now);
+                $beforeEnd  = ($end === null || $end >= $now);
+                if ($afterStart && $beforeEnd) {
+                    return true;
+                }
+            }
+            return false; // has explicit periods, none contain now → planned/expired
+        }
+
+        // No sub-periods: fall back to the overall envelope.
         $start = self::parseDate(self::firstValue($xpath, $record, 'overallStartTime'));
         if ($start !== null && $start > $now) {
-            return false; // planned / not started yet
+            return false; // not started yet
         }
         $end = self::parseDate(self::firstValue($xpath, $record, 'overallEndTime'));
         if ($end !== null && $end < $now) {
@@ -195,14 +237,20 @@ final class TrafficParser
         }
     }
 
-    /** First descendant text by local-name(), or '' if none. */
-    private static function firstValue(DOMXPath $xpath, DOMElement $record, string $localName): string
+    /** First descendant text by local-name() within a context node, or '' if none. */
+    private static function nodeValue(DOMXPath $xpath, DOMNode $context, string $localName): string
     {
-        $nodes = $xpath->query(".//*[local-name()='{$localName}']", $record);
+        $nodes = $xpath->query(".//*[local-name()='{$localName}']", $context);
         if ($nodes !== false && $nodes->length > 0) {
             return trim($nodes->item(0)->textContent);
         }
         return '';
+    }
+
+    /** First descendant text by local-name() within a record, or '' if none. */
+    private static function firstValue(DOMXPath $xpath, DOMElement $record, string $localName): string
+    {
+        return self::nodeValue($xpath, $record, $localName);
     }
 
     private static function containsAny(string $haystack, array $needles): bool

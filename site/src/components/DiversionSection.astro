@@ -1,0 +1,15 @@
+---
+import { t, type Lang } from '../lib/i18n';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+---
+
+<section class="diversion container" id="diversion-section" aria-labelledby="diversion-title" hidden>
+  <h2 class="diversion__title" id="diversion-title">{t(lang, 'diversion.title')}</h2>
+  <p class="diversion__lead" id="diversion-lead"></p>
+  <ol class="diversion__list" id="diversion-list" aria-live="polite"></ol>
+  <p class="diversion__disclaimer">{t(lang, 'diversion.disclaimer')}</p>
+</section>

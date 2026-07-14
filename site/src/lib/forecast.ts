@@ -179,6 +179,12 @@ function toLevel(idx: number): TrafficLevel {
   return 'low';
 }
 
+// Convert a 0–10 congestion index into an estimated waiting time in minutes.
+// idx 10 ≈ 90 min (matches "10 km / 90+ min" at the top of the model).
+export function idxToWaitMinutes(idx: number): number {
+  return Math.round(Math.max(0, idx) * 9);
+}
+
 // ─── Day/date labels ──────────────────────────────────────────────────────────
 
 const SHORT_DE = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'] as const;
@@ -188,55 +194,82 @@ const LONG_EN  = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','S
 
 function pad2(n: number): string { return String(n).padStart(2, '0'); }
 
-// ─── Public API ───────────────────────────────────────────────────────────────
+// ─── Per-day model (shared by the heatmap and the 10-minute curve) ────────────
 
-export function generateForecast(from: Date, lang: 'de' | 'en' = 'de', days = 4): ForecastDay[] {
-  const holidays = buildHolidayPeriods(from.getUTCFullYear());
-  // Also build for next year in case we cross a year boundary
-  const holidays2 = buildHolidayPeriods(from.getUTCFullYear() + 1);
-  const allHolidays = [...holidays, ...holidays2];
+interface DayModel {
+  isoDate: string;
+  dayLabel: string;
+  fullDayLabel: string;
+  dateLabel: string;
+  context: string | null;
+  mult: number;
+  nProf: HProfile;
+  sProf: HProfile;
+}
 
-  const result: ForecastDay[] = [];
-
-  // Align to start of current Swiss local day (midnight)
+// UTC moment corresponding to midnight (00:00) in Zurich for the given instant.
+function swissMidnightUTC(from: Date): Date {
   const swissNow = toSwiss(from);
   const dayStart = new Date(Date.UTC(
     swissNow.getUTCFullYear(), swissNow.getUTCMonth(), swissNow.getUTCDate()
   ));
-  // dayStart is the UTC moment corresponding to midnight in Zurich
-  const offset = swissOffset(from);
-  const dayStartUTC = new Date(dayStart.getTime() - offset * 3_600_000);
+  return new Date(dayStart.getTime() - swissOffset(from) * 3_600_000);
+}
+
+function computeDayModel(dayUTC: Date, holidays: HolidayPeriod[], lang: 'de' | 'en'): DayModel {
+  const daySwiss = toSwiss(dayUTC);
+  const year  = daySwiss.getUTCFullYear();
+  const month = daySwiss.getUTCMonth() + 1; // 1-12
+  const dom   = daySwiss.getUTCDate();
+  const dow   = daySwiss.getUTCDay(); // 0=Sun
+
+  const matchedHoliday = holidays.find(h => h.matches(month, dom, dow));
+  const seasonMult = SEASON[month - 1];
+  const mult = Math.min(1.3, seasonMult + (matchedHoliday?.boost ?? 0));
+  const { n: nProf, s: sProf } = profilesFor(dow);
+
+  return {
+    isoDate: `${year}-${pad2(month)}-${pad2(dom)}`,
+    dayLabel: lang === 'de' ? SHORT_DE[dow] : SHORT_EN[dow],
+    fullDayLabel: lang === 'de' ? LONG_DE[dow] : LONG_EN[dow],
+    dateLabel: lang === 'de' ? `${pad2(dom)}.${pad2(month)}.` : `${pad2(month)}/${pad2(dom)}`,
+    context: matchedHoliday ? matchedHoliday.name[lang] : null,
+    mult,
+    nProf,
+    sProf,
+  };
+}
+
+// Congestion index (0–10) at a fractional minute-of-day, linearly interpolating
+// between the hourly profile samples. This is what gives us 10-minute resolution.
+function indexAt(prof: HProfile, mult: number, minuteOfDay: number): number {
+  const hf = minuteOfDay / 60;             // 0–24
+  const h0 = Math.floor(hf) % 24;
+  const h1 = (h0 + 1) % 24;
+  const frac = hf - Math.floor(hf);
+  const raw = prof[h0] + (prof[h1] - prof[h0]) * frac;
+  return Math.min(10, raw * mult);
+}
+
+// ─── Public API ───────────────────────────────────────────────────────────────
+
+export function generateForecast(from: Date, lang: 'de' | 'en' = 'de', days = 4): ForecastDay[] {
+  const allHolidays = [
+    ...buildHolidayPeriods(from.getUTCFullYear()),
+    ...buildHolidayPeriods(from.getUTCFullYear() + 1), // in case we cross a year boundary
+  ];
+
+  const dayStartUTC = swissMidnightUTC(from);
+  const result: ForecastDay[] = [];
 
   for (let dayOff = 0; dayOff < days; dayOff++) {
     const dayUTC = new Date(dayStartUTC.getTime() + dayOff * 86_400_000);
-    const daySwiss = toSwiss(dayUTC);
-
-    const year  = daySwiss.getUTCFullYear();
-    const month = daySwiss.getUTCMonth() + 1; // 1-12
-    const dom   = daySwiss.getUTCDate();
-    const dow   = daySwiss.getUTCDay(); // 0=Sun
-
-    const isoDate  = `${year}-${pad2(month)}-${pad2(dom)}`;
-    const dayLabel = lang === 'de' ? SHORT_DE[dow] : SHORT_EN[dow];
-    const fullDayLabel = lang === 'de' ? LONG_DE[dow] : LONG_EN[dow];
-    const dateLabel = lang === 'de'
-      ? `${pad2(dom)}.${pad2(month)}.`
-      : `${pad2(month)}/${pad2(dom)}`;
-
-    // Holiday context
-    const matchedHoliday = allHolidays.find(h => h.matches(month, dom, dow));
-    const context = matchedHoliday ? matchedHoliday.name[lang] : null;
-
-    const seasonMult = SEASON[month - 1];
-    const holidayBoost = matchedHoliday?.boost ?? 0;
-    const mult = Math.min(1.3, seasonMult + holidayBoost);
-
-    const { n: nProf, s: sProf } = profilesFor(dow);
+    const model = computeDayModel(dayUTC, allHolidays, lang);
 
     const hours: ForecastHour[] = [];
     for (let h = 0; h < 24; h++) {
-      const northIdx = +(Math.min(10, nProf[h] * mult * 10)).toFixed(1);
-      const southIdx = +(Math.min(10, sProf[h] * mult * 10)).toFixed(1);
+      const northIdx = +indexAt(model.nProf, model.mult, h * 60).toFixed(1);
+      const southIdx = +indexAt(model.sProf, model.mult, h * 60).toFixed(1);
       hours.push({
         localHour: h,
         northIdx,
@@ -247,9 +280,76 @@ export function generateForecast(from: Date, lang: 'de' | 'en' = 'de', days = 4)
     }
 
     const isPeak = hours.some(h => h.northIdx >= 3.5 || h.southIdx >= 3.5);
-
+    const { isoDate, dayLabel, fullDayLabel, dateLabel, context } = model;
     result.push({ isoDate, dayLabel, fullDayLabel, dateLabel, context, isPeak, hours });
   }
 
   return result;
+}
+
+// ─── 10-minute-resolution wait-time curve for a single day ────────────────────
+
+export interface ForecastPoint {
+  minuteOfDay: number; // 0–1440
+  northIdx: number;
+  southIdx: number;
+  northWait: number;   // estimated wait minutes, north portal (Göschenen)
+  southWait: number;   // estimated wait minutes, south portal (Airolo)
+}
+
+export interface DayCurve {
+  isoDate: string;
+  fullDayLabel: string;
+  dateLabel: string;
+  context: string | null;
+  points: ForecastPoint[];
+}
+
+/**
+ * Predicted wait-time curve for the Swiss-local day containing `from`,
+ * sampled every `stepMin` minutes (default 10) from 00:00 to 24:00 inclusive.
+ */
+export function generateDayCurve(from: Date, lang: 'de' | 'en' = 'de', stepMin = 10): DayCurve {
+  const allHolidays = [
+    ...buildHolidayPeriods(from.getUTCFullYear()),
+    ...buildHolidayPeriods(from.getUTCFullYear() + 1),
+  ];
+  const dayUTC = swissMidnightUTC(from);
+  const model = computeDayModel(dayUTC, allHolidays, lang);
+
+  const points: ForecastPoint[] = [];
+  for (let m = 0; m <= 1440; m += stepMin) {
+    const northIdx = indexAt(model.nProf, model.mult, m);
+    const southIdx = indexAt(model.sProf, model.mult, m);
+    points.push({
+      minuteOfDay: m,
+      northIdx: +northIdx.toFixed(2),
+      southIdx: +southIdx.toFixed(2),
+      northWait: idxToWaitMinutes(northIdx),
+      southWait: idxToWaitMinutes(southIdx),
+    });
+  }
+
+  return {
+    isoDate: model.isoDate,
+    fullDayLabel: model.fullDayLabel,
+    dateLabel: model.dateLabel,
+    context: model.context,
+    points,
+  };
+}
+
+// ─── Swiss-local day helpers (used to align live history to the curve) ────────
+
+export interface SwissDayInfo {
+  isoDate: string;     // "2026-07-14" in Zurich local time
+  minuteOfDay: number; // 0–1439
+}
+
+export function swissDayInfo(instant: Date): SwissDayInfo {
+  const s = toSwiss(instant);
+  return {
+    isoDate: `${s.getUTCFullYear()}-${pad2(s.getUTCMonth() + 1)}-${pad2(s.getUTCDate())}`,
+    minuteOfDay: s.getUTCHours() * 60 + s.getUTCMinutes(),
+  };
 }

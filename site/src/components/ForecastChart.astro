@@ -1,0 +1,48 @@
+---
+import { t, type Lang } from '../lib/i18n';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+---
+
+<section class="fchart container" aria-labelledby="fchart-title">
+  <h2 class="fchart__title" id="fchart-title">{t(lang, 'fchart.title')}</h2>
+  <p class="fchart__subtitle" id="fchart-subtitle">{t(lang, 'fchart.subtitle')}</p>
+
+  <div class="fchart__wrap">
+    <svg
+      id="forecast-chart"
+      viewBox="0 0 640 260"
+      role="img"
+      aria-labelledby="fchart-desc"
+      style="width: 100%; height: auto;"
+    >
+      <desc id="fchart-desc">{t(lang, 'fchart.title')}</desc>
+    </svg>
+    <noscript>
+      <p>{t(lang, 'fchart.noscript')}</p>
+    </noscript>
+
+    <div class="fchart__legend">
+      <span class="fchart__legend-item">
+        <span class="fchart__legend-swatch" style="background: var(--color-accent);"></span>
+        {t(lang, 'trend.northLegend')}
+      </span>
+      <span class="fchart__legend-item">
+        <span class="fchart__legend-swatch" style="background: var(--color-unknown);"></span>
+        {t(lang, 'trend.southLegend')}
+      </span>
+      <span class="fchart__legend-item">
+        <span class="fchart__legend-swatch fchart__legend-swatch--solid"></span>
+        {t(lang, 'fchart.actual')}
+      </span>
+      <span class="fchart__legend-item">
+        <span class="fchart__legend-swatch fchart__legend-swatch--dashed"></span>
+        {t(lang, 'fchart.predicted')}
+      </span>
+    </div>
+  </div>
+  <p class="fchart__disclaimer">{t(lang, 'forecast.disclaimer')}</p>
+</section>

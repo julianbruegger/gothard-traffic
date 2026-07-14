@@ -105,6 +105,11 @@ jobs:
           : "${SSH_KEY:?HOSTPOINT_SSH_KEY secret is not set (WebHosting environment)}"
           : "${REMOTE_PATH:?HOSTPOINT_PATH secret is not set (WebHosting environment)}"
 
+          # Strip any stray whitespace/newlines that may have been copied into secrets
+          SSH_HOST=$(echo "$SSH_HOST" | tr -d '[:space:]')
+          SSH_USER=$(echo "$SSH_USER" | tr -d '[:space:]')
+          REMOTE_PATH=$(echo "$REMOTE_PATH" | tr -d '[:space:]')
+
           mkdir -p ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key

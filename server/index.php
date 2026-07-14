@@ -17,18 +17,48 @@ declare(strict_types=1);
 require_once __DIR__ . '/lib/I18n.php';
 require_once __DIR__ . '/lib/Format.php';
 require_once __DIR__ . '/lib/Ssr.php';
+require_once __DIR__ . '/lib/Db.php';
+require_once __DIR__ . '/lib/SnapshotStore.php';
 
 function ssr_default_data(): array
 {
     return [
         'updated' => null,
-        'source' => 'opentransportdata.swiss (ASTRA Traffic Situations)',
-        'tunnel' => [
+        'source'  => 'opentransportdata.swiss (ASTRA Traffic Situations)',
+        'tunnel'  => [
             'status' => 'unknown',
-            'north' => ['queueKm' => null, 'waitMinutes' => null, 'cause' => null],
-            'south' => ['queueKm' => null, 'waitMinutes' => null, 'cause' => null],
+            'north'  => ['queueKm' => null, 'waitMinutes' => null, 'cause' => null, 'closures' => []],
+            'south'  => ['queueKm' => null, 'waitMinutes' => null, 'cause' => null, 'closures' => []],
         ],
         'pass' => ['status' => 'unknown', 'note' => null],
+    ];
+}
+
+function row_to_data(array $row): array
+{
+    $updatedAt = (new DateTimeImmutable($row['fetched_at'], new DateTimeZone('UTC')))->format(DateTimeInterface::ATOM);
+    return [
+        'updated' => $updatedAt,
+        'source'  => 'opentransportdata.swiss (ASTRA Traffic Situations)',
+        'tunnel'  => [
+            'status' => $row['tunnel_status'],
+            'north'  => [
+                'queueKm'     => $row['north_queue_km'] !== null ? (float) $row['north_queue_km'] : null,
+                'waitMinutes' => $row['north_wait_min'] !== null ? (int)   $row['north_wait_min'] : null,
+                'cause'       => $row['north_cause'],
+                'closures'    => [],
+            ],
+            'south'  => [
+                'queueKm'     => $row['south_queue_km'] !== null ? (float) $row['south_queue_km'] : null,
+                'waitMinutes' => $row['south_wait_min'] !== null ? (int)   $row['south_wait_min'] : null,
+                'cause'       => $row['south_cause'],
+                'closures'    => [],
+            ],
+        ],
+        'pass' => [
+            'status' => $row['pass_status'],
+            'note'   => $row['pass_note'],
+        ],
     ];
 }
 
@@ -45,23 +75,31 @@ if (!I18n::isSupported($lang)) {
     $lang = 'de';
 }
 
-$dataPath = __DIR__ . '/data/gotthard.json';
 $data = ssr_default_data();
-if (is_file($dataPath)) {
-    $decoded = json_decode((string) file_get_contents($dataPath), true);
-    if (is_array($decoded)) {
-        $data = array_replace_recursive($data, $decoded);
+
+$configPath = __DIR__ . '/cron/config.php';
+if (is_file($configPath)) {
+    try {
+        $config = require $configPath;
+        $pdo    = Db::connect($config);
+        $store  = new SnapshotStore($pdo);
+        $row    = $store->latest();
+        if ($row !== null) {
+            $data = row_to_data($row);
+        }
+    } catch (Throwable) {
+        // Fall through to default data — DB unavailable or not yet configured.
     }
 }
 
 $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-$host = $_SERVER['HTTP_HOST'] ?? 'localhost';
-$path = strtok($_SERVER['REQUEST_URI'] ?? '/', '?');
-$base = "{$scheme}://{$host}" . rtrim((string) $path, '/');
+$host   = $_SERVER['HTTP_HOST'] ?? 'localhost';
+$path   = strtok($_SERVER['REQUEST_URI'] ?? '/', '?');
+$base   = "{$scheme}://{$host}" . rtrim((string) $path, '/');
 $canonicalUrl = $lang === 'de' ? ($base === '' ? '/' : $base . '/') : $base . '/?lang=en';
 
 $template = (string) file_get_contents($templatePath);
-$html = Ssr::render($template, $data, $lang, $canonicalUrl);
+$html     = Ssr::render($template, $data, $lang, $canonicalUrl);
 
 header('Content-Type: text/html; charset=utf-8');
 header('Cache-Control: public, max-age=60');

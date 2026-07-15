@@ -144,6 +144,25 @@ function containsAny(text, keywords) {
   return keywords.some((k) => k && lower.includes(k));
 }
 
+/** [from, to] epoch-ms window of a closure: structured times, else German "…bis…" text. */
+function extractClosureWindow(record) {
+  const decoded = decodeXmlEntities(record);
+  const start = getText(record, 'startOfPeriod') ?? getText(record, 'overallStartTime');
+  const end = getText(record, 'endOfPeriod') ?? getText(record, 'overallEndTime');
+  let from = start ? Date.parse(start) : null;
+  let to = end ? Date.parse(end) : null;
+  if ((from === null || Number.isNaN(from)) && (to === null || Number.isNaN(to))) {
+    const m = decoded.match(/(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2})\s+bis\s+(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2})/);
+    if (m) {
+      from = Date.parse(`${m[3]}-${m[2]}-${m[1]}T${m[4]}:${m[5]}:00`);
+      to = Date.parse(`${m[8]}-${m[7]}-${m[6]}T${m[9]}:${m[10]}:00`);
+    }
+  }
+  if (from === null || Number.isNaN(from)) from = null;
+  if (to === null || Number.isNaN(to)) to = null;
+  return { from, to };
+}
+
 // ---------------------------------------------------------------------------
 // Parser
 // ---------------------------------------------------------------------------
@@ -155,6 +174,7 @@ function parseXml(xml) {
   let southKm = 0, southMin = 0, southCause = null, southClosures = [];
   let pass = { status: 'unknown', note: null };
   let tunnelClosed = false;
+  let plannedClosures = [];
 
   for (const record of records) {
     const text = record.toLowerCase();
@@ -178,6 +198,26 @@ if (isPass) {
 
     // "Aufgehoben" = lifted/revoked — the situation no longer applies.
     if (text.includes('aufgehoben')) continue;
+
+    // Whole tunnel bore closure (Göschenen ↔ Airolo). Handle its timing here so
+    // a future closure is surfaced as a planned event, not shown as "closed now".
+    const isBoreClosure =
+      /tunnel gesperrt/i.test(text) && text.includes('göschenen') && text.includes('airolo');
+    if (isBoreClosure) {
+      const { from, to } = extractClosureWindow(record);
+      const nowMs = Date.now();
+      const active = (from === null || from <= nowMs) && (to === null || to >= nowMs);
+      if (active) {
+        tunnelClosed = true;
+      } else if (from !== null && from > nowMs) {
+        plannedClosures.push({
+          from: new Date(from).toISOString(),
+          to: to !== null ? new Date(to).toISOString() : null,
+          cause: extractCause(record),
+        });
+      }
+      continue;
+    }
 
     // Jam and entry-closure records that haven't been updated in >3 hours are stale.
     // Construction records are long-lived and exempt from this check.
@@ -253,10 +293,6 @@ if (isPass) {
 
     const cause = extractCause(record);
 
-    if (containsAny(text, ['tunnel gesperrt', 'tunnel closed', 'strassentunnel gesperrt', 'vollsperrung tunnel'])) {
-      tunnelClosed = true;
-    }
-
     if (DEBUG && queueKm !== null) {
       const dir = isSouth ? 'south' : 'north';
       const snippet = record.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 120);
@@ -284,7 +320,7 @@ if (isPass) {
     ? 'congested'
     : 'open';
 
-  return { tunnel: { status, north, south }, pass };
+  return { tunnel: { status, north, south, plannedClosures }, pass };
 }
 
 // ---------------------------------------------------------------------------

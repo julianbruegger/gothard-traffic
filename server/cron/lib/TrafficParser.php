@@ -80,6 +80,7 @@ final class TrafficParser
         $south = ['queueKm' => null, 'waitMinutes' => null, 'cause' => null];
         $pass = ['status' => 'unknown', 'note' => null];
         $tunnelClosed = false;
+        $plannedClosures = [];
         $debugMatches = [];
 
         if ($records !== false) {
@@ -98,6 +99,32 @@ final class TrafficParser
                 if (self::containsAny($c, self::RESCINDED_TOKENS)) {
                     continue;
                 }
+
+                // ── Whole Gotthard tunnel bore closed / planned closure ──────
+                // Handled BEFORE the "active now" gate so an upcoming closure
+                // (e.g. a special transport 23:00–01:00 tonight) is still
+                // surfaced as a planned event rather than silently dropped.
+                if (str_contains($c, 'tunnel gesperrt')
+                    && str_contains($c, 'göschenen') && str_contains($c, 'airolo')
+                ) {
+                    [$from, $to] = self::extractWindow($xpath, $record, $comment);
+                    $activeNow = ($from === null || $from <= $now) && ($to === null || $to >= $now);
+                    if ($activeNow) {
+                        $tunnelClosed = true;
+                        $debugMatches[] = $doc->saveXML($record);
+                    } elseif ($from !== null && $from > $now) {
+                        $key = $from->format(DateTimeInterface::ATOM) . '|' . ($to?->format(DateTimeInterface::ATOM) ?? '');
+                        $plannedClosures[$key] = [
+                            'from'  => $from->format(DateTimeInterface::ATOM),
+                            'to'    => $to?->format(DateTimeInterface::ATOM),
+                            'cause' => self::extractCause($comment),
+                        ];
+                        $debugMatches[] = $doc->saveXML($record);
+                    }
+                    // Expired closure (window fully in the past) → drop silently.
+                    continue;
+                }
+
                 $validityStatus = mb_strtolower(self::firstValue($xpath, $record, 'validityStatus'));
                 if (!self::isActiveNow($xpath, $record, $validityStatus, $now)) {
                     continue;
@@ -115,15 +142,6 @@ final class TrafficParser
                         $pass['status'] = 'open';
                     }
                     $pass['note'] = mb_substr($comment, 0, 200);
-                    $debugMatches[] = $doc->saveXML($record);
-                    continue;
-                }
-
-                // ── Whole Gotthard tunnel bore closed (Göschenen ↔ Airolo) ───
-                if (str_contains($c, 'tunnel gesperrt')
-                    && str_contains($c, 'göschenen') && str_contains($c, 'airolo')
-                ) {
-                    $tunnelClosed = true;
                     $debugMatches[] = $doc->saveXML($record);
                     continue;
                 }
@@ -179,10 +197,57 @@ final class TrafficParser
         }
 
         return [
-            'tunnel' => ['status' => $status, 'north' => $north, 'south' => $south],
+            'tunnel' => [
+                'status' => $status,
+                'north' => $north,
+                'south' => $south,
+                'plannedClosures' => array_values($plannedClosures),
+            ],
             'pass' => $pass,
             'debug' => $debugMatches,
         ];
+    }
+
+    /**
+     * Time window [from, to] of a closure record. Prefers the structured
+     * <validPeriod>/overall times, then falls back to the German free-text
+     * "Dauer: … 15.07.2026 23:00 bis 16.07.2026 01:00".
+     *
+     * @return array{0: ?DateTimeImmutable, 1: ?DateTimeImmutable}
+     */
+    private static function extractWindow(DOMXPath $xpath, DOMElement $record, string $comment): array
+    {
+        $periods = $xpath->query(".//*[local-name()='validPeriod']", $record);
+        if ($periods !== false && $periods->length > 0) {
+            $period = $periods->item(0);
+            $from = self::parseDate(self::nodeValue($xpath, $period, 'startOfPeriod'));
+            $to   = self::parseDate(self::nodeValue($xpath, $period, 'endOfPeriod'));
+            if ($from !== null || $to !== null) {
+                return [$from, $to];
+            }
+        }
+
+        $from = self::parseDate(self::firstValue($xpath, $record, 'overallStartTime'));
+        $to   = self::parseDate(self::firstValue($xpath, $record, 'overallEndTime'));
+        if ($from !== null || $to !== null) {
+            return [$from, $to];
+        }
+
+        if (preg_match('/(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2})\s+bis\s+(\d{2})\.(\d{2})\.(\d{4})\s+(\d{2}):(\d{2})/u', $comment, $m) === 1) {
+            $tz = new DateTimeZone('Europe/Zurich');
+            return [
+                self::makeDate($m[3], $m[2], $m[1], $m[4], $m[5], $tz),
+                self::makeDate($m[8], $m[7], $m[6], $m[9], $m[10], $tz),
+            ];
+        }
+
+        return [null, null];
+    }
+
+    private static function makeDate(string $y, string $mo, string $d, string $h, string $i, DateTimeZone $tz): ?DateTimeImmutable
+    {
+        $dt = DateTimeImmutable::createFromFormat('!Y-m-d H:i', "{$y}-{$mo}-{$d} {$h}:{$i}", $tz);
+        return $dt ?: null;
     }
 
     private static function isPass(string $c): bool

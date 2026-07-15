@@ -31,14 +31,16 @@ final class SnapshotStore
                 tunnel_status,
                 north_queue_km, north_wait_min, north_cause,
                 south_queue_km, south_wait_min, south_cause,
-                pass_status, pass_note)
+                pass_status, pass_note, planned_closures)
              VALUES
                (:fetched_at,
                 :tunnel_status,
                 :north_queue_km, :north_wait_min, :north_cause,
                 :south_queue_km, :south_wait_min, :south_cause,
-                :pass_status, :pass_note)'
+                :pass_status, :pass_note, :planned_closures)'
         );
+
+        $plannedClosures = $tunnel['plannedClosures'] ?? [];
 
         $stmt->execute([
             ':fetched_at'     => gmdate('Y-m-d H:i:s', strtotime($fetchedAt)),
@@ -51,6 +53,9 @@ final class SnapshotStore
             ':south_cause'    => $tunnel['south']['cause'] ?? null,
             ':pass_status'    => $pass['status'],
             ':pass_note'      => $pass['note'] ?? null,
+            ':planned_closures' => $plannedClosures
+                ? json_encode($plannedClosures, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
+                : null,
         ]);
     }
 

@@ -52,6 +52,9 @@ $data = [
             'cause'       => $row['south_cause'],
             'closures'    => [],
         ],
+        'plannedClosures' => isset($row['planned_closures']) && $row['planned_closures'] !== null
+            ? (json_decode($row['planned_closures'], true) ?: [])
+            : [],
     ],
     'pass' => [
         'status' => $row['pass_status'],

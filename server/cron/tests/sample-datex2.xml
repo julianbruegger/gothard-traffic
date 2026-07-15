@@ -75,6 +75,22 @@
         </values></comment></generalPublicComment>
       </situationRecord>
 
+      <!-- Tunnel bore closure scheduled in the FUTURE → surfaced as a planned closure. -->
+      <situationRecord id="REC_CLOSURE_PLANNED" xsi:type="RoadOrCarriagewayOrLaneManagement">
+        <validity>
+          <validityStatus>definedByValidityTimeSpec</validityStatus>
+          <validityTimeSpecification>
+            <validPeriod>
+              <startOfPeriod>2099-07-15T23:00:00+02:00</startOfPeriod>
+              <endOfPeriod>2099-07-16T01:00:00+02:00</endOfPeriod>
+            </validPeriod>
+          </validityTimeSpecification>
+        </validity>
+        <generalPublicComment><comment><values>
+          <value lang="de">Freigegeben: A2 Chiasso &lt;-&gt; Luzern zwischen Anschluss Göschenen und Anschluss Airolo Sachlage: Tunnel gesperrt Ursache: Ausnahmetransport Dauer: voraussichtlich 15.07.2099 23:00 bis 16.07.2099 01:00</value>
+        </values></comment></generalPublicComment>
+      </situationRecord>
+
       <!-- Tunnel bore closure, but its window is in the PAST → must be ignored. -->
       <situationRecord id="REC_CLOSURE_EXPIRED" xsi:type="RoadOrCarriagewayOrLaneManagement">
         <validity>

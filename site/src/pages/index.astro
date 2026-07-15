@@ -4,6 +4,7 @@ import { join } from 'path';
 import Layout from '../layouts/Layout.astro';
 import Header from '../components/Header.astro';
 import StatusHero from '../components/StatusHero.astro';
+import PlannedClosureBanner from '../components/PlannedClosureBanner.astro';
 import PortalCard from '../components/PortalCard.astro';
 import PassCard from '../components/PassCard.astro';
 import TrendChart from '../components/TrendChart.astro';
@@ -34,6 +35,7 @@ const history = readJson<HistoryPoint[]>(join(root, 'history.json'), sampleHisto
   <Header lang={lang} />
   <main id="main">
     <StatusHero lang={lang} data={data} />
+    <PlannedClosureBanner lang={lang} closures={data.tunnel.plannedClosures ?? []} />
     <div class="container">
       <div class="card-grid">
         <PortalCard lang={lang} side="north" portal={data.tunnel.north} />

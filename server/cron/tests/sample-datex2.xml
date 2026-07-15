@@ -1,47 +1,94 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<d2LogicalModel xmlns="http://datex2.eu/schema/3/messageContainer">
-  <payloadPublication xmlns:sit="http://datex2.eu/schema/3/situation" xsi:type="sit:SituationPublication">
+<!--
+  Fixture modelled on the REAL FEDRO/ASTRA DATEX II feed (see `php diagnose.php`).
+  Every figure lives in the free-text comment ("Länge [km] X", "[min] Y"); the
+  structured queueLength/delayTimeValue elements are empty, exactly as in prod.
+-->
+<d2LogicalModel xmlns="http://datex2.eu/schema/2/2_0" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <payloadPublication>
     <situation id="SIT001">
-      <situationRecord id="REC001" xsi:type="Congestion">
-        <situationRecordCreationTime>2026-07-07T12:30:00+02:00</situationRecordCreationTime>
-        <generalPublicComment>
-          <comment>
-            <values>
-              <value lang="de">Gotthard-Strassentunnel Richtung Süden, Nordportal Göschenen: hohes Verkehrsaufkommen</value>
-            </values>
-          </comment>
-        </generalPublicComment>
-        <groupOfLocations>
-          <locationDescriptor>A2 Gotthard Strassentunnel Göschenen</locationDescriptor>
-        </groupOfLocations>
-        <queueLength>4500</queueLength>
-        <delayTimeValue>2700</delayTimeValue>
+
+      <!-- NORTH portal (Göschenen): active Stau, 2.0 km / 20 min. -->
+      <situationRecord id="REC_NORTH" xsi:type="AbnormalTraffic">
+        <validity><validityStatus>active</validityStatus></validity>
+        <abnormalTrafficType>stationaryTraffic</abnormalTrafficType>
+        <generalPublicComment><comment><values>
+          <value lang="de">Freigegeben: A2 Luzern -&gt; Gotthard zwischen Anschluss Wassen und Anschluss Göschenen Sachlage: Stau Länge [km] 2.0 Ursache: Verkehrsüberlastung Zusatz 1: Zeitverlust Anz. [min] 20</value>
+        </values></comment></generalPublicComment>
       </situationRecord>
-      <situationRecord id="REC002" xsi:type="Congestion">
-        <situationRecordCreationTime>2026-07-07T12:30:00+02:00</situationRecordCreationTime>
-        <generalPublicComment>
-          <comment>
-            <values>
-              <value lang="de">Gotthardpass: Passstrasse geoeffnet, keine Einschraenkungen</value>
-            </values>
-          </comment>
-        </generalPublicComment>
-        <groupOfLocations>
-          <locationDescriptor>Gotthardpass</locationDescriptor>
-        </groupOfLocations>
+
+      <!-- SOUTH portal (Airolo): active Stau, 1.0 km / 10 min. -->
+      <situationRecord id="REC_SOUTH" xsi:type="AbnormalTraffic">
+        <validity><validityStatus>active</validityStatus></validity>
+        <abnormalTrafficType>stationaryTraffic</abnormalTrafficType>
+        <generalPublicComment><comment><values>
+          <value lang="de">Freigegeben: A2 Chiasso -&gt; Gotthard zwischen Anschluss Quinto und null Dosierstelle Airolo Sachlage: Stau Länge [km] 1.0 Ursache: Verkehrsüberlastung Zusatz 1: Zeitverlust Anz. [min] 10</value>
+        </values></comment></generalPublicComment>
       </situationRecord>
-      <situationRecord id="REC003" xsi:type="RoadOrCarriagewayOrLaneManagement">
-        <generalPublicComment>
-          <comment>
-            <values>
-              <value lang="de">A13 San Bernardino: Bauarbeiten, keine Auswirkung</value>
-            </values>
-          </comment>
-        </generalPublicComment>
-        <groupOfLocations>
-          <locationDescriptor>A13 San Bernardino</locationDescriptor>
-        </groupOfLocations>
+
+      <!-- NORTH portal, but WITHDRAWN: must be ignored (north stays 2.0, not 5). -->
+      <situationRecord id="REC_NORTH_RESCINDED" xsi:type="AbnormalTraffic">
+        <validity><validityStatus>definedByValidityTimeSpec</validityStatus></validity>
+        <abnormalTrafficType>stationaryTraffic</abnormalTrafficType>
+        <generalPublicComment><comment><values>
+          <value lang="de">Aufgehoben: A2 Luzern -&gt; Gotthard zwischen Anschluss Wassen und Anschluss Göschenen Sachlage: Stau Länge [km] 5.0 Ursache: Verkehrsüberlastung Zusatz 1: Zeitverlust Anz. [min] 50</value>
+        </values></comment></generalPublicComment>
       </situationRecord>
+
+      <!-- Permanent roadworks INSIDE the tunnel: "Baustelle, Länge [km] 0.3" is a
+           construction length, not a queue → must NOT count as congestion. -->
+      <situationRecord id="REC_WORKS" xsi:type="AbnormalTraffic">
+        <validity><validityStatus>active</validityStatus></validity>
+        <abnormalTrafficType>other</abnormalTrafficType>
+        <generalPublicComment><comment><values>
+          <value lang="de">Freigegeben: A2 Chiasso &lt;-&gt; Gotthard Tunnel Gotthard-Tunnel Sachlage: Verkehrsbehinderung Baustelle, Länge [km] 0.3 Zusatz 1: vorübergehende Begrenzung der Breite Fahrbahnbreite [m] 5.2</value>
+        </values></comment></generalPublicComment>
+      </situationRecord>
+
+      <!-- Leaked location name: the record's location table names "Nordportal",
+           but the actual message is a La Chaux-de-Fonds street work → must NOT be
+           treated as the Gotthard tunnel. -->
+      <situationRecord id="REC_LEAK" xsi:type="AbnormalTraffic">
+        <validity><validityStatus>active</validityStatus></validity>
+        <abnormalTrafficType>other</abnormalTrafficType>
+        <groupOfLocations><locationDescriptor>Nordportal</locationDescriptor></groupOfLocations>
+        <generalPublicComment><comment><values>
+          <value lang="de">Freigegeben: Rue du Collège -&gt; Rue Fritz Courvoisier Kreuzung Rue du Collège Sachlage: Verkehrsbehinderung Baustelle Dauer: voraussichtlich 01.04.2025 00:00 bis 30.11.2025 23:59</value>
+        </values></comment></generalPublicComment>
+      </situationRecord>
+
+      <!-- Gotthard PASS road (H2), construction with lane control → restricted. -->
+      <situationRecord id="REC_PASS" xsi:type="AbnormalTraffic">
+        <validity><validityStatus>active</validityStatus></validity>
+        <abnormalTrafficType>other</abnormalTrafficType>
+        <generalPublicComment><comment><values>
+          <value lang="de">Freigegeben: H2 Airolo &lt;-&gt; Göschenen zwischen Pass Gotthard-Pass und Ortschaft Motto Bartola Sachlage: Verkehrsbehinderung Baustelle, Länge [km] 0.41 Verkehrsführung: Verkehrsregelung mit Lichtsignalanlage Zusatz 1: vorübergehende Begrenzung der Breite</value>
+        </values></comment></generalPublicComment>
+      </situationRecord>
+
+      <!-- Stau LEAVING the tunnel southward (Ticino), far from the portal → ignored. -->
+      <situationRecord id="REC_TICINO" xsi:type="AbnormalTraffic">
+        <validity><validityStatus>active</validityStatus></validity>
+        <abnormalTrafficType>stationaryTraffic</abnormalTrafficType>
+        <generalPublicComment><comment><values>
+          <value lang="de">Freigegeben: A2 Gotthard -&gt; Chiasso zwischen Tunnel Monte Ceneri-Tunnel und null Chiasso-Brogeda Sachlage: Stau Ursache: Verkehrsüberlastung Zusatz 1: Zeitverlust Anz. [min] 60</value>
+        </values></comment></generalPublicComment>
+      </situationRecord>
+
+      <!-- Tunnel bore closure, but its window is in the PAST → must be ignored. -->
+      <situationRecord id="REC_CLOSURE_EXPIRED" xsi:type="RoadOrCarriagewayOrLaneManagement">
+        <validity>
+          <validityStatus>definedByValidityTimeSpec</validityStatus>
+          <validityTimeSpecification>
+            <overallStartTime>2020-01-01T23:00:00+01:00</overallStartTime>
+            <overallEndTime>2020-01-02T01:00:00+01:00</overallEndTime>
+          </validityTimeSpecification>
+        </validity>
+        <generalPublicComment><comment><values>
+          <value lang="de">Freigegeben: A2 Chiasso &lt;-&gt; Luzern zwischen Anschluss Göschenen und Anschluss Airolo Sachlage: Tunnel gesperrt Ursache: Ausnahmetransport</value>
+        </values></comment></generalPublicComment>
+      </situationRecord>
+
     </situation>
   </payloadPublication>
 </d2LogicalModel>

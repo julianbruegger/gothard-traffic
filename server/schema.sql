@@ -14,6 +14,10 @@ CREATE TABLE IF NOT EXISTS gotthard_snapshots (
     south_cause    VARCHAR(200)      DEFAULT NULL,
     pass_status    VARCHAR(20)       NOT NULL DEFAULT 'unknown',
     pass_note      TEXT              DEFAULT NULL,
+    planned_closures TEXT            DEFAULT NULL COMMENT 'JSON array of upcoming tunnel closures [{from,to,cause}]',
     PRIMARY KEY (id),
     INDEX idx_fetched_at (fetched_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Migration for installs created before planned_closures existed (safe, nullable):
+-- ALTER TABLE gotthard_snapshots ADD COLUMN planned_closures TEXT DEFAULT NULL AFTER pass_note;

@@ -4,7 +4,8 @@
   "tunnel": {
     "status": "congested",
     "north": { "queueKm": 4.5, "waitMinutes": 45, "cause": "Hohes Verkehrsaufkommen" },
-    "south": { "queueKm": 0, "waitMinutes": 0, "cause": null }
+    "south": { "queueKm": 0, "waitMinutes": 0, "cause": null },
+    "plannedClosures": []
   },
   "pass": {
     "status": "open",

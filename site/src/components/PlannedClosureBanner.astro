@@ -1,0 +1,28 @@
+---
+import type { Lang } from '../lib/i18n';
+import type { ClosureWindow } from '../lib/types';
+import { closureTitle, closureDetail } from '../lib/format';
+
+interface Props {
+  lang: Lang;
+  closures: ClosureWindow[];
+}
+const { lang, closures } = Astro.props;
+---
+
+<section
+  class="closure-banner container"
+  id="planned-closures"
+  aria-live="polite"
+  hidden={!closures.length}
+>
+  {closures.map((c) => (
+    <div class="closure-banner__item" role="alert">
+      <span class="closure-banner__icon" aria-hidden="true">⚠</span>
+      <div class="closure-banner__text">
+        <strong class="closure-banner__title">{closureTitle(c, lang)}</strong>
+        <span class="closure-banner__detail">{closureDetail(c, lang)}</span>
+      </div>
+    </div>
+  ))}
+</section>

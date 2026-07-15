@@ -1,10 +1,10 @@
 import { isLang, DEFAULT_LANG, t } from '../lib/i18n';
-import { formatKm, formatMinutes, formatUpdated, statusLabel, passStatusLabel, buildSummary } from '../lib/format';
+import { formatKm, formatMinutes, formatUpdated, statusLabel, passStatusLabel, buildSummary, closureTitle, closureDetail } from '../lib/format';
 import { buildSparkline } from '../lib/chart';
 import { generateForecast, generateDayCurve, swissDayInfo, type ForecastDay, type ForecastPoint, type TrafficLevel } from '../lib/forecast';
 import { buildForecastChart, type ActualPoint, type ForecastChartResult } from '../lib/forecast-chart';
 import { suggestDiversions } from '../lib/diversion';
-import type { GotthardData, HistoryPoint } from '../lib/types';
+import type { GotthardData, HistoryPoint, ClosureWindow } from '../lib/types';
 
 const POLL_INTERVAL_MS = 60_000;
 
@@ -21,6 +21,31 @@ function setText(id: string, value: string) {
 function setAttr(id: string, attr: string, value: string) {
   const el = document.getElementById(id);
   if (el) el.setAttribute(attr, value);
+}
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (ch) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch] as string)
+  );
+}
+
+function renderPlannedClosures(closures: ClosureWindow[] | undefined) {
+  const el = document.getElementById('planned-closures');
+  if (!el) return;
+  const items = closures ?? [];
+  el.innerHTML = items
+    .map(
+      (c) => `<div class="closure-banner__item" role="alert">
+      <span class="closure-banner__icon" aria-hidden="true">⚠</span>
+      <div class="closure-banner__text">
+        <strong class="closure-banner__title">${escapeHtml(closureTitle(c, lang))}</strong>
+        <span class="closure-banner__detail">${escapeHtml(closureDetail(c, lang))}</span>
+      </div>
+    </div>`
+    )
+    .join('');
+  if (items.length > 0) el.removeAttribute('hidden');
+  else el.setAttribute('hidden', '');
 }
 
 function renderClosures(side: 'north' | 'south', closures: string[] | undefined) {
@@ -52,6 +77,8 @@ function renderData(data: GotthardData) {
   setAttr('pass-badge', 'data-status', data.pass.status);
   setText('pass-status-label', passStatusLabel(data.pass.status, lang));
   if (data.pass.note) setText('pass-note', data.pass.note);
+
+  renderPlannedClosures(data.tunnel.plannedClosures);
 
   setText('footer-source', data.source);
 }

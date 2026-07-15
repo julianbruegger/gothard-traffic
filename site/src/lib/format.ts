@@ -1,5 +1,57 @@
 import { t, type Lang } from './i18n';
-import type { GotthardData, RoadStatus } from './types';
+import type { GotthardData, RoadStatus, ClosureWindow } from './types';
+
+// DATEX "Ursache" / causeType values seen on Gotthard closures → friendly label.
+const CLOSURE_CAUSE: Record<string, { de: string; en: string }> = {
+  ausnahmetransport: { de: 'Sondertransport', en: 'Special transport' },
+  sondertransport: { de: 'Sondertransport', en: 'Special transport' },
+  bauarbeiten: { de: 'Bauarbeiten', en: 'Roadworks' },
+  baustelle: { de: 'Bauarbeiten', en: 'Roadworks' },
+  wartung: { de: 'Wartungsarbeiten', en: 'Maintenance' },
+  unterhalt: { de: 'Unterhaltsarbeiten', en: 'Maintenance' },
+  unterhaltsarbeiten: { de: 'Unterhaltsarbeiten', en: 'Maintenance' },
+};
+
+function closureCauseLabel(cause: string | null, lang: Lang): string | null {
+  if (!cause) return null;
+  const hit = CLOSURE_CAUSE[cause.trim().toLowerCase()];
+  return hit ? hit[lang] : cause;
+}
+
+function sameLocalDay(a: Date, b: Date): boolean {
+  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+}
+
+/** Headline for a planned closure: flags a same-day (tonight) closure specially. */
+export function closureTitle(c: ClosureWindow, lang: Lang): string {
+  const from = new Date(c.from);
+  const startsToday = !Number.isNaN(from.getTime()) && sameLocalDay(from, new Date()) && from > new Date();
+  if (lang === 'de') return startsToday ? 'Geplante Sperrung heute Nacht!' : 'Geplante Tunnelsperrung';
+  return startsToday ? 'Planned closure tonight!' : 'Planned tunnel closure';
+}
+
+/** Detail line: "Sondertransport – 15.07. 23:00 – 16.07. 01:00". */
+export function closureDetail(c: ClosureWindow, lang: Lang): string {
+  const loc = lang === 'de' ? 'de-CH' : 'en-CH';
+  const from = new Date(c.from);
+  const to = c.to ? new Date(c.to) : null;
+  const day = (d: Date) => new Intl.DateTimeFormat(loc, { day: '2-digit', month: '2-digit' }).format(d);
+  const time = (d: Date) => new Intl.DateTimeFormat(loc, { hour: '2-digit', minute: '2-digit' }).format(d);
+
+  let range = '';
+  if (!Number.isNaN(from.getTime())) {
+    if (to && !Number.isNaN(to.getTime())) {
+      range = sameLocalDay(from, to)
+        ? `${day(from)}, ${time(from)}–${time(to)}`
+        : `${day(from)} ${time(from)} – ${day(to)} ${time(to)}`;
+    } else {
+      range = `${day(from)} ${time(from)}`;
+    }
+  }
+
+  const cause = closureCauseLabel(c.cause, lang);
+  return cause && range ? `${cause} – ${range}` : cause ?? range;
+}
 
 export function formatKm(km: number | null, lang: Lang): string {
   if (km === null || km === undefined) return '–';

@@ -206,6 +206,46 @@ a {
   max-width: 60ch;
 }
 
+/* Planned-closure banner (e.g. a night-time special-transport closure). */
+.closure-banner {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+.closure-banner[hidden] {
+  display: none;
+}
+.closure-banner__item {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--color-closed) 45%, var(--color-border));
+  background: color-mix(in srgb, var(--color-closed) 10%, var(--color-surface));
+}
+.closure-banner__icon {
+  font-size: 1.25rem;
+  line-height: 1;
+  color: var(--color-closed);
+  flex-shrink: 0;
+}
+.closure-banner__text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+}
+.closure-banner__title {
+  font-weight: 700;
+  font-size: 0.95rem;
+  color: var(--color-closed);
+}
+.closure-banner__detail {
+  font-size: 0.9rem;
+  color: var(--color-text-muted);
+}
+
 .status-badge {
   display: inline-flex;
   align-items: center;

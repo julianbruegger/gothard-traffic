@@ -12,6 +12,13 @@ export interface PassStatus {
   note: string | null;
 }
 
+/** An announced, not-yet-active tunnel closure (e.g. a night-time special transport). */
+export interface ClosureWindow {
+  from: string;
+  to: string | null;
+  cause: string | null;
+}
+
 export interface GotthardData {
   updated: string | null;
   source: string;
@@ -19,6 +26,7 @@ export interface GotthardData {
     status: RoadStatus;
     north: PortalStatus;
     south: PortalStatus;
+    plannedClosures?: ClosureWindow[];
   };
   pass: PassStatus;
 }

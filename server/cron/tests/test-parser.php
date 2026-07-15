@@ -20,9 +20,12 @@ $assertions = [
     'south.queueKm == 1.0'               => $result['tunnel']['south']['queueKm'] === 1.0,
     'south.waitMinutes == 10'            => $result['tunnel']['south']['waitMinutes'] === 10,
     'pass.status == restricted'          => $result['pass']['status'] === 'restricted',
-    // NORTH + SOUTH + PASS only — works, leaked street, Ticino Stau and the
-    // expired closure are all excluded.
-    'debug matched 3 records'            => count($result['debug']) === 3,
+    'plannedClosures has 1 entry'        => count($result['tunnel']['plannedClosures']) === 1,
+    'plannedClosure cause == Ausnahmetransport' => ($result['tunnel']['plannedClosures'][0]['cause'] ?? null) === 'Ausnahmetransport',
+    'plannedClosure from == 2099-07-15T23:00' => str_starts_with($result['tunnel']['plannedClosures'][0]['from'] ?? '', '2099-07-15T23:00'),
+    // NORTH + SOUTH + PASS + PLANNED closure — works, leaked street, Ticino Stau
+    // and the expired closure are all excluded.
+    'debug matched 4 records'            => count($result['debug']) === 4,
 ];
 
 $failures = 0;

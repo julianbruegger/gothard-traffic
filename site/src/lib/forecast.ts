@@ -5,6 +5,12 @@
 // southIdx = expected queue at Südportal Airolo      (northbound, Italy → CH/DE)
 // Index 0 = no queue, 10 = extreme jam (>10 km / 90+ min)
 
+import {
+  empiricalDayProfiles,
+  measuredHolidayMult,
+  seasonBaseline,
+} from './forecast-empirical';
+
 export type TrafficLevel = 'low' | 'moderate' | 'high' | 'extreme';
 
 export interface ForecastHour {
@@ -87,6 +93,10 @@ interface HolidayPeriod {
   name: { de: string; en: string };
   matches: (m: number, d: number, dow: number) => boolean;
   boost: number;  // additive, so final = clamp(SEASON[m] + boost, 0, 1)
+  // Key into the measured holiday multipliers in empirical-profiles.json. When set
+  // and the data covered this period, the real per-direction multiplier is used
+  // instead of the hand-tuned `boost`.
+  empiricalKey?: string;
 }
 
 // Compute Easter Sunday for a given year (Anonymous Gregorian algorithm)
@@ -125,6 +135,13 @@ function buildHolidayPeriods(year: number): HolidayPeriod[] {
         return near(eDateMs, 5, 12)(ms);
       },
       boost: 0.3,
+      empiricalKey: 'easter',
+    },
+    {
+      name: { de: 'Tag der Arbeit (1. Mai)', en: 'Labour Day (1 May)' },
+      matches: (m, d, _dow) => m === 5 && d >= 1 && d <= 3,
+      boost: 0.25,
+      empiricalKey: 'labourday',
     },
     {
       name: { de: 'Auffahrt / Pfingsten', en: 'Ascension / Pentecost' },
@@ -225,8 +242,24 @@ function computeDayModel(dayUTC: Date, holidays: HolidayPeriod[], lang: 'de' | '
 
   const matchedHoliday = holidays.find(h => h.matches(month, dom, dow));
   const seasonMult = SEASON[month - 1];
-  const mult = Math.min(1.3, seasonMult + (matchedHoliday?.boost ?? 0));
-  const { n: nProf, s: sProf } = profilesFor(dow);
+  const boost = matchedHoliday?.boost ?? 0;
+
+  // Prefer real observed profiles for this weekday when the history covered it.
+  // The empirical base magnitudes sit at the observed spring `seasonBaseline`, so
+  // scale to the target month, and apply the holiday effect per direction —
+  // measured from the data where available, else derived from the model boost.
+  const seasonScale = seasonMult / seasonBaseline;
+  const additiveMult = seasonMult > 0
+    ? Math.min(1.3, seasonMult + boost) / seasonMult
+    : 1;
+  const measured = measuredHolidayMult(matchedHoliday?.empiricalKey);
+  const holMultN = measured ? measured.n : additiveMult;
+  const holMultS = measured ? measured.s : additiveMult;
+  const empirical = empiricalDayProfiles(dow, seasonScale, holMultN, holMultS);
+
+  // Empirical profiles are already fully scaled, so `mult` collapses to 1.
+  const mult = empirical ? 1 : Math.min(1.3, seasonMult + boost);
+  const { n: nProf, s: sProf } = empirical ?? profilesFor(dow);
 
   return {
     isoDate: `${year}-${pad2(month)}-${pad2(dom)}`,

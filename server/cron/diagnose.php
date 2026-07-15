@@ -127,14 +127,14 @@ if ($records !== false) {
         }
 
         // A compact excerpt of the human-readable comment.
-        $comment = $field('value');
+        $comment = $field('generalPublicComment');
         if ($comment === '(none)') {
-            $comment = $field('comment');
+            $comment = $field('value');
         }
         fwrite(STDOUT, '  comment               : ' . mb_substr($comment, 0, 240) . "\n");
 
-        // Would TrafficParser keep this record? Re-run its public logic via reflection-free heuristics.
-        fwrite(STDOUT, '  >> parser verdict     : ' . classify($text) . "\n");
+        // Would TrafficParser keep this record? Mirror its comment-based logic.
+        fwrite(STDOUT, '  >> parser verdict     : ' . classify($comment, $field('abnormalTrafficType')) . "\n");
     }
 }
 
@@ -145,52 +145,47 @@ fwrite(STDOUT, json_encode($parsed['tunnel'], JSON_PRETTY_PRINT | JSON_UNESCAPED
 fwrite(STDOUT, 'Parser matched (kept) records: ' . count($parsed['debug']) . "\n");
 
 /**
- * Mirror of TrafficParser's public match tokens so the diagnostic can say why a
- * record is or isn't kept, without changing the parser.
+ * Mirror of TrafficParser's comment-based classification, so the diagnostic
+ * explains why a record is or isn't kept. Keep in sync with TrafficParser.
  */
-function classify(string $text): string
+function classify(string $comment, string $abnormalType): string
 {
-    $tunnelTokens = [
-        'gotthard-strassentunnel', 'gotthard strassentunnel', 'gotthardtunnel', 'gotthard-tunnel',
-        'galleria del san gottardo', 'galleria autostradale del san gottardo', 'san gottardo',
-        'tunnel du gothard', 'tunnel routier du gothard',
-        'nordportal', 'südportal', 'suedportal', 'portale nord', 'portale sud',
-    ];
-    $excludeTokens = [
-        'göschenenalp', 'goeschenenalp', 'abfrutt',
-        'gotthardpass', 'passstrasse', 'passo del gottardo', 'col du gothard',
-        's. nicolao', 'san nicolao', 'nicolao',
-    ];
-    $passTokens = [
-        'gotthardpass', 'gotthard-pass', 'gotthard pass',
-        'passo del gottardo', 'passo del san gottardo',
-        'col du gothard', 'col du saint-gothard', 'tremola',
-    ];
+    if ($comment === '(none)' || trim($comment) === '') {
+        return 'SKIPPED — no human-readable comment';
+    }
+    $c = mb_strtolower($comment);
 
-    $has = static function (array $tokens) use ($text): ?string {
-        foreach ($tokens as $t) {
-            if ($t !== '' && str_contains($text, $t)) {
-                return $t;
-            }
+    if (str_contains($c, 'aufgehoben') || str_contains($c, 'aufhebung')) {
+        return 'SKIPPED — rescinded (Aufgehoben)';
+    }
+
+    // Pass road.
+    $passTokens = ['gotthardpass', 'gotthard-pass', 'gotthard pass', 'passo del gottardo', 'tremola'];
+    foreach ($passTokens as $t) {
+        if (str_contains($c, $t)) {
+            return "PASS record (token: {$t})";
         }
-        return null;
-    };
+    }
 
-    $ex = $has($excludeTokens);
-    $tun = $has($tunnelTokens);
-    $pass = $has($passTokens);
+    // Whole tunnel bore closure.
+    if (str_contains($c, 'tunnel gesperrt') && str_contains($c, 'göschenen') && str_contains($c, 'airolo')) {
+        return 'TUNNEL CLOSED (if currently in its validity window)';
+    }
 
-    if ($pass !== null) {
-        return "PASS record (token: {$pass})";
+    // Approach queue.
+    $isQueue = str_contains($c, 'sachlage: stau') || str_contains($c, 'stockender verkehr')
+        || in_array(mb_strtolower($abnormalType), ['stationarytraffic', 'queuingtraffic'], true);
+    if (!$isQueue) {
+        return 'SKIPPED — not a Stau (info/roadworks only)';
     }
-    if ($ex !== null && $tun !== null) {
-        return "SKIPPED — excluded by '{$ex}' even though tunnel token '{$tun}' present";
+    if (preg_match('/(?:->|<->)\s*gotthard/u', $c) !== 1) {
+        return 'SKIPPED — Stau but not heading toward the tunnel ("-> Gotthard")';
     }
-    if ($ex !== null) {
-        return "SKIPPED — exclude token '{$ex}'";
+    if (str_contains($c, 'göschenen')) {
+        return 'TUNNEL QUEUE — NORTH portal (Göschenen)';
     }
-    if ($tun !== null) {
-        return "TUNNEL record (token: {$tun})";
+    if (str_contains($c, 'airolo')) {
+        return 'TUNNEL QUEUE — SOUTH portal (Airolo)';
     }
-    return 'SKIPPED — no tunnel/pass token (mentions Gotthard axis but not a portal/tunnel name)';
+    return 'SKIPPED — Stau toward Gotthard but not at a portal town (elsewhere on A2)';
 }

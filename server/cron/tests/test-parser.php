@@ -13,12 +13,16 @@ $result = $parser->parse($xml);
 echo json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) . "\n";
 
 $assertions = [
-    'tunnel.status == congested' => $result['tunnel']['status'] === 'congested',
-    'north.queueKm == 4.5' => $result['tunnel']['north']['queueKm'] === 4.5,
-    'north.waitMinutes == 45' => $result['tunnel']['north']['waitMinutes'] === 45,
-    'south.queueKm == null' => $result['tunnel']['south']['queueKm'] === null,
-    'pass.status == open' => $result['pass']['status'] === 'open',
-    'debug matched 2 records (not the A13 one)' => count($result['debug']) === 2,
+    'tunnel.status == congested'         => $result['tunnel']['status'] === 'congested',
+    'north.queueKm == 2.0'               => $result['tunnel']['north']['queueKm'] === 2.0,
+    'north.waitMinutes == 20'            => $result['tunnel']['north']['waitMinutes'] === 20,
+    'north.cause == Verkehrsüberlastung' => $result['tunnel']['north']['cause'] === 'Verkehrsüberlastung',
+    'south.queueKm == 1.0'               => $result['tunnel']['south']['queueKm'] === 1.0,
+    'south.waitMinutes == 10'            => $result['tunnel']['south']['waitMinutes'] === 10,
+    'pass.status == restricted'          => $result['pass']['status'] === 'restricted',
+    // NORTH + SOUTH + PASS only — works, leaked street, Ticino Stau and the
+    // expired closure are all excluded.
+    'debug matched 3 records'            => count($result['debug']) === 3,
 ];
 
 $failures = 0;

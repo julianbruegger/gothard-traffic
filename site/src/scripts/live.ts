@@ -65,13 +65,18 @@ function renderData(data: GotthardData) {
   setText('hero-updated', formatUpdated(data.updated, lang));
   if (data.updated) setAttr('hero-updated', 'datetime', data.updated);
 
+  // While the bore is closed a wait time is meaningless (reopening may be
+  // unknown), so show a dash instead of a stale ETA.
+  const closed = data.tunnel.status === 'closed';
+  const waitText = (min: number | null) => (closed ? '–' : formatMinutes(min, lang));
+
   setText('north-queue', formatKm(data.tunnel.north.queueKm, lang));
-  setText('north-wait', formatMinutes(data.tunnel.north.waitMinutes, lang));
+  setText('north-wait', waitText(data.tunnel.north.waitMinutes));
   if (data.tunnel.north.cause) setText('north-cause', data.tunnel.north.cause);
   renderClosures('north', data.tunnel.north.closures);
 
   setText('south-queue', formatKm(data.tunnel.south.queueKm, lang));
-  setText('south-wait', formatMinutes(data.tunnel.south.waitMinutes, lang));
+  setText('south-wait', waitText(data.tunnel.south.waitMinutes));
   if (data.tunnel.south.cause) setText('south-cause', data.tunnel.south.cause);
   renderClosures('south', data.tunnel.south.closures);
 

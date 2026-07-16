@@ -81,6 +81,7 @@ final class TrafficParser
         $pass = ['status' => 'unknown', 'note' => null];
         $tunnelClosed = false;
         $closureReason = null;
+        $closureUntil = null;
         $plannedClosures = [];
         $debugMatches = [];
 
@@ -117,6 +118,12 @@ final class TrafficParser
                             if ($reason !== null && mb_strtolower($reason) !== 'tunnel gesperrt') {
                                 $closureReason = $reason;
                             }
+                        }
+                        // Planned/timed closures carry an end time; incidents
+                        // (Pannenfahrzeug, Unfall …) do not — leaving this null
+                        // is what flags the reopening time as unknown downstream.
+                        if ($closureUntil === null && $to !== null) {
+                            $closureUntil = $to->format(DateTimeInterface::ATOM);
                         }
                         $debugMatches[] = $doc->saveXML($record);
                     } elseif ($from !== null && $from > $now) {
@@ -207,6 +214,7 @@ final class TrafficParser
             'tunnel' => [
                 'status' => $status,
                 'closureReason' => $tunnelClosed ? $closureReason : null,
+                'closureUntil' => $tunnelClosed ? $closureUntil : null,
                 'north' => $north,
                 'south' => $south,
                 'plannedClosures' => array_values($plannedClosures),

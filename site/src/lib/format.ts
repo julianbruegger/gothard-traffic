@@ -22,6 +22,16 @@ export function closureCauseLabel(cause: string | null | undefined, lang: Lang):
   return hit ? hit[lang] : cause;
 }
 
+/** "HH:MM" (Swiss local) for a closure's reopening time, or null if unknown/invalid. */
+function reopeningTime(iso: string | null | undefined): string | null {
+  if (!iso) return null;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return null;
+  return new Intl.DateTimeFormat('de-CH', {
+    hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Zurich',
+  }).format(d);
+}
+
 function sameLocalDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
@@ -125,12 +135,15 @@ export function buildSummary(data: GotthardData, lang: Lang): string {
 
   if (data.tunnel.status === 'closed') {
     const reason = closureCauseLabel(data.tunnel.closureReason, lang);
+    const reopen = reopeningTime(data.tunnel.closureUntil);
     if (lang === 'de') {
-      const lead = `Gotthard-Strassentunnel gesperrt${reason ? ` (${reason})` : ''}.`;
-      return `${lead} Gotthardpass: ${passStatusLabel(data.pass.status, lang).toLowerCase()}.`;
+      const lead = `Gotthard-Strassentunnel gesperrt${reason ? ` (${reason})` : ''}`;
+      const when = reopen ? ` – voraussichtliche Öffnung um ${reopen} Uhr` : ' – Wiedereröffnungszeit noch nicht bekannt';
+      return `${lead}${when}. Gotthardpass: ${passStatusLabel(data.pass.status, lang).toLowerCase()}.`;
     }
-    const lead = `Gotthard road tunnel closed${reason ? ` (${reason})` : ''}.`;
-    return `${lead} Gotthard Pass: ${passStatusLabel(data.pass.status, lang).toLowerCase()}.`;
+    const lead = `Gotthard road tunnel closed${reason ? ` (${reason})` : ''}`;
+    const when = reopen ? ` – expected to reopen around ${reopen}` : ' – reopening time not yet known';
+    return `${lead}${when}. Gotthard Pass: ${passStatusLabel(data.pass.status, lang).toLowerCase()}.`;
   }
 
   if (lang === 'de') {

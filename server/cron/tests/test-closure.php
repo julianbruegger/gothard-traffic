@@ -64,6 +64,8 @@ echo json_encode($result['tunnel'], JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) 
 $assertions = [
     'tunnel.status == closed'            => $result['tunnel']['status'] === 'closed',
     'closureReason == Pannenfahrzeug'    => ($result['tunnel']['closureReason'] ?? null) === 'Pannenfahrzeug',
+    // An incident carries no end time → reopening is unknown.
+    'closureUntil is null (incident)'    => ($result['tunnel']['closureUntil'] ?? 'x') === null,
     // Queues still parse while the tunnel is closed (approach jams build up).
     'north.queueKm == 3.0'               => $result['tunnel']['north']['queueKm'] === 3.0,
     'north.waitMinutes == 25'            => $result['tunnel']['north']['waitMinutes'] === 25,

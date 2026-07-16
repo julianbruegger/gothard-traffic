@@ -27,6 +27,20 @@ final class Format
         return $hit[$lang] ?? $cause;
     }
 
+    /** "HH:MM" (Swiss local) for a closure's reopening time, or null if unknown/invalid. */
+    public static function reopeningTime(?string $iso): ?string
+    {
+        if ($iso === null || trim($iso) === '') {
+            return null;
+        }
+        try {
+            $date = new DateTimeImmutable($iso);
+        } catch (Exception) {
+            return null;
+        }
+        return $date->setTimezone(new DateTimeZone('Europe/Zurich'))->format('H:i');
+    }
+
     public static function km(?float $km, string $lang): string
     {
         if ($km === null) {
@@ -92,12 +106,15 @@ final class Format
 
         if (($data['tunnel']['status'] ?? '') === 'closed') {
             $reason = self::closureCauseLabel($data['tunnel']['closureReason'] ?? null, $lang);
+            $reopen = self::reopeningTime($data['tunnel']['closureUntil'] ?? null);
             if ($lang === 'de') {
-                $lead = 'Gotthard-Strassentunnel gesperrt' . ($reason ? " ({$reason})" : '') . '.';
-                return "{$lead} Gotthardpass: {$passLabel}.";
+                $lead = 'Gotthard-Strassentunnel gesperrt' . ($reason ? " ({$reason})" : '');
+                $when = $reopen ? " – voraussichtliche Öffnung um {$reopen} Uhr" : ' – Wiedereröffnungszeit noch nicht bekannt';
+                return "{$lead}{$when}. Gotthardpass: {$passLabel}.";
             }
-            $lead = 'Gotthard road tunnel closed' . ($reason ? " ({$reason})" : '') . '.';
-            return "{$lead} Gotthard Pass: {$passLabel}.";
+            $lead = 'Gotthard road tunnel closed' . ($reason ? " ({$reason})" : '');
+            $when = $reopen ? " – expected to reopen around {$reopen}" : ' – reopening time not yet known';
+            return "{$lead}{$when}. Gotthard Pass: {$passLabel}.";
         }
 
         if ($lang === 'de') {

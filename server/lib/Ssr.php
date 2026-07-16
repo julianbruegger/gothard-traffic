@@ -50,14 +50,18 @@ final class Ssr
         $html = self::replaceMarker($html, 'summary', Format::summary($data, $lang));
         $html = self::replaceMarker($html, 'updated-human', Format::updated($data['updated'] ?? null, $lang));
 
+        // A wait ETA is meaningless while the bore is closed → show a dash.
+        $closed = ($data['tunnel']['status'] ?? '') === 'closed';
+        $waitText = static fn (?int $min): string => $closed ? '–' : Format::minutes($min, $lang);
+
         $html = self::replaceMarker($html, 'north-queue', Format::km($data['tunnel']['north']['queueKm'] ?? null, $lang));
-        $html = self::replaceMarker($html, 'north-wait', Format::minutes($data['tunnel']['north']['waitMinutes'] ?? null, $lang));
+        $html = self::replaceMarker($html, 'north-wait', $waitText($data['tunnel']['north']['waitMinutes'] ?? null));
         if (!empty($data['tunnel']['north']['cause'])) {
             $html = self::replaceMarker($html, 'north-cause', (string) $data['tunnel']['north']['cause']);
         }
 
         $html = self::replaceMarker($html, 'south-queue', Format::km($data['tunnel']['south']['queueKm'] ?? null, $lang));
-        $html = self::replaceMarker($html, 'south-wait', Format::minutes($data['tunnel']['south']['waitMinutes'] ?? null, $lang));
+        $html = self::replaceMarker($html, 'south-wait', $waitText($data['tunnel']['south']['waitMinutes'] ?? null));
         if (!empty($data['tunnel']['south']['cause'])) {
             $html = self::replaceMarker($html, 'south-cause', (string) $data['tunnel']['south']['cause']);
         }

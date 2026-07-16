@@ -7,6 +7,7 @@ CREATE TABLE IF NOT EXISTS gotthard_snapshots (
     fetched_at     DATETIME          NOT NULL COMMENT 'UTC timestamp of the fetch',
     tunnel_status  VARCHAR(20)       NOT NULL DEFAULT 'unknown',
     closure_reason VARCHAR(200)      DEFAULT NULL COMMENT 'Ursache of an active full tunnel closure, e.g. Pannenfahrzeug',
+    closure_until  DATETIME          DEFAULT NULL COMMENT 'Planned reopening time of an active closure (UTC); NULL = unknown (incident)',
     north_queue_km DECIMAL(5,2)      DEFAULT NULL,
     north_wait_min SMALLINT UNSIGNED DEFAULT NULL,
     north_cause    VARCHAR(200)      DEFAULT NULL,
@@ -25,3 +26,4 @@ CREATE TABLE IF NOT EXISTS gotthard_snapshots (
 
 -- Migration for installs created before closure_reason existed (safe, nullable):
 -- ALTER TABLE gotthard_snapshots ADD COLUMN closure_reason VARCHAR(200) DEFAULT NULL AFTER tunnel_status;
+-- ALTER TABLE gotthard_snapshots ADD COLUMN closure_until DATETIME DEFAULT NULL AFTER closure_reason;

@@ -26,6 +26,8 @@ export interface GotthardData {
     status: RoadStatus;
     /** Ursache of an active full tunnel closure (e.g. "Pannenfahrzeug"), else null. */
     closureReason?: string | null;
+    /** Planned reopening time (ISO) of an active closure; null = unknown (incident). */
+    closureUntil?: string | null;
     north: PortalStatus;
     south: PortalStatus;
     plannedClosures?: ClosureWindow[];

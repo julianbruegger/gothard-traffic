@@ -41,6 +41,9 @@ $data = [
     'tunnel'  => [
         'status' => $row['tunnel_status'],
         'closureReason' => $row['closure_reason'] ?? null,
+        'closureUntil' => !empty($row['closure_until'])
+            ? (new DateTimeImmutable($row['closure_until'], new DateTimeZone('UTC')))->format(DateTimeInterface::ATOM)
+            : null,
         'north'  => [
             'queueKm'     => $row['north_queue_km'] !== null ? (float) $row['north_queue_km'] : null,
             'waitMinutes' => $row['north_wait_min'] !== null ? (int)   $row['north_wait_min'] : null,

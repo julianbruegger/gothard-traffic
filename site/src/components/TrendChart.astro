@@ -26,6 +26,19 @@ const chart = buildSparkline(history);
     >
       <desc id="trend-desc">{t(lang, 'trend.queueLabel')}</desc>
 
+      <!-- Closure bands: periods the tunnel was fully closed -->
+      <g id="trend-closures">
+        {chart.closures.map(band => (
+          <rect
+            x={band.x1} y="8" width={Math.max(band.x2 - band.x1, 1)} height={chart.height - 32}
+            fill="var(--color-closed-bg)"
+            stroke="var(--color-closed)" stroke-width="1" stroke-dasharray="3 2"
+          >
+            <title>{t(lang, 'trend.closedLabel')}</title>
+          </rect>
+        ))}
+      </g>
+
       <!-- Grid lines at every tick -->
       {chart.ticks.map(tick => (
         <line
@@ -62,6 +75,10 @@ const chart = buildSparkline(history);
         <span class="trend__legend-swatch" style="background: var(--color-unknown);"></span>
         {t(lang, 'trend.southLegend')}
       </span>
+      <span class="trend__legend-item">
+        <span class="trend__legend-swatch trend__legend-swatch--closed" style="background: var(--color-closed-bg); border: 1px dashed var(--color-closed);"></span>
+        {t(lang, 'trend.closedLabel')}
+      </span>
     </div>
   </div>
 
@@ -74,14 +91,16 @@ const chart = buildSparkline(history);
           <th scope="col">{t(lang, 'hero.lastUpdated')}</th>
           <th scope="col">{t(lang, 'portal.north')}</th>
           <th scope="col">{t(lang, 'portal.south')}</th>
+          <th scope="col">{t(lang, 'nav.status')}</th>
         </tr>
       </thead>
       <tbody id="trend-table-body">
         {history.map((point) => (
-          <tr>
+          <tr data-closed={point.status === 'closed' ? '' : undefined}>
             <td>{formatUpdated(point.t, lang)}</td>
             <td>{formatKm(point.northQueueKm, lang)}</td>
             <td>{formatKm(point.southQueueKm, lang)}</td>
+            <td>{point.status === 'closed' ? `⛔ ${t(lang, 'status.closed')}` : '–'}</td>
           </tr>
         ))}
       </tbody>

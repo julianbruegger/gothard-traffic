@@ -184,12 +184,26 @@ function renderHistory(history: HistoryPoint[]) {
   if (northPath) northPath.setAttribute('d', chart.northPath);
   if (southPath) southPath.setAttribute('d', chart.southPath);
 
+  const closuresGroup = document.getElementById('trend-closures');
+  if (closuresGroup) {
+    const closedLabel = escapeHtml(t(lang, 'trend.closedLabel'));
+    closuresGroup.innerHTML = chart.closures
+      .map(
+        (b) =>
+          `<rect x="${b.x1}" y="8" width="${Math.max(b.x2 - b.x1, 1)}" height="${chart.height - 32}" fill="var(--color-closed-bg)" stroke="var(--color-closed)" stroke-width="1" stroke-dasharray="3 2"><title>${closedLabel}</title></rect>`
+      )
+      .join('');
+  }
+
   const tbody = document.getElementById('trend-table-body');
   if (tbody) {
+    const closedCell = `⛔ ${escapeHtml(t(lang, 'status.closed'))}`;
     tbody.innerHTML = history
       .map(
-        (point) =>
-          `<tr><td>${formatUpdated(point.t, lang)}</td><td>${formatKm(point.northQueueKm, lang)}</td><td>${formatKm(point.southQueueKm, lang)}</td></tr>`
+        (point) => {
+          const isClosed = point.status === 'closed';
+          return `<tr${isClosed ? ' data-closed=""' : ''}><td>${formatUpdated(point.t, lang)}</td><td>${formatKm(point.northQueueKm, lang)}</td><td>${formatKm(point.southQueueKm, lang)}</td><td>${isClosed ? closedCell : '–'}</td></tr>`;
+        }
       )
       .join('');
   }

@@ -37,4 +37,6 @@ export interface HistoryPoint {
   southQueueKm: number | null;
   northWaitMinutes: number | null;
   southWaitMinutes: number | null;
+  /** Tunnel road status at this sample. Absent in older records (treated as unknown). */
+  status?: RoadStatus;
 }

@@ -15,6 +15,12 @@ export interface ChartPoint {
   south: number | null;
 }
 
+/** A horizontal band marking a period during which the tunnel was closed. */
+export interface ClosureBand {
+  x1: number;
+  x2: number;
+}
+
 export interface SparklineResult {
   northPath: string;
   southPath: string;
@@ -23,6 +29,7 @@ export interface SparklineResult {
   maxKm: number;
   ticks: TimeTick[];
   points: ChartPoint[];
+  closures: ClosureBand[];
 }
 
 const PADDING_X = 8;
@@ -31,7 +38,7 @@ const PADDING_BOTTOM = 24; // space for time labels
 
 export function buildSparkline(history: HistoryPoint[], width = 640, height = 220): SparklineResult {
   if (history.length === 0) {
-    return { northPath: '', southPath: '', width, height, maxKm: 0, ticks: [], points: [] };
+    return { northPath: '', southPath: '', width, height, maxKm: 0, ticks: [], points: [], closures: [] };
   }
 
   const maxKm = Math.max(1, ...history.map((p) => Math.max(p.northQueueKm ?? 0, p.southQueueKm ?? 0)));
@@ -65,6 +72,26 @@ export function buildSparkline(history: HistoryPoint[], width = 640, height = 22
     ticks.push({ x: +x.toFixed(1), label });
   }
 
+  // Closure bands: each sample flagged `closed` covers the span from the
+  // midpoint to its previous neighbour up to the midpoint to its next one, so a
+  // lone closed sample still renders as a visible band. Adjacent bands merge.
+  const closures: ClosureBand[] = [];
+  history.forEach((p, i) => {
+    if (p.status !== 'closed') return;
+    const left = i === 0 ? xOf(0) : (xOf(i - 1) + xOf(i)) / 2;
+    const right = i === history.length - 1 ? xOf(i) : (xOf(i) + xOf(i + 1)) / 2;
+    const prev = closures[closures.length - 1];
+    if (prev && left - prev.x2 <= 0.5) {
+      prev.x2 = right;
+    } else {
+      closures.push({ x1: +left.toFixed(1), x2: +right.toFixed(1) });
+    }
+  });
+  for (const band of closures) {
+    band.x1 = +band.x1.toFixed(1);
+    band.x2 = +band.x2.toFixed(1);
+  }
+
   const points: ChartPoint[] = history.map((p, i) => ({
     x: +xOf(i).toFixed(1),
     yNorth: +yOf(p.northQueueKm ?? 0).toFixed(1),
@@ -82,5 +109,6 @@ export function buildSparkline(history: HistoryPoint[], width = 640, height = 22
     maxKm,
     ticks,
     points,
+    closures,
   };
 }

@@ -406,9 +406,13 @@ function renderDiversions(data: GotthardData) {
   }
   section.removeAttribute('hidden');
 
-  lead.textContent = lang === 'de'
-    ? `Aktuell ca. ${res.worstWait} Min Wartezeit (${res.directionLabel}). Mögliche Ausweichrouten:`
-    : `Currently about ${res.worstWait} min wait (${res.directionLabel}). Possible alternative routes:`;
+  lead.textContent = res.closed
+    ? (lang === 'de'
+        ? 'Gotthard-Strassentunnel gesperrt. Mögliche Ausweichrouten:'
+        : 'Gotthard road tunnel closed. Possible alternative routes:')
+    : (lang === 'de'
+        ? `Aktuell ca. ${res.worstWait} Min Wartezeit (${res.directionLabel}). Mögliche Ausweichrouten:`
+        : `Currently about ${res.worstWait} min wait (${res.directionLabel}). Possible alternative routes:`);
 
   const recLabel = lang === 'de' ? 'Schneller als warten' : 'Faster than waiting';
   const detour = (min: number) => lang === 'de' ? `+${min} Min Umweg` : `+${min} min detour`;

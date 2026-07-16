@@ -28,13 +28,13 @@ final class SnapshotStore
         $stmt = $this->pdo->prepare(
             'INSERT INTO gotthard_snapshots
                (fetched_at,
-                tunnel_status,
+                tunnel_status, closure_reason,
                 north_queue_km, north_wait_min, north_cause,
                 south_queue_km, south_wait_min, south_cause,
                 pass_status, pass_note, planned_closures)
              VALUES
                (:fetched_at,
-                :tunnel_status,
+                :tunnel_status, :closure_reason,
                 :north_queue_km, :north_wait_min, :north_cause,
                 :south_queue_km, :south_wait_min, :south_cause,
                 :pass_status, :pass_note, :planned_closures)'
@@ -45,6 +45,7 @@ final class SnapshotStore
         $stmt->execute([
             ':fetched_at'     => gmdate('Y-m-d H:i:s', strtotime($fetchedAt)),
             ':tunnel_status'  => $tunnel['status'],
+            ':closure_reason' => $tunnel['closureReason'] ?? null,
             ':north_queue_km' => $tunnel['north']['queueKm'],
             ':north_wait_min' => $tunnel['north']['waitMinutes'],
             ':north_cause'    => $tunnel['north']['cause'] ?? null,

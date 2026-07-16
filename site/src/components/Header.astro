@@ -22,9 +22,15 @@ const { lang, currentPage = 'status' } = Astro.props;
         {lang === 'de' ? 'Prognosen' : 'Forecasts'}
       </a>
     </nav>
-    <nav class="lang-switch" aria-label="Language">
-      <a href="/?lang=de" aria-current={lang === 'de' ? 'true' : 'false'} data-lang-link="de">DE</a>
-      <a href="/?lang=en" aria-current={lang === 'en' ? 'true' : 'false'} data-lang-link="en">EN</a>
-    </nav>
+    <div class="header__actions">
+      <nav class="lang-switch" aria-label="Language">
+        <a href="/?lang=de" aria-current={lang === 'de' ? 'true' : 'false'} data-lang-link="de">DE</a>
+        <a href="/?lang=en" aria-current={lang === 'en' ? 'true' : 'false'} data-lang-link="en">EN</a>
+      </nav>
+      <button type="button" class="theme-toggle" id="theme-toggle" aria-label={t(lang, 'theme.toggle')}>
+        <span class="theme-toggle__moon" aria-hidden="true">☾</span>
+        <span class="theme-toggle__sun" aria-hidden="true">☀</span>
+      </button>
+    </div>
   </div>
 </header>

@@ -16,6 +16,7 @@ export interface DiversionRoute {
 
 export interface DiversionResult {
   trigger: boolean;
+  closed: boolean;
   worstWait: number;
   directionLabel: string | null;
   routes: DiversionRoute[];
@@ -78,9 +79,12 @@ const ROUTES: RouteDef[] = [
  * Triggers when the worst directional wait reaches DIVERSION_THRESHOLD_MIN.
  */
 export function suggestDiversions(data: GotthardData, lang: Lang): DiversionResult {
+  const closed = data.tunnel.status === 'closed';
   const northWait = data.tunnel.north.waitMinutes ?? 0;
   const southWait = data.tunnel.south.waitMinutes ?? 0;
   const worstWait = Math.max(northWait, southWait);
+  // A full closure = effectively unbounded wait, so every open detour beats it.
+  const beatWait = closed ? Infinity : worstWait;
 
   const directionLabel =
     worstWait <= 0
@@ -97,7 +101,7 @@ export function suggestDiversions(data: GotthardData, lang: Lang): DiversionResu
       description: L(lang, r.description),
       extraMinutes: r.extraMinutes,
       available,
-      recommended: available && r.extraMinutes < worstWait,
+      recommended: available && r.extraMinutes < beatWait,
       note: r.note ? (r.note(data) ? L(lang, r.note(data) as Bi) : null) : null,
     };
   }).sort((a, b) => {
@@ -107,7 +111,8 @@ export function suggestDiversions(data: GotthardData, lang: Lang): DiversionResu
   });
 
   return {
-    trigger: worstWait >= DIVERSION_THRESHOLD_MIN,
+    trigger: closed || worstWait >= DIVERSION_THRESHOLD_MIN,
+    closed,
     worstWait,
     directionLabel,
     routes,

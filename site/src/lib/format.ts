@@ -11,9 +11,12 @@ const CLOSURE_CAUSE: Record<string, { de: string; en: string }> = {
   wartung: { de: 'Wartungsarbeiten', en: 'Maintenance' },
   unterhalt: { de: 'Unterhaltsarbeiten', en: 'Maintenance' },
   unterhaltsarbeiten: { de: 'Unterhaltsarbeiten', en: 'Maintenance' },
+  pannenfahrzeug: { de: 'Pannenfahrzeug', en: 'Broken-down vehicle' },
+  unfall: { de: 'Unfall', en: 'Accident' },
+  brand: { de: 'Brand', en: 'Fire' },
 };
 
-function closureCauseLabel(cause: string | null, lang: Lang): string | null {
+export function closureCauseLabel(cause: string | null | undefined, lang: Lang): string | null {
   if (!cause) return null;
   const hit = CLOSURE_CAUSE[cause.trim().toLowerCase()];
   return hit ? hit[lang] : cause;
@@ -119,6 +122,16 @@ export function buildSummary(data: GotthardData, lang: Lang): string {
   const south = data.tunnel.south;
   const noNorthQueue = !north.queueKm || north.queueKm <= 0;
   const noSouthQueue = !south.queueKm || south.queueKm <= 0;
+
+  if (data.tunnel.status === 'closed') {
+    const reason = closureCauseLabel(data.tunnel.closureReason, lang);
+    if (lang === 'de') {
+      const lead = `Gotthard-Strassentunnel gesperrt${reason ? ` (${reason})` : ''}.`;
+      return `${lead} Gotthardpass: ${passStatusLabel(data.pass.status, lang).toLowerCase()}.`;
+    }
+    const lead = `Gotthard road tunnel closed${reason ? ` (${reason})` : ''}.`;
+    return `${lead} Gotthard Pass: ${passStatusLabel(data.pass.status, lang).toLowerCase()}.`;
+  }
 
   if (lang === 'de') {
     if (noNorthQueue && noSouthQueue) {

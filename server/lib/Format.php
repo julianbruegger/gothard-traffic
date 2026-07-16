@@ -7,6 +7,26 @@ require_once __DIR__ . '/I18n.php';
 /** Mirrors site/src/lib/format.ts - keep both in sync when changing wording/logic. */
 final class Format
 {
+    /** DATEX "Ursache" values seen on Gotthard closures → friendly label. */
+    private const CLOSURE_CAUSE = [
+        'ausnahmetransport' => ['de' => 'Sondertransport', 'en' => 'Special transport'],
+        'sondertransport'   => ['de' => 'Sondertransport', 'en' => 'Special transport'],
+        'pannenfahrzeug'    => ['de' => 'Pannenfahrzeug', 'en' => 'Broken-down vehicle'],
+        'unfall'            => ['de' => 'Unfall', 'en' => 'Accident'],
+        'brand'             => ['de' => 'Brand', 'en' => 'Fire'],
+        'bauarbeiten'       => ['de' => 'Bauarbeiten', 'en' => 'Roadworks'],
+        'baustelle'         => ['de' => 'Bauarbeiten', 'en' => 'Roadworks'],
+    ];
+
+    public static function closureCauseLabel(?string $cause, string $lang): ?string
+    {
+        if ($cause === null || trim($cause) === '') {
+            return null;
+        }
+        $hit = self::CLOSURE_CAUSE[mb_strtolower(trim($cause))] ?? null;
+        return $hit[$lang] ?? $cause;
+    }
+
     public static function km(?float $km, string $lang): string
     {
         if ($km === null) {
@@ -69,6 +89,16 @@ final class Format
         $noNorth = ($north['queueKm'] ?? 0) <= 0;
         $noSouth = ($south['queueKm'] ?? 0) <= 0;
         $passLabel = mb_strtolower(self::passStatusLabel($data['pass']['status'], $lang));
+
+        if (($data['tunnel']['status'] ?? '') === 'closed') {
+            $reason = self::closureCauseLabel($data['tunnel']['closureReason'] ?? null, $lang);
+            if ($lang === 'de') {
+                $lead = 'Gotthard-Strassentunnel gesperrt' . ($reason ? " ({$reason})" : '') . '.';
+                return "{$lead} Gotthardpass: {$passLabel}.";
+            }
+            $lead = 'Gotthard road tunnel closed' . ($reason ? " ({$reason})" : '') . '.';
+            return "{$lead} Gotthard Pass: {$passLabel}.";
+        }
 
         if ($lang === 'de') {
             if ($noNorth && $noSouth) {

@@ -22,7 +22,7 @@ const chart = buildSparkline(history);
       role="img"
       aria-labelledby="trend-desc"
       preserveAspectRatio="none"
-      style="width: 100%; height: auto;"
+      style="width: 100%; height: auto; cursor: crosshair;"
     >
       <desc id="trend-desc">{t(lang, 'trend.queueLabel')}</desc>
 
@@ -47,6 +47,8 @@ const chart = buildSparkline(history);
           font-family="var(--font-sans)"
         >{tick.label}</text>
       ))}
+
+      <g id="trend-hover" style="pointer-events: none;"></g>
     </svg>
     <noscript>
       <p>{t(lang, 'trend.noscript')}</p>

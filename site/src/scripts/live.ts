@@ -3,7 +3,8 @@ import { formatKm, formatMinutes, formatUpdated, formatTrendDelta, TREND_ARROW, 
 import { buildSparkline, type SparklineResult } from '../lib/chart';
 import { computeQueueTrend } from '../lib/trend';
 import { generateForecast, generateDayCurve, swissDayInfo, type ForecastDay, type ForecastPoint, type TrafficLevel } from '../lib/forecast';
-import { buildForecastChart, type ActualPoint, type ForecastChartResult } from '../lib/forecast-chart';
+import { buildForecastChart, type ActualPoint, type Direction, type ForecastChartResult } from '../lib/forecast-chart';
+import { historicDatesForWeekday, historicDaySeries, historicMeta } from '../lib/historic-days';
 import { suggestDiversions } from '../lib/diversion';
 import type { GotthardData, HistoryPoint, ClosureWindow } from '../lib/types';
 
@@ -223,33 +224,118 @@ function minuteToHHMM(m: number): string {
   return `${pad2(h)}:${pad2(m % 60)}`;
 }
 
+// Swiss-local weekday of `now` (0 = Sunday .. 6 = Saturday).
+function swissDow(now: Date): number {
+  return new Date(`${swissDayInfo(now).isoDate}T12:00:00Z`).getUTCDay();
+}
+
+function isoDateLabel(iso: string): string {
+  const [, m, d] = iso.split('-');
+  return lang === 'de' ? `${d}.${m}.` : `${m}/${d}`;
+}
+
+// fchartDayOffset: days from today (Swiss local), can be negative. Bound to the
+// current Mon–Sun week, matching the day tabs. fchartDirection: which portal's
+// curve is currently drawn (the chart shows one direction at a time).
+let fchartDayOffset = 0;
+let fchartDirection: Direction = 'north';
+let lastHistory: HistoryPoint[] = [];
+
 // Current chart geometry + data, kept so the hover handler can look up values.
 interface FChartState {
   chart: ForecastChartResult;
   points: ForecastPoint[];
   actual: ActualPoint[];
-  nowMin: number;
+  nowMin: number | null;
+  direction: Direction;
 }
 let fchartState: FChartState | null = null;
 let fchartHoverBound = false;
+
+function renderDayTabs(now: Date) {
+  const nav = document.getElementById('fchart-daynav');
+  if (!nav) return;
+
+  const mondayOffset = -((swissDow(now) + 6) % 7);
+  const items: Array<{ offset: number; label: string; isToday: boolean }> = [];
+  for (let i = 0; i < 7; i++) {
+    const offset = mondayOffset + i;
+    const from = new Date(now.getTime() + offset * 86_400_000);
+    const day = generateForecast(from, lang, 1)[0];
+    if (day) items.push({ offset, label: day.dayLabel, isToday: offset === 0 });
+  }
+
+  nav.innerHTML = items
+    .map(it => `<button type="button" class="fchart__day-tab" data-offset="${it.offset}" data-today="${it.isToday}">${it.label}</button>`)
+    .join('');
+  updateDayTabsActive();
+}
+
+function updateDayTabsActive() {
+  document.querySelectorAll<HTMLButtonElement>('#fchart-daynav .fchart__day-tab').forEach(btn => {
+    btn.setAttribute('data-active', String(Number(btn.dataset.offset) === fchartDayOffset));
+  });
+}
+
+function bindDayNav() {
+  document.getElementById('fchart-daynav')?.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest('.fchart__day-tab') as HTMLButtonElement | null;
+    if (!btn) return;
+    fchartDayOffset = Number(btn.dataset.offset);
+    updateDayTabsActive();
+    renderForecastChart(lastHistory);
+  });
+}
+
+function updatePortalToggle() {
+  document.getElementById('fchart-portal-north')?.setAttribute('data-active', String(fchartDirection === 'north'));
+  document.getElementById('fchart-portal-south')?.setAttribute('data-active', String(fchartDirection === 'south'));
+}
+
+function bindPortalToggle() {
+  document.getElementById('fchart-portal-north')?.addEventListener('click', () => {
+    fchartDirection = 'north';
+    updatePortalToggle();
+    renderForecastChart(lastHistory);
+  });
+  document.getElementById('fchart-portal-south')?.addEventListener('click', () => {
+    fchartDirection = 'south';
+    updatePortalToggle();
+    renderForecastChart(lastHistory);
+  });
+}
 
 function renderForecastChart(history: HistoryPoint[]) {
   const svg = document.getElementById('forecast-chart');
   if (!svg) return;
 
   const now = new Date();
-  const curve = generateDayCurve(now, lang);
-  const nowMin = swissDayInfo(now).minuteOfDay;
+  const isToday = fchartDayOffset === 0;
+  const from = new Date(now.getTime() + fchartDayOffset * 86_400_000);
+  const curve = generateDayCurve(from, lang);
+  const nowMin = isToday ? swissDayInfo(now).minuteOfDay : null;
 
-  // Keep only today's measured points, aligned to Swiss local minute-of-day.
+  // Keep only the selected day's measured points (today only — live history
+  // doesn't reach back to other days), aligned to Swiss local minute-of-day.
   const actual: ActualPoint[] = [];
-  for (const p of history) {
-    const info = swissDayInfo(new Date(p.t));
-    if (info.isoDate !== curve.isoDate) continue;
-    actual.push({ minuteOfDay: info.minuteOfDay, north: p.northWaitMinutes, south: p.southWaitMinutes });
+  if (isToday) {
+    for (const p of history) {
+      const info = swissDayInfo(new Date(p.t));
+      if (info.isoDate !== curve.isoDate) continue;
+      actual.push({ minuteOfDay: info.minuteOfDay, north: p.northWaitMinutes, south: p.southWaitMinutes });
+    }
   }
 
-  const chart = buildForecastChart(curve.points, actual, nowMin);
+  // Real same-weekday historic days, sourced from TCS traffic reports.
+  const dow = new Date(`${curve.isoDate}T12:00:00Z`).getUTCDay();
+  const gridMinutes = curve.points.map(p => p.minuteOfDay);
+  const dirKey = fchartDirection === 'north' ? 'n' : 's';
+  const historic = historicDatesForWeekday(dow)
+    .slice(0, 3)
+    .map(iso => historicDaySeries(iso, dirKey, gridMinutes))
+    .filter((h): h is NonNullable<typeof h> => h !== null);
+
+  const chart = buildForecastChart(curve.points, actual, nowMin, fchartDirection, historic);
   svg.setAttribute('viewBox', `0 0 ${chart.width} ${chart.height}`);
 
   const dash = (label: string) => label === '0' ? '' : 'stroke-dasharray="4 3"';
@@ -268,23 +354,49 @@ function renderForecastChart(history: HistoryPoint[]) {
     `<line x1="${chart.nowX}" y1="${chart.plot.top}" x2="${chart.nowX}" y2="${chart.plot.bottom}" stroke="var(--color-accent)" stroke-width="1" stroke-dasharray="2 2" opacity="0.6" />
      <text x="${chart.nowX}" y="${chart.plot.top + 8}" text-anchor="middle" font-size="9" fill="var(--color-accent)" font-family="var(--font-sans)">${nowLabel}</text>`;
 
+  const band = chart.bandPath
+    ? `<path d="${chart.bandPath}" fill="rgba(139, 92, 246, 0.10)" stroke="none" />`
+    : '';
+  const historicPaths = chart.historic
+    .map(h => `<path d="${h.path}" fill="none" stroke="${h.color}" stroke-width="1.5" stroke-linejoin="round" />`)
+    .join('');
+
   const paths =
-    `<path d="${chart.northForecast}" fill="none" stroke="var(--color-accent)" stroke-width="1.5" stroke-dasharray="5 4" opacity="0.65" stroke-linejoin="round" />
-     <path d="${chart.southForecast}" fill="none" stroke="var(--color-unknown)" stroke-width="1.5" stroke-dasharray="5 4" opacity="0.65" stroke-linejoin="round" />
-     <path d="${chart.northActual}" fill="none" stroke="var(--color-accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
-     <path d="${chart.southActual}" fill="none" stroke="var(--color-unknown)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />`;
+    `<path d="${chart.forecastPath}" fill="none" stroke="var(--color-accent)" stroke-width="1.75" stroke-dasharray="5 4" opacity="0.8" stroke-linejoin="round" />
+     <path d="${chart.actualPath}" fill="none" stroke="var(--color-accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />`;
 
-  svg.innerHTML = `<desc id="fchart-desc">${t(lang, 'fchart.title')}</desc>${grid}${yLabels}${xLabels}${nowMarker}${paths}<g id="fchart-hover" style="pointer-events:none"></g>`;
+  svg.innerHTML = `<desc id="fchart-desc">${t(lang, 'fchart.title')}</desc>${band}${grid}${yLabels}${xLabels}${historicPaths}${nowMarker}${paths}<g id="fchart-hover" style="pointer-events:none"></g>`;
 
-  fchartState = { chart, points: curve.points, actual, nowMin };
+  fchartState = { chart, points: curve.points, actual, nowMin, direction: fchartDirection };
   bindForecastChartHover(svg as unknown as SVGSVGElement);
 
-  // Dynamic subtitle: day + holiday context + predicted daily peak.
+  // Legend: the solid "measured" line only exists for today.
+  const legendActual = document.getElementById('fchart-legend-actual');
+  if (legendActual) legendActual.hidden = !(isToday && chart.actualPath !== '');
+
+  const legendHistoric = document.getElementById('fchart-legend-historic');
+  if (legendHistoric) {
+    legendHistoric.innerHTML = chart.historic
+      .map(h => `<span class="fchart__legend-item"><span class="fchart__legend-swatch" style="background:${h.color}"></span>${isoDateLabel(h.isoDate)}</span>`)
+      .join('');
+  }
+
+  const note = document.getElementById('fchart-note');
+  if (note) {
+    if (chart.historic.length === 0) {
+      note.textContent = `${t(lang, 'fchart.noHistoric')} ${historicMeta.dateStart} – ${historicMeta.dateEnd}.`;
+      note.hidden = false;
+    } else {
+      note.hidden = true;
+    }
+  }
+
+  // Dynamic subtitle: day + holiday context + predicted daily peak (selected direction).
   const subtitle = document.getElementById('fchart-subtitle');
   if (subtitle) {
     let peak = 0, peakMin = 0;
     for (const p of curve.points) {
-      const w = Math.max(p.northWait, p.southWait);
+      const w = fchartDirection === 'north' ? p.northWait : p.southWait;
       if (w > peak) { peak = w; peakMin = p.minuteOfDay; }
     }
     const ctx = curve.context ? ` · ${curve.context}` : '';
@@ -298,7 +410,7 @@ function renderForecastChart(history: HistoryPoint[]) {
   }
 }
 
-// ─── Prediction chart hover (split Nord / Süd) ────────────────────────────────
+// ─── Prediction chart hover ────────────────────────────────────────────────────
 
 function fchartXOf(min: number, c: ForecastChartResult): number {
   return c.plot.left + (c.plot.right - c.plot.left) * (min / 1440);
@@ -308,14 +420,16 @@ function fchartYOf(min: number, c: ForecastChartResult): number {
   return c.plot.bottom - (Math.min(min, c.maxMin) / c.maxMin) * innerH;
 }
 
-// Nearest measured point to `min`, only if it's in the past and reasonably close.
-function nearestActual(actual: ActualPoint[], nowMin: number, min: number): ActualPoint | null {
-  let best: ActualPoint | null = null;
+// Nearest measured value to `min`, only if it's in the past and reasonably close.
+function nearestActual(actual: ActualPoint[], nowMin: number | null, min: number, dir: Direction): number | null {
+  let best: number | null = null;
   let bestDist = 45; // don't attach a measurement more than 45 min away
   for (const p of actual) {
-    if (p.minuteOfDay > nowMin) continue;
+    if (nowMin !== null && p.minuteOfDay > nowMin) continue;
+    const v = dir === 'north' ? p.north : p.south;
+    if (v === null) continue;
     const d = Math.abs(p.minuteOfDay - min);
-    if (d <= bestDist) { bestDist = d; best = p; }
+    if (d <= bestDist) { bestDist = d; best = v; }
   }
   return best;
 }
@@ -343,7 +457,7 @@ function bindForecastChartHover(svg: SVGSVGElement) {
     const st = fchartState;
     const g = document.getElementById('fchart-hover');
     if (!st || !g) return;
-    const { chart, points, actual, nowMin } = st;
+    const { chart, points, actual, nowMin, direction } = st;
 
     const rect = svg.getBoundingClientRect();
     if (rect.width === 0) return;
@@ -355,37 +469,35 @@ function bindForecastChartHover(svg: SVGSVGElement) {
     const idx = Math.max(0, Math.min(points.length - 1, Math.round(min / 10)));
     const fp = points[idx];
     const px = fchartXOf(fp.minuteOfDay, chart);
+    const predicted = direction === 'north' ? fp.northWait : fp.southWait;
 
-    const meas = nearestActual(actual, nowMin, fp.minuteOfDay);
+    const meas = nearestActual(actual, nowMin, fp.minuteOfDay, direction);
 
-    // Hover guides: vertical line + predicted dots (+ measured dots when present).
+    // Hover guides: vertical line + predicted dot, measured dot, historic dots.
     const dot = (yMin: number, color: string, filled: boolean) =>
       `<circle cx="${px.toFixed(1)}" cy="${fchartYOf(yMin, chart).toFixed(1)}" r="3.5" fill="${filled ? color : 'var(--color-surface)'}" stroke="${color}" stroke-width="1.5" />`;
     g.innerHTML =
       `<line x1="${px.toFixed(1)}" y1="${chart.plot.top}" x2="${px.toFixed(1)}" y2="${chart.plot.bottom}" stroke="var(--color-text-muted)" stroke-width="1" stroke-dasharray="3 3" opacity="0.6" />` +
-      dot(fp.northWait, 'var(--color-accent)', false) +
-      dot(fp.southWait, 'var(--color-unknown)', false) +
-      (meas ? (meas.north !== null ? dot(meas.north, 'var(--color-accent)', true) : '') : '') +
-      (meas ? (meas.south !== null ? dot(meas.south, 'var(--color-unknown)', true) : '') : '');
+      dot(predicted, 'var(--color-accent)', false) +
+      (meas !== null ? dot(meas, 'var(--color-accent)', true) : '') +
+      chart.historic.map(h => dot(h.values[idx], h.color, true)).join('');
 
-    // Tooltip: split Nord / Süd, predicted always, measured when available.
-    const nLabel = lang === 'de' ? 'Nord →IT' : 'North →IT';
-    const sLabel = lang === 'de' ? 'Süd →CH' : 'South →CH';
+    // Tooltip: predicted always, measured (today) and historic values (if any) below.
+    const dirLabel = direction === 'north' ? t(lang, 'forecast.north') : t(lang, 'forecast.south');
     const predWord = lang === 'de' ? 'Prognose' : 'Forecast';
     const measWord = lang === 'de' ? 'Gemessen' : 'Measured';
     const unit = lang === 'de' ? 'Min' : 'min';
-    const measRow = (val: number | null | undefined) =>
-      val === null || val === undefined ? '' :
-      `<div class="fchart__tt-sub">${measWord}: ${Math.round(val)} ${unit}</div>`;
+
+    let sub = meas !== null ? `<div class="fchart__tt-sub">${measWord}: ${Math.round(meas)} ${unit}</div>` : '';
+    sub += chart.historic
+      .map(h => `<div class="fchart__tt-sub" style="color:${h.color}">${isoDateLabel(h.isoDate)}: ${Math.round(h.values[idx])} ${unit}</div>`)
+      .join('');
 
     tip.innerHTML =
       `<div class="fchart__tt-time">${minuteToHHMM(fp.minuteOfDay)}</div>` +
-      `<div class="fchart__tt-row"><span class="fchart__tt-key"><span class="fchart__tt-dot" style="background:var(--color-accent)"></span>${nLabel}</span>` +
-        `<span class="fchart__tt-val">${predWord}: ${fp.northWait} ${unit}</span></div>` +
-      measRow(meas?.north) +
-      `<div class="fchart__tt-row"><span class="fchart__tt-key"><span class="fchart__tt-dot" style="background:var(--color-unknown)"></span>${sLabel}</span>` +
-        `<span class="fchart__tt-val">${predWord}: ${fp.southWait} ${unit}</span></div>` +
-      measRow(meas?.south);
+      `<div class="fchart__tt-row"><span class="fchart__tt-key"><span class="fchart__tt-dot" style="background:var(--color-accent)"></span>${dirLabel}</span>` +
+        `<span class="fchart__tt-val">${predWord}: ${Math.round(predicted)} ${unit}</span></div>` +
+      sub;
 
     tip.removeAttribute('hidden');
 
@@ -554,7 +666,8 @@ async function tick() {
     setText('summary', t(lang, 'hero.dataUnavailable'));
   }
   if (history) renderHistory(history);
-  renderForecastChart(history ?? []);
+  lastHistory = history ?? [];
+  renderForecastChart(lastHistory);
 }
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
@@ -564,5 +677,9 @@ setInterval(tick, POLL_INTERVAL_MS);
 
 // Forecast heatmap is purely calendar-based — render once on load, no polling needed
 renderForecast();
+// Day tabs + portal toggle are calendar-based too — set up once, no polling needed
+renderDayTabs(new Date());
+bindDayNav();
+bindPortalToggle();
 // Render the prediction curve immediately so the chart isn't empty before the first fetch
 renderForecastChart([]);

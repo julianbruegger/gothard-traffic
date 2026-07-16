@@ -1,4 +1,7 @@
 import type { ForecastPoint } from './forecast';
+import type { HistoricDaySeries } from './historic-days';
+
+export type Direction = 'north' | 'south';
 
 // A measured wait-time sample, aligned to minutes-of-day in Swiss local time.
 export interface ActualPoint {
@@ -20,6 +23,13 @@ export interface PlotBox {
   bottom: number;
 }
 
+export interface HistoricLine {
+  isoDate: string;
+  color: string;
+  path: string;
+  values: number[]; // wait minutes, aligned with the forecast grid — used by hover
+}
+
 export interface ForecastChartResult {
   width: number;
   height: number;
@@ -28,10 +38,10 @@ export interface ForecastChartResult {
   plot: PlotBox;
   xTicks: AxisTick[];
   yTicks: AxisTick[];
-  northForecast: string;  // dashed — predicted
-  southForecast: string;
-  northActual: string;    // solid — measured so far today
-  southActual: string;
+  forecastPath: string;   // dashed — predicted, selected direction
+  actualPath: string;     // solid — measured so far today, selected direction
+  bandPath: string | null; // shaded min/max envelope across the historic lines
+  historic: HistoricLine[];
 }
 
 const PADDING_LEFT = 34;   // room for y-axis labels
@@ -39,25 +49,36 @@ const PADDING_RIGHT = 10;
 const PADDING_TOP = 10;
 const PADDING_BOTTOM = 22; // room for hour labels
 
+// Muted violet palette for historic weeks, most recent first — fades with age.
+const HISTORIC_COLORS = ['rgba(139, 92, 246, 0.85)', 'rgba(99, 102, 241, 0.6)', 'rgba(14, 165, 233, 0.45)'];
+
 /**
- * Build the SVG geometry for the "today" wait-time prediction chart:
- * dashed forecast lines across the whole day, plus solid measured lines up to `nowMin`.
+ * Build the SVG geometry for the wait-time prediction chart: a dashed forecast
+ * line for the selected direction, a solid measured line up to `nowMin` (today
+ * only), and up to a few real historic same-weekday lines with a shaded
+ * min/max band behind them.
  */
 export function buildForecastChart(
   forecast: ForecastPoint[],
   actual: ActualPoint[],
   nowMin: number | null,
+  direction: Direction,
+  historic: HistoricDaySeries[],
   width = 640,
   height = 260,
 ): ForecastChartResult {
   const innerW = width - PADDING_LEFT - PADDING_RIGHT;
   const innerH = height - PADDING_TOP - PADDING_BOTTOM;
 
+  const forecastKey = direction === 'north' ? 'northWait' : 'southWait';
+  const actualKey = direction;
+
   // Y scale: at least 60 min, rounded up to a clean 30-min step above the peak.
   const peak = Math.max(
     0,
-    ...forecast.map((p) => Math.max(p.northWait, p.southWait)),
-    ...actual.map((p) => Math.max(p.north ?? 0, p.south ?? 0)),
+    ...forecast.map((p) => p[forecastKey]),
+    ...actual.map((p) => p[actualKey] ?? 0),
+    ...historic.flatMap((h) => h.waitMinutes),
   );
   const maxMin = Math.max(60, Math.ceil((peak * 1.1) / 30) * 30);
 
@@ -69,16 +90,41 @@ export function buildForecastChart(
       ? ''
       : pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
 
-  const forecastPath = (key: 'northWait' | 'southWait') =>
-    linePath(forecast.map((p) => ({ x: xOf(p.minuteOfDay), y: yOf(p[key]) })));
+  const forecastPath = linePath(forecast.map((p) => ({ x: xOf(p.minuteOfDay), y: yOf(p[forecastKey]) })));
 
-  // Measured lines only run up to "now" and skip gaps where the value is null.
-  const actualPath = (key: 'north' | 'south') => {
-    const pts = actual
-      .filter((p) => (nowMin === null || p.minuteOfDay <= nowMin) && p[key] !== null)
-      .map((p) => ({ x: xOf(p.minuteOfDay), y: yOf(p[key] as number) }));
-    return linePath(pts);
-  };
+  // Measured line only runs up to "now" (today) and skips gaps where the value is null.
+  const actualPath = linePath(
+    actual
+      .filter((p) => (nowMin === null || p.minuteOfDay <= nowMin) && p[actualKey] !== null)
+      .map((p) => ({ x: xOf(p.minuteOfDay), y: yOf(p[actualKey] as number) })),
+  );
+
+  const historicLines: HistoricLine[] = historic.map((h, i) => ({
+    isoDate: h.isoDate,
+    color: HISTORIC_COLORS[i % HISTORIC_COLORS.length],
+    path: linePath(h.waitMinutes.map((v, idx) => ({ x: xOf(forecast[idx].minuteOfDay), y: yOf(v) }))),
+    values: h.waitMinutes,
+  }));
+
+  // Shaded min/max band across the historic lines, so the current forecast can
+  // be read against the real spread of past same-weekday days.
+  let bandPath: string | null = null;
+  if (historic.length > 0) {
+    const count = historic[0].waitMinutes.length;
+    const mins: number[] = [];
+    const maxs: number[] = [];
+    for (let i = 0; i < count; i++) {
+      const vals = historic.map((h) => h.waitMinutes[i]);
+      mins.push(Math.min(...vals));
+      maxs.push(Math.max(...vals));
+    }
+    const fwd = maxs.map((m, i) => `${i === 0 ? 'M' : 'L'}${xOf(forecast[i].minuteOfDay).toFixed(1)},${yOf(m).toFixed(1)}`);
+    const bwd = Array.from({ length: count }, (_, i) => {
+      const ii = count - 1 - i;
+      return `L${xOf(forecast[ii].minuteOfDay).toFixed(1)},${yOf(mins[ii]).toFixed(1)}`;
+    });
+    bandPath = `${fwd.join(' ')} ${bwd.join(' ')} Z`;
+  }
 
   // X ticks every 3 hours (00, 03, … 24)
   const xTicks: AxisTick[] = [];
@@ -106,9 +152,9 @@ export function buildForecastChart(
     },
     xTicks,
     yTicks,
-    northForecast: forecastPath('northWait'),
-    southForecast: forecastPath('southWait'),
-    northActual: actualPath('north'),
-    southActual: actualPath('south'),
+    forecastPath,
+    actualPath,
+    bandPath,
+    historic: historicLines,
   };
 }

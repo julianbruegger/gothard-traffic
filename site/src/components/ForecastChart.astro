@@ -9,6 +9,19 @@ const { lang } = Astro.props;
 
 <section class="fchart container" aria-labelledby="fchart-title">
   <h2 class="fchart__title" id="fchart-title">{t(lang, 'fchart.title')}</h2>
+
+  <div class="fchart__controls">
+    <div class="fchart__portal-toggle" role="group" aria-label={t(lang, 'fchart.title')}>
+      <button type="button" id="fchart-portal-north" class="fchart__toggle-btn" data-active="true">
+        {t(lang, 'fchart.portalNorth')}
+      </button>
+      <button type="button" id="fchart-portal-south" class="fchart__toggle-btn">
+        {t(lang, 'fchart.portalSouth')}
+      </button>
+    </div>
+    <div class="fchart__daynav" id="fchart-daynav" role="group" aria-label={t(lang, 'fchart.dayNav')}></div>
+  </div>
+
   <p class="fchart__subtitle" id="fchart-subtitle">{t(lang, 'fchart.subtitle')}</p>
 
   <div class="fchart__wrap">
@@ -25,23 +38,18 @@ const { lang } = Astro.props;
       <p>{t(lang, 'fchart.noscript')}</p>
     </noscript>
 
-    <div class="fchart__legend">
-      <span class="fchart__legend-item">
-        <span class="fchart__legend-swatch" style="background: var(--color-accent);"></span>
-        {t(lang, 'trend.northLegend')}
-      </span>
-      <span class="fchart__legend-item">
-        <span class="fchart__legend-swatch" style="background: var(--color-unknown);"></span>
-        {t(lang, 'trend.southLegend')}
-      </span>
-      <span class="fchart__legend-item">
-        <span class="fchart__legend-swatch fchart__legend-swatch--solid"></span>
-        {t(lang, 'fchart.actual')}
-      </span>
+    <p class="fchart__note" id="fchart-note" hidden></p>
+
+    <div class="fchart__legend" id="fchart-legend">
       <span class="fchart__legend-item">
         <span class="fchart__legend-swatch fchart__legend-swatch--dashed"></span>
         {t(lang, 'fchart.predicted')}
       </span>
+      <span class="fchart__legend-item" id="fchart-legend-actual" hidden>
+        <span class="fchart__legend-swatch fchart__legend-swatch--solid"></span>
+        {t(lang, 'fchart.actual')}
+      </span>
+      <span class="fchart__legend-historic" id="fchart-legend-historic"></span>
     </div>
   </div>
   <p class="fchart__disclaimer">{t(lang, 'forecast.disclaimer')}</p>

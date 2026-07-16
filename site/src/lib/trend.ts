@@ -7,7 +7,7 @@ export interface QueueTrend {
   deltaKm: number;
 }
 
-const FLAT_THRESHOLD_KM = 0.05;
+export const FLAT_THRESHOLD_KM = 0.05;
 
 /** Compares the two most recent history points to show whether a queue is growing or shrinking. */
 export function computeQueueTrend(

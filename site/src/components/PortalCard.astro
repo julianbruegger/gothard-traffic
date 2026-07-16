@@ -30,7 +30,7 @@ const close = `<!--/SSR-->`;
         <span
           class="trend-badge"
           id={`${side}-trend`}
-          data-direction={trend?.direction ?? 'flat'}
+          data-direction={trend?.direction}
           hidden={!trend}
         ><Fragment set:html={open('trend')} />{trend && `${TREND_ARROW[trend.direction]} ${formatTrendDelta(trend.deltaKm, lang)}`}<Fragment set:html={close} /></span>
       </dd>

@@ -91,6 +91,7 @@ function renderTrend(history: HistoryPoint[]) {
     if (!el) continue;
     if (!trend) {
       el.setAttribute('hidden', '');
+      el.removeAttribute('data-direction');
       continue;
     }
     el.removeAttribute('hidden');
@@ -106,6 +107,7 @@ interface TrendChartState {
 }
 let trendChartState: TrendChartState | null = null;
 let trendHoverBound = false;
+const trendTimeFormatter = new Intl.DateTimeFormat(lang === 'de' ? 'de-CH' : 'en-CH', { hour: '2-digit', minute: '2-digit' });
 
 function bindTrendChartHover(svg: SVGSVGElement) {
   if (trendHoverBound) return;
@@ -144,12 +146,14 @@ function bindTrendChartHover(svg: SVGSVGElement) {
     });
     const p = chart.points[idx];
 
+    const dot = (cy: number, color: string) =>
+      `<circle cx="${p.x}" cy="${cy}" r="4" fill="${color}" stroke="var(--color-surface)" stroke-width="1.5" />`;
     g.innerHTML =
       `<line x1="${p.x}" y1="8" x2="${p.x}" y2="${chart.height - 24}" stroke="var(--color-text-muted)" stroke-width="1" stroke-dasharray="3 3" opacity="0.6" />` +
-      `<circle cx="${p.x}" cy="${p.yNorth}" r="4" fill="var(--color-accent)" stroke="var(--color-surface)" stroke-width="1.5" />` +
-      `<circle cx="${p.x}" cy="${p.ySouth}" r="4" fill="var(--color-unknown)" stroke="var(--color-surface)" stroke-width="1.5" />`;
+      (p.north !== null ? dot(p.yNorth, 'var(--color-accent)') : '') +
+      (p.south !== null ? dot(p.ySouth, 'var(--color-unknown)') : '');
 
-    const timeLabel = new Intl.DateTimeFormat(lang === 'de' ? 'de-CH' : 'en-CH', { hour: '2-digit', minute: '2-digit' }).format(new Date(p.t));
+    const timeLabel = trendTimeFormatter.format(new Date(p.t));
     tip.innerHTML =
       `<div class="trend__tt-time">${timeLabel}</div>` +
       `<div class="trend__tt-row"><span class="trend__tt-key"><span class="trend__tt-dot" style="background:var(--color-accent)"></span>${t(lang, 'trend.northLegend')}</span>` +

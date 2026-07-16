@@ -1,6 +1,7 @@
 import { isLang, DEFAULT_LANG, t } from '../lib/i18n';
-import { formatKm, formatMinutes, formatUpdated, statusLabel, passStatusLabel, buildSummary, closureTitle, closureDetail } from '../lib/format';
-import { buildSparkline } from '../lib/chart';
+import { formatKm, formatMinutes, formatUpdated, formatTrendDelta, TREND_ARROW, statusLabel, passStatusLabel, buildSummary, closureTitle, closureDetail } from '../lib/format';
+import { buildSparkline, type SparklineResult } from '../lib/chart';
+import { computeQueueTrend } from '../lib/trend';
 import { generateForecast, generateDayCurve, swissDayInfo, type ForecastDay, type ForecastPoint, type TrafficLevel } from '../lib/forecast';
 import { buildForecastChart, type ActualPoint, type ForecastChartResult } from '../lib/forecast-chart';
 import { suggestDiversions } from '../lib/diversion';
@@ -83,6 +84,95 @@ function renderData(data: GotthardData) {
   setText('footer-source', data.source);
 }
 
+function renderTrend(history: HistoryPoint[]) {
+  for (const side of ['north', 'south'] as const) {
+    const trend = computeQueueTrend(history, side === 'north' ? 'northQueueKm' : 'southQueueKm');
+    const el = document.getElementById(`${side}-trend`);
+    if (!el) continue;
+    if (!trend) {
+      el.setAttribute('hidden', '');
+      continue;
+    }
+    el.removeAttribute('hidden');
+    el.setAttribute('data-direction', trend.direction);
+    el.textContent = `${TREND_ARROW[trend.direction]} ${formatTrendDelta(trend.deltaKm, lang)}`;
+  }
+}
+
+// ─── 24h trend chart (interactive hover) ──────────────────────────────────────
+
+interface TrendChartState {
+  chart: SparklineResult;
+}
+let trendChartState: TrendChartState | null = null;
+let trendHoverBound = false;
+
+function bindTrendChartHover(svg: SVGSVGElement) {
+  if (trendHoverBound) return;
+  trendHoverBound = true;
+
+  const wrap = svg.closest('.trend__chart-wrap') as HTMLElement | null;
+  if (!wrap) return;
+  wrap.style.position = 'relative';
+
+  const tip = document.createElement('div');
+  tip.className = 'trend__tooltip';
+  tip.setAttribute('hidden', '');
+  wrap.appendChild(tip);
+
+  const clear = () => {
+    tip.setAttribute('hidden', '');
+    const g = document.getElementById('trend-hover');
+    if (g) g.innerHTML = '';
+  };
+
+  const move = (clientX: number) => {
+    const st = trendChartState;
+    const g = document.getElementById('trend-hover');
+    if (!st || !g || st.chart.points.length === 0) return;
+    const { chart } = st;
+
+    const rect = svg.getBoundingClientRect();
+    if (rect.width === 0) return;
+    const svgX = ((clientX - rect.left) / rect.width) * chart.width;
+
+    let idx = 0;
+    let bestDist = Infinity;
+    chart.points.forEach((p, i) => {
+      const d = Math.abs(p.x - svgX);
+      if (d < bestDist) { bestDist = d; idx = i; }
+    });
+    const p = chart.points[idx];
+
+    g.innerHTML =
+      `<line x1="${p.x}" y1="8" x2="${p.x}" y2="${chart.height - 24}" stroke="var(--color-text-muted)" stroke-width="1" stroke-dasharray="3 3" opacity="0.6" />` +
+      `<circle cx="${p.x}" cy="${p.yNorth}" r="4" fill="var(--color-accent)" stroke="var(--color-surface)" stroke-width="1.5" />` +
+      `<circle cx="${p.x}" cy="${p.ySouth}" r="4" fill="var(--color-unknown)" stroke="var(--color-surface)" stroke-width="1.5" />`;
+
+    const timeLabel = new Intl.DateTimeFormat(lang === 'de' ? 'de-CH' : 'en-CH', { hour: '2-digit', minute: '2-digit' }).format(new Date(p.t));
+    tip.innerHTML =
+      `<div class="trend__tt-time">${timeLabel}</div>` +
+      `<div class="trend__tt-row"><span class="trend__tt-key"><span class="trend__tt-dot" style="background:var(--color-accent)"></span>${t(lang, 'trend.northLegend')}</span>` +
+        `<span class="trend__tt-val">${formatKm(p.north, lang)}</span></div>` +
+      `<div class="trend__tt-row"><span class="trend__tt-key"><span class="trend__tt-dot" style="background:var(--color-unknown)"></span>${t(lang, 'trend.southLegend')}</span>` +
+        `<span class="trend__tt-val">${formatKm(p.south, lang)}</span></div>`;
+    tip.removeAttribute('hidden');
+
+    const wrapRect = wrap.getBoundingClientRect();
+    const anchorX = rect.left - wrapRect.left + (p.x / chart.width) * rect.width;
+    const tipW = tip.offsetWidth;
+    let left = anchorX + 12;
+    if (left + tipW > wrap.clientWidth - 4) left = anchorX - tipW - 12;
+    if (left < 4) left = 4;
+    tip.style.left = `${left}px`;
+    tip.style.top = '4px';
+  };
+
+  svg.addEventListener('pointermove', (e) => move(e.clientX));
+  svg.addEventListener('pointerleave', clear);
+  svg.style.touchAction = 'pan-y';
+}
+
 function renderHistory(history: HistoryPoint[]) {
   const chart = buildSparkline(history);
   const northPath = document.getElementById('trend-path-north');
@@ -99,6 +189,12 @@ function renderHistory(history: HistoryPoint[]) {
       )
       .join('');
   }
+
+  trendChartState = { chart };
+  const svg = document.getElementById('trend-svg');
+  if (svg) bindTrendChartHover(svg as unknown as SVGSVGElement);
+
+  renderTrend(history);
 }
 
 // ─── 10-minute prediction chart ───────────────────────────────────────────────

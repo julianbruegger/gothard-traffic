@@ -1,14 +1,16 @@
 ---
 import { t, type Lang } from '../lib/i18n';
-import { formatKm, formatMinutes } from '../lib/format';
+import { formatKm, formatMinutes, formatTrendDelta, TREND_ARROW } from '../lib/format';
 import type { PortalStatus } from '../lib/types';
+import type { QueueTrend } from '../lib/trend';
 
 interface Props {
   lang: Lang;
   side: 'north' | 'south';
   portal: PortalStatus;
+  trend: QueueTrend | null;
 }
-const { lang, side, portal } = Astro.props;
+const { lang, side, portal, trend } = Astro.props;
 const titleKey = side === 'north' ? 'portal.north' : 'portal.south';
 
 const open = (key: string) => `<!--SSR:${side}-${key}-->`;
@@ -22,8 +24,16 @@ const close = `<!--/SSR-->`;
   <dl class="card__stats">
     <div class="card__stat-row">
       <dt class="card__stat-label">{t(lang, 'portal.queue')}</dt>
-      <dd class="card__stat-value" id={`${side}-queue`}
-        ><Fragment set:html={open('queue')} />{formatKm(portal.queueKm, lang)}<Fragment set:html={close} /></dd>
+      <dd class="card__stat-value-row">
+        <span class="card__stat-value" id={`${side}-queue`}
+          ><Fragment set:html={open('queue')} />{formatKm(portal.queueKm, lang)}<Fragment set:html={close} /></span>
+        <span
+          class="trend-badge"
+          id={`${side}-trend`}
+          data-direction={trend?.direction ?? 'flat'}
+          hidden={!trend}
+        ><Fragment set:html={open('trend')} />{trend && `${TREND_ARROW[trend.direction]} ${formatTrendDelta(trend.deltaKm, lang)}`}<Fragment set:html={close} /></span>
+      </dd>
     </div>
     <div class="card__stat-row">
       <dt class="card__stat-label">{t(lang, 'portal.wait')}</dt>

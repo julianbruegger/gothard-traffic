@@ -5,6 +5,16 @@ export interface TimeTick {
   label: string;
 }
 
+/** A history sample's pixel position, for hover interaction. */
+export interface ChartPoint {
+  x: number;
+  yNorth: number;
+  ySouth: number;
+  t: string;
+  north: number | null;
+  south: number | null;
+}
+
 export interface SparklineResult {
   northPath: string;
   southPath: string;
@@ -12,6 +22,7 @@ export interface SparklineResult {
   height: number;
   maxKm: number;
   ticks: TimeTick[];
+  points: ChartPoint[];
 }
 
 const PADDING_X = 8;
@@ -20,7 +31,7 @@ const PADDING_BOTTOM = 24; // space for time labels
 
 export function buildSparkline(history: HistoryPoint[], width = 640, height = 220): SparklineResult {
   if (history.length === 0) {
-    return { northPath: '', southPath: '', width, height, maxKm: 0, ticks: [] };
+    return { northPath: '', southPath: '', width, height, maxKm: 0, ticks: [], points: [] };
   }
 
   const maxKm = Math.max(1, ...history.map((p) => Math.max(p.northQueueKm ?? 0, p.southQueueKm ?? 0)));
@@ -54,6 +65,15 @@ export function buildSparkline(history: HistoryPoint[], width = 640, height = 22
     ticks.push({ x: +x.toFixed(1), label });
   }
 
+  const points: ChartPoint[] = history.map((p, i) => ({
+    x: +xOf(i).toFixed(1),
+    yNorth: +yOf(p.northQueueKm ?? 0).toFixed(1),
+    ySouth: +yOf(p.southQueueKm ?? 0).toFixed(1),
+    t: p.t,
+    north: p.northQueueKm ?? null,
+    south: p.southQueueKm ?? null,
+  }));
+
   return {
     northPath: toPath('northQueueKm'),
     southPath: toPath('southQueueKm'),
@@ -61,5 +81,6 @@ export function buildSparkline(history: HistoryPoint[], width = 640, height = 22
     height,
     maxKm,
     ticks,
+    points,
   };
 }

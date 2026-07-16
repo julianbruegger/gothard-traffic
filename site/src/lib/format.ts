@@ -1,5 +1,6 @@
 import { t, type Lang } from './i18n';
 import type { GotthardData, RoadStatus, ClosureWindow } from './types';
+import type { TrendDirection } from './trend';
 
 // DATEX "Ursache" / causeType values seen on Gotthard closures → friendly label.
 const CLOSURE_CAUSE: Record<string, { de: string; en: string }> = {
@@ -57,6 +58,16 @@ export function formatKm(km: number | null, lang: Lang): string {
   if (km === null || km === undefined) return '–';
   if (km <= 0) return t(lang, 'portal.noQueue');
   return `${km.toLocaleString(lang === 'de' ? 'de-CH' : 'en-CH', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} km`;
+}
+
+export const TREND_ARROW: Record<TrendDirection, string> = { up: '↑', down: '↓', flat: '→' };
+
+/** Signed delta label for a queue-length trend badge, e.g. "+1.2 km", "−0.5 km", "±0.0 km". */
+export function formatTrendDelta(deltaKm: number, lang: Lang): string {
+  const sign = deltaKm > 0.05 ? '+' : deltaKm < -0.05 ? '−' : '±';
+  const loc = lang === 'de' ? 'de-CH' : 'en-CH';
+  const magnitude = Math.abs(deltaKm).toLocaleString(loc, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  return `${sign}${magnitude} km`;
 }
 
 export function formatMinutes(min: number | null, lang: Lang): string {

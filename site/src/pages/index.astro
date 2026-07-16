@@ -13,6 +13,7 @@ import DiversionSection from '../components/DiversionSection.astro';
 import InfoSection from '../components/InfoSection.astro';
 import Footer from '../components/Footer.astro';
 import { DEFAULT_LANG } from '../lib/i18n';
+import { computeQueueTrend } from '../lib/trend';
 import sampleData from '../data/sample-gotthard.json';
 import sampleHistory from '../data/sample-history.json';
 import type { GotthardData, HistoryPoint } from '../lib/types';
@@ -29,6 +30,8 @@ function readJson<T>(path: string, fallback: T): T {
 const root = join(process.cwd(), 'public/data');
 const data = readJson<GotthardData>(join(root, 'gotthard.json'), sampleData as GotthardData);
 const history = readJson<HistoryPoint[]>(join(root, 'history.json'), sampleHistory as HistoryPoint[]);
+const northTrend = computeQueueTrend(history, 'northQueueKm');
+const southTrend = computeQueueTrend(history, 'southQueueKm');
 ---
 
 <Layout lang={lang} updatedIso={data.updated}>
@@ -38,8 +41,8 @@ const history = readJson<HistoryPoint[]>(join(root, 'history.json'), sampleHisto
     <PlannedClosureBanner lang={lang} closures={data.tunnel.plannedClosures ?? []} />
     <div class="container">
       <div class="card-grid">
-        <PortalCard lang={lang} side="north" portal={data.tunnel.north} />
-        <PortalCard lang={lang} side="south" portal={data.tunnel.south} />
+        <PortalCard lang={lang} side="north" portal={data.tunnel.north} trend={northTrend} />
+        <PortalCard lang={lang} side="south" portal={data.tunnel.south} trend={southTrend} />
         <PassCard lang={lang} pass={data.pass} />
       </div>
     </div>

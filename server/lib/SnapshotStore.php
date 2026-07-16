@@ -79,6 +79,7 @@ final class SnapshotStore
     {
         $stmt = $this->pdo->prepare(
             'SELECT fetched_at,
+                    tunnel_status,
                     north_queue_km, north_wait_min,
                     south_queue_km, south_wait_min
                FROM gotthard_snapshots

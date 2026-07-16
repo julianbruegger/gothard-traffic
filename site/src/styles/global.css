@@ -530,6 +530,11 @@ a {
   border-radius: 2px;
 }
 
+.trend__legend-swatch--closed {
+  height: 12px;
+  border-radius: 3px;
+}
+
 .trend__tooltip {
   position: absolute;
   z-index: 5;
@@ -1079,6 +1084,12 @@ a {
   text-align: left;
   padding: 0.4rem 0.6rem;
   border-bottom: 1px solid var(--color-border);
+}
+
+.data-table tr[data-closed] {
+  background: var(--color-closed-bg);
+  color: var(--color-closed);
+  font-weight: 600;
 }
 
 @media (max-width: 600px) {

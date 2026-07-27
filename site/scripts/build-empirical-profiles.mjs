@@ -182,15 +182,15 @@ function buildWeekdayHour(dir) {
   const profile = sums.map((row, dow) =>
     row.map((v) => (dayCount[dow] ? v / dayCount[dow] : 0)),
   );
-  // Light circular 3-point smoothing to tame single-sample spikes.
-  const smoothed = profile.map((row) =>
-    row.map((_, h) => {
-      const a = row[(h + 23) % 24];
-      const b = row[h];
-      const c = row[(h + 1) % 24];
-      return +(((a + 2 * b + c) / 4)).toFixed(2);
-    }),
-  );
+  // Circular 3-point [1,2,1] smoothing, applied twice (≈ a 5-point Gaussian).
+  // A single pass leaves the sparse weekday profiles jagged — e.g. a Thursday
+  // queue that builds, dips mid-morning, then rebuilds, which is a sampling
+  // artifact (few weekday jam-days), not a real pattern. Two passes remove those
+  // mid-build dips while the broad, well-sampled weekend peaks survive (they span
+  // several hours); the later peak-normalization restores any slight blunting.
+  const pass = (row) =>
+    row.map((_, h) => +(((row[(h + 23) % 24] + 2 * row[h] + row[(h + 1) % 24]) / 4)).toFixed(4));
+  const smoothed = profile.map((row) => pass(pass(row)).map((v) => +v.toFixed(2)));
   return { profile: smoothed, dayCount };
 }
 

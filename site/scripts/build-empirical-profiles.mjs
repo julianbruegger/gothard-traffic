@@ -46,26 +46,70 @@ function direction(txt) {
   return null; // exits / incidents in the far direction — ignored for the profile
 }
 
+// Longest plausible A2 approach queue. The Gotthard north approach only runs
+// ~40 km from Beckenried to Göschenen, so anything beyond ~30 km is a TCS typo
+// (e.g. "90 km Stau") and gets clamped rather than skewing the peaks.
+const MAX_KM = 30;
+
 // Congestion index from a report. Non-congestion incident-only tweets return null
 // (an Unfall or closure is not a recurring weekday pattern we can predict).
 function congestionIndex(txt) {
-  const km = txt.match(/(\d+)\s*km\s*Stau/);
-  if (km) return +km[1];
+  // Allow a decimal (e.g. "2.3 km"); the old `\d+` matched the fractional digits
+  // of "2.33333 km" and produced absurd values.
+  const km = txt.match(/(\d+(?:[.,]\d+)?)\s*km\s*Stau/);
+  if (km) return Math.min(MAX_KM, +km[1].replace(',', '.'));
   if (/Stau|Überlastung|stockend|Kolonne|zäh/.test(txt)) return 1.5;
   return null;
 }
 
 const isoDayOf = (swiss) => swiss.toISOString().slice(0, 10);
 
-// ─── Holiday windows inside the data range (Mar 26 – May 13 2026) ──────────────
-// Easter 2026: Good Friday 3 Apr, Easter Sun 5 Apr, Easter Mon 6 Apr.
-// The observed exodus starts the Wed before and the return runs the week after,
-// so we treat 1–13 Apr as the Easter travel period.
-// Labour Day 1 May (Fri) creates a 1–3 May long weekend in several cantons.
-const HOLIDAY_WINDOWS = [
-  { name: 'easter', label: 'Osterferien / Easter', from: '2026-04-01', to: '2026-04-13' },
-  { name: 'labourday', label: '1. Mai / Labour Day', from: '2026-05-01', to: '2026-05-03' },
-];
+// ─── Holiday travel windows, generated for every year in the data range ─────────
+// The tweet history spans ~2016–2026, so the holiday effect (and the exclusion of
+// holiday days from the weekday baseline) has to be computed per year rather than
+// hard-coded to a single spring. Easter drives the biggest movable jam; the exodus
+// starts a few days before Good Friday and the return runs the week after, so we
+// treat E-4 … E+8 as the Easter travel period. Labour Day (1 May) makes a 1–3 May
+// long weekend in several cantons.
+
+// Easter Sunday for a year (Anonymous Gregorian algorithm).
+function easterSunday(year) {
+  const a = year % 19, b = Math.floor(year / 100), c = year % 100;
+  const d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25);
+  const g = Math.floor((b - f + 1) / 3), h = (19 * a + b - d - g + 15) % 30;
+  const i = Math.floor(c / 4), k = c % 4;
+  const l = (32 + 2 * e + 2 * i - h - k) % 7;
+  const m = Math.floor((a + 11 * h + 22 * l) / 451);
+  const month = Math.floor((h + l - 7 * m + 114) / 31);
+  const day = ((h + l - 7 * m + 114) % 31) + 1;
+  return new Date(Date.UTC(year, month - 1, day));
+}
+
+const isoUTC = (d) => d.toISOString().slice(0, 10);
+const shiftDays = (d, n) => new Date(d.getTime() + n * 86_400_000);
+
+function buildHolidayWindows(fromYear, toYear) {
+  const windows = [];
+  for (let y = fromYear; y <= toYear; y++) {
+    const easter = easterSunday(y);
+    windows.push({
+      name: 'easter',
+      label: 'Osterferien / Easter',
+      from: isoUTC(shiftDays(easter, -4)),
+      to: isoUTC(shiftDays(easter, 8)),
+    });
+    windows.push({
+      name: 'labourday',
+      label: '1. Mai / Labour Day',
+      from: `${y}-05-01`,
+      to: `${y}-05-03`,
+    });
+  }
+  return windows;
+}
+
+// Populated once the observed year range is known (see below).
+let HOLIDAY_WINDOWS = [];
 function holidayOf(iso) {
   return HOLIDAY_WINDOWS.find((h) => iso >= h.from && iso <= h.to)?.name ?? null;
 }
@@ -95,24 +139,27 @@ for (const t of tweets) {
   if (iso > lastIso) lastIso = iso;
 }
 
-// Season baseline: day-weighted SEASON weight across the observed window.
-function seasonBaselineWeight() {
-  let sum = 0;
-  let n = 0;
-  const start = new Date(firstIso + 'T12:00:00Z');
-  const end = new Date(lastIso + 'T12:00:00Z');
-  for (let d = new Date(start); d <= end; d.setUTCDate(d.getUTCDate() + 1)) {
-    sum += SEASON[d.getUTCMonth()];
-    n++;
-  }
-  return sum / n;
-}
-const seasonBaseline = +seasonBaselineWeight().toFixed(3);
+// Now that the observed range is known, generate holiday windows for every year.
+HOLIDAY_WINDOWS = buildHolidayWindows(+firstIso.slice(0, 4), +lastIso.slice(0, 4));
 
 // ─── Weekday × hour baseline profiles (non-holiday days only) ──────────────────
 
 const DOW_LABEL = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
 const dowOf = (iso) => new Date(iso + 'T12:00:00Z').getUTCDay();
+
+// Season baseline: mean SEASON weight of the observed baseline days themselves,
+// NOT of every calendar day in the range. The tweet history is summer-heavy, so
+// the profile magnitudes correspond to a higher season level than the calendar
+// average — using the wrong denominator would inflate every extrapolated month.
+// Must run after HOLIDAY_WINDOWS is populated so holiday days are excluded.
+function seasonBaselineWeight() {
+  const baselineDays = [...new Set([...Object.keys(bucket.N), ...Object.keys(bucket.S)])]
+    .filter((iso) => !holidayOf(iso));
+  if (baselineDays.length === 0) return SEASON[3];
+  const sum = baselineDays.reduce((acc, iso) => acc + SEASON[+iso.slice(5, 7) - 1], 0);
+  return sum / baselineDays.length;
+}
+const seasonBaseline = +seasonBaselineWeight().toFixed(3);
 
 function buildWeekdayHour(dir) {
   // sums[dow][hour] and per-weekday day counts, over baseline (non-holiday) days
@@ -174,6 +221,29 @@ const baseN = baselinePeakByDow('N');
 const baseS = baselinePeakByDow('S');
 const meanBase = (arr) => arr.reduce((a, b) => a + b, 0) / arr.length;
 
+// ─── Rescale hourly shape to the realistic daily peak ──────────────────────────
+// The hourly means above answer "what queue is on the road at hour H, averaged
+// over EVERY day of this weekday". Over 10 years that mean is heavily diluted:
+// jams peak at different hours on different days and many days are quiet, so no
+// single hour retains the true peak (a summer Saturday's hourly-mean peak is only
+// ~1.6 km even though the mean *daily* peak is ~5.8 km). Using it directly makes
+// the forecast predict near-empty roads on peak days.
+//
+// Fix: keep the time-of-day SHAPE from the hourly means (it captures *when* jams
+// build and fade) but rescale each weekday's curve so its own peak equals that
+// weekday's mean daily peak (baseN/baseS) — the honest "typical worst queue".
+function normalizeToPeak(profile, targetPeaks) {
+  return profile.map((row, dow) => {
+    const cur = Math.max(...row);
+    const tgt = targetPeaks[dow];
+    if (cur <= 0 || tgt <= 0) return row.map(() => 0);
+    const k = tgt / cur;
+    return row.map((v) => +(v * k).toFixed(2));
+  });
+}
+const profN = normalizeToPeak(wN.profile, baseN);
+const profS = normalizeToPeak(wS.profile, baseS);
+
 function holidayEffect() {
   const out = {};
   const allDays = new Set([...Object.keys(bucket.N), ...Object.keys(bucket.S)]);
@@ -225,7 +295,7 @@ const data = {
     seasonBaseline,
     note: 'Index units: 0 = free flow, ~10 = 10 km / 90 min. N = Nordportal Göschenen (southbound), S = Südportal Airolo (northbound).',
   },
-  weekdayHour: { N: wN.profile, S: wS.profile },
+  weekdayHour: { N: profN, S: profS },
   sampleDays: wN.dayCount, // baseline day count per weekday (Sun=0)
   holiday,
 };

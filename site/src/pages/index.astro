@@ -1,65 +1,17 @@
 ---
-import { readFileSync, existsSync } from 'fs';
-import { join } from 'path';
 import Layout from '../layouts/Layout.astro';
 import Header from '../components/Header.astro';
-import StatusHero from '../components/StatusHero.astro';
-import PlannedClosureBanner from '../components/PlannedClosureBanner.astro';
-import PortalCard from '../components/PortalCard.astro';
-import PassCard from '../components/PassCard.astro';
-import TrendChart from '../components/TrendChart.astro';
-import ForecastChart from '../components/ForecastChart.astro';
-import DiversionSection from '../components/DiversionSection.astro';
-import InfoSection from '../components/InfoSection.astro';
+import HomeContent from '../components/HomeContent.astro';
 import Footer from '../components/Footer.astro';
 import { DEFAULT_LANG } from '../lib/i18n';
-import sampleData from '../data/sample-gotthard.json';
-import sampleHistory from '../data/sample-history.json';
-import type { GotthardData, HistoryPoint } from '../lib/types';
+import { loadHomeData } from '../lib/load-data';
 
 const lang = DEFAULT_LANG;
-
-function readJson<T>(path: string, fallback: T): T {
-  try {
-    if (existsSync(path)) return JSON.parse(readFileSync(path, 'utf8')) as T;
-  } catch {}
-  return fallback;
-}
-
-const root = join(process.cwd(), 'public/data');
-const data = readJson<GotthardData>(join(root, 'gotthard.json'), sampleData as GotthardData);
-const history = readJson<HistoryPoint[]>(join(root, 'history.json'), sampleHistory as HistoryPoint[]);
+const { data, history } = loadHomeData();
 ---
 
 <Layout lang={lang} updatedIso={data.updated}>
   <Header lang={lang} />
-  <main id="main">
-    <StatusHero lang={lang} data={data} />
-    <PlannedClosureBanner lang={lang} closures={data.tunnel.plannedClosures ?? []} />
-    <div class="container">
-      <div class="card-grid">
-        <PortalCard lang={lang} side="north" portal={data.tunnel.north} />
-        <PortalCard lang={lang} side="south" portal={data.tunnel.south} />
-        <PassCard lang={lang} pass={data.pass} />
-      </div>
-    </div>
-    <DiversionSection lang={lang} />
-    <TrendChart lang={lang} history={history} />
-    <ForecastChart lang={lang} />
-    <section class="forecast container" id="forecast-section" aria-labelledby="forecast-title">
-      <h2 class="forecast__title" id="forecast-title">{lang === 'de' ? 'Verkehrsvorhersage' : 'Traffic Forecast'}</h2>
-      <p class="forecast__subtitle">{lang === 'de' ? 'Typisches Verkehrsaufkommen · Basierend auf Wochentag, Jahreszeit und Ferienkalender' : 'Typical congestion · Based on weekday, season, and holiday calendar'}</p>
-      <div id="forecast-days" class="forecast__days" aria-live="polite"></div>
-      <div class="forecast__legend">
-        <span class="forecast__legend-dot" data-level="low"></span><span class="forecast__legend-label">{lang === 'de' ? 'Frei' : 'Clear'}</span>
-        <span class="forecast__legend-dot" data-level="moderate"></span><span class="forecast__legend-label">{lang === 'de' ? 'Mässig' : 'Moderate'}</span>
-        <span class="forecast__legend-dot" data-level="high"></span><span class="forecast__legend-label">{lang === 'de' ? 'Stau erwartet' : 'Congestion'}</span>
-        <span class="forecast__legend-dot" data-level="extreme"></span><span class="forecast__legend-label">{lang === 'de' ? 'Starker Stau' : 'Heavy jam'}</span>
-      </div>
-      <p class="forecast__disclaimer">{lang === 'de' ? 'Prognose basiert auf historischen Mustern. Aktuelle Ereignisse können abweichen.' : 'Forecast based on historical patterns. Current events may differ.'}</p>
-    </section>
-    <InfoSection lang={lang} />
-  </main>
+  <HomeContent lang={lang} data={data} history={history} />
   <Footer lang={lang} dataSource={data.source} />
-  <script src="../scripts/live.ts"></script>
 </Layout>

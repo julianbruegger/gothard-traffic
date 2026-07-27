@@ -12,7 +12,18 @@ const { lang = DEFAULT_LANG, updatedIso = null } = Astro.props;
 const title = `${t(lang, 'site.title')} – ${t(lang, 'site.tagline')}`;
 const description = t(lang, 'meta.description');
 const siteUrl = Astro.site?.toString().replace(/\/$/, '') ?? '';
-const canonical = lang === DEFAULT_LANG ? siteUrl + '/' : `${siteUrl}/?lang=${lang}`;
+
+// Build canonical + hreflang from the *actual* page path (not just the lang),
+// so /forecasts no longer canonicalises to the homepage. Each language lives at
+// its own real URL: German at the root ('/', '/forecasts'), English under
+// '/en'. Derive the language-neutral "logical" path by stripping any /en prefix,
+// then re-attach it to produce both alternates for the current page.
+const rawPath = Astro.url.pathname.replace(/\/index\.html$/, '/').replace(/\.html$/, '');
+const path = rawPath !== '/' ? rawPath.replace(/\/$/, '') : '/';
+const logical = path === '/en' ? '/' : path.startsWith('/en/') ? path.slice(3) : path;
+const deHref = siteUrl + logical;
+const enHref = siteUrl + (logical === '/' ? '/en' : '/en' + logical);
+const canonical = lang === DEFAULT_LANG ? deHref : enHref;
 ---
 
 <!doctype html>
@@ -24,9 +35,9 @@ const canonical = lang === DEFAULT_LANG ? siteUrl + '/' : `${siteUrl}/?lang=${la
     <meta name="description" content={description} />
     <meta name="robots" content="index, follow, max-image-preview:large" />
     <link rel="canonical" href={canonical} />
-    <link rel="alternate" hreflang="de" href={`${siteUrl}/?lang=de`} />
-    <link rel="alternate" hreflang="en" href={`${siteUrl}/?lang=en`} />
-    <link rel="alternate" hreflang="x-default" href={`${siteUrl}/`} />
+    <link rel="alternate" hreflang="de" href={deHref} />
+    <link rel="alternate" hreflang="en" href={enHref} />
+    <link rel="alternate" hreflang="x-default" href={deHref} />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
     <link rel="sitemap" type="application/xml" href="/sitemap-index.xml" />
 
@@ -67,6 +78,16 @@ const canonical = lang === DEFAULT_LANG ? siteUrl + '/' : `${siteUrl}/?lang=${la
         url: 'https://opentransportdata.swiss/en/road-traffic/',
       },
       variableMeasured: ['queue length (km)', 'waiting time (min)', 'road status'],
+    })} />
+
+    <!-- Site-level identity for search engines, in the current page language. -->
+    <script type="application/ld+json" is:inline set:html={JSON.stringify({
+      '@context': 'https://schema.org',
+      '@type': 'WebSite',
+      name: t(lang, 'site.title'),
+      url: siteUrl + '/',
+      inLanguage: lang === 'de' ? 'de-CH' : 'en',
+      description,
     })} />
   </head>
   <body>

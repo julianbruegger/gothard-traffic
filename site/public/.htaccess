@@ -1,0 +1,21 @@
+# Serve the static Astro build on a plain Apache host (Hostpoint).
+#
+# The site is built with Astro `build.format: 'file'`, so pages are emitted as
+# `forecasts.html`, `index.html`, … while internal links (and the canonical
+# tags / sitemap) use clean, extensionless URLs like `/forecasts`. Without a
+# rewrite the host 404s on `/forecasts`, which is why the "Prognosen" nav link
+# was throwing an error. Map an extensionless request to its `.html` file when
+# one exists; real files (api/*.php, _astro/*), directories, and the `/` root
+# (served by index.php via DirectoryIndex) are left untouched.
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # Don't rewrite requests that already resolve to a real file or directory.
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # /forecasts -> /forecasts.html  (only when that file actually exists)
+  RewriteCond %{REQUEST_FILENAME}.html -f
+  RewriteRule ^(.+?)/?$ $1.html [L]
+</IfModule>

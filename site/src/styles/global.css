@@ -492,7 +492,7 @@ a {
 /* ---------- Trend chart ---------- */
 
 .trend {
-  margin: 2rem 0;
+  margin: 2rem auto;
 }
 
 .trend__title {
@@ -592,7 +592,7 @@ a {
 /* ---------- Forecast ---------- */
 
 .forecast {
-  margin: 2rem 0;
+  margin: 2rem auto;
 }
 
 .forecast__title {
@@ -784,7 +784,7 @@ a {
 /* ---------- Wait-time prediction chart ---------- */
 
 .fchart {
-  margin: 2rem 0;
+  margin: 2rem auto;
 }
 
 .fchart__title {
@@ -984,7 +984,7 @@ a {
 /* ---------- Diversion suggestions ---------- */
 
 .diversion {
-  margin: 2rem 0;
+  margin: 2rem auto;
 }
 
 .diversion[hidden] {
@@ -1083,7 +1083,7 @@ a {
 /* ---------- Info section ---------- */
 
 .info {
-  margin: 2rem 0 3rem;
+  margin: 2rem auto 3rem;
 }
 
 .info__title {
@@ -1199,7 +1199,7 @@ a {
 /* ---------- Yearly forecast chart ---------- */
 
 .yearly-forecast {
-  margin: 2rem 0 3rem;
+  margin: 2rem auto 3rem;
 }
 
 .yearly-forecast__title {

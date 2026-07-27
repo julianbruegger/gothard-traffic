@@ -38,8 +38,10 @@ export interface ForecastChartResult {
   plot: PlotBox;
   xTicks: AxisTick[];
   yTicks: AxisTick[];
-  forecastPath: string;   // dashed — predicted, selected direction
-  actualPath: string;     // solid — measured so far today, selected direction
+  forecastPath: string;    // dashed — typical predicted day, selected direction
+  forecastHighPath: string; // faint upper edge — busy-day prediction
+  forecastBandPath: string; // shaded typical→busy range for the selected direction
+  actualPath: string;      // solid — measured so far today, selected direction
   bandPath: string | null; // shaded min/max envelope across the historic lines
   historic: HistoricLine[];
 }
@@ -71,12 +73,14 @@ export function buildForecastChart(
   const innerH = height - PADDING_TOP - PADDING_BOTTOM;
 
   const forecastKey = direction === 'north' ? 'northWait' : 'southWait';
+  const highKey = direction === 'north' ? 'northWaitHigh' : 'southWaitHigh';
   const actualKey = direction;
 
   // Y scale: at least 60 min, rounded up to a clean 30-min step above the peak.
+  // Includes the busy-day upper edge so the range band is never clipped.
   const peak = Math.max(
     0,
-    ...forecast.map((p) => p[forecastKey]),
+    ...forecast.map((p) => p[highKey]),
     ...actual.map((p) => p[actualKey] ?? 0),
     ...historic.flatMap((h) => h.waitMinutes),
   );
@@ -91,6 +95,18 @@ export function buildForecastChart(
       : pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
 
   const forecastPath = linePath(forecast.map((p) => ({ x: xOf(p.minuteOfDay), y: yOf(p[forecastKey]) })));
+  const forecastHighPath = linePath(forecast.map((p) => ({ x: xOf(p.minuteOfDay), y: yOf(p[highKey]) })));
+
+  // Shaded range between the typical line (lower) and the busy-day line (upper):
+  // forward along the busy edge, back along the typical edge, closed.
+  const forecastBandPath = (() => {
+    if (forecast.length === 0) return '';
+    const hi = forecast.map((p) => `${xOf(p.minuteOfDay).toFixed(1)},${yOf(p[highKey]).toFixed(1)}`);
+    const lo = forecast
+      .map((p) => `${xOf(p.minuteOfDay).toFixed(1)},${yOf(p[forecastKey]).toFixed(1)}`)
+      .reverse();
+    return `M${hi.join(' L')} L${lo.join(' L')} Z`;
+  })();
 
   // Measured line only runs up to "now" (today) and skips gaps where the value is null.
   const actualPath = linePath(
@@ -153,6 +169,8 @@ export function buildForecastChart(
     xTicks,
     yTicks,
     forecastPath,
+    forecastHighPath,
+    forecastBandPath,
     actualPath,
     bandPath,
     historic: historicLines,

@@ -16,8 +16,10 @@ import raw from '../data/empirical-profiles.json';
 const MIN_DAYS = 3;
 
 export interface EmpiricalProfiles {
-  n: number[]; // 24 hourly indices, Nordportal Göschenen (southbound, CH→IT)
-  s: number[]; // 24 hourly indices, Südportal Airolo (northbound, IT→CH)
+  n: number[];     // 24 hourly indices, Nordportal Göschenen (southbound, CH→IT) — typical day
+  s: number[];     // 24 hourly indices, Südportal Airolo (northbound, IT→CH) — typical day
+  nHigh: number[]; // same, scaled to a busy day (p90 daily peak) — upper edge of the forecast range
+  sHigh: number[];
 }
 
 /** Day-weighted SEASON weight of the observed window — the base magnitudes are at this level. */
@@ -61,8 +63,14 @@ export function empiricalDayProfiles(
   if (!hasEmpirical(dow)) return null;
   const baseN = raw.weekdayHour.N[dow];
   const baseS = raw.weekdayHour.S[dow];
+  // Busy-day multiplier (p90 / mean of daily peaks) for this weekday; falls back
+  // to a generic 1.6 if the data predates the field.
+  const ratioN = raw.weekdayHighRatio?.N[dow] ?? 1.6;
+  const ratioS = raw.weekdayHighRatio?.S[dow] ?? 1.6;
   return {
     n: baseN.map((v) => +(v * seasonScale * holMultN).toFixed(3)),
     s: baseS.map((v) => +(v * seasonScale * holMultS).toFixed(3)),
+    nHigh: baseN.map((v) => +(v * seasonScale * holMultN * ratioN).toFixed(3)),
+    sHigh: baseS.map((v) => +(v * seasonScale * holMultS * ratioS).toFixed(3)),
   };
 }

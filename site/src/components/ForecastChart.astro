@@ -45,6 +45,10 @@ const { lang } = Astro.props;
         <span class="fchart__legend-swatch fchart__legend-swatch--dashed"></span>
         {t(lang, 'fchart.predicted')}
       </span>
+      <span class="fchart__legend-item">
+        <span class="fchart__legend-swatch fchart__legend-swatch--range"></span>
+        {t(lang, 'fchart.range')}
+      </span>
       <span class="fchart__legend-item" id="fchart-legend-actual" hidden>
         <span class="fchart__legend-swatch fchart__legend-swatch--solid"></span>
         {t(lang, 'fchart.actual')}

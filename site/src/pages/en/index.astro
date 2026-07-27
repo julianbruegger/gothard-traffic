@@ -1,0 +1,16 @@
+---
+import Layout from '../../layouts/Layout.astro';
+import Header from '../../components/Header.astro';
+import HomeContent from '../../components/HomeContent.astro';
+import Footer from '../../components/Footer.astro';
+import { loadHomeData } from '../../lib/load-data';
+
+const lang = 'en' as const;
+const { data, history, northTrend, southTrend } = loadHomeData();
+---
+
+<Layout lang={lang} updatedIso={data.updated}>
+  <Header lang={lang} />
+  <HomeContent lang={lang} data={data} history={history} northTrend={northTrend} southTrend={southTrend} />
+  <Footer lang={lang} dataSource={data.source} />
+</Layout>

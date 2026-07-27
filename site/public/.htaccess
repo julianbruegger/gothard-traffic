@@ -10,6 +10,15 @@
 <IfModule mod_rewrite.c>
   RewriteEngine On
 
+  # Language home like /en is emitted as the flat file en.html, but a same-named
+  # directory (en/) also exists to hold its sub-pages (/en/forecasts). Without
+  # this, /en resolves to that directory and 404s (no index inside). Serve the
+  # .html for a bare single-segment path when it exists, before the directory
+  # passthrough below can claim it. Real files/dirs without a .html sibling
+  # (data/, _astro/, robots.txt) fall through untouched.
+  RewriteCond %{DOCUMENT_ROOT}/$1.html -f
+  RewriteRule ^([^/]+)/?$ $1.html [L]
+
   # Don't rewrite requests that already resolve to a real file or directory.
   RewriteCond %{REQUEST_FILENAME} -f [OR]
   RewriteCond %{REQUEST_FILENAME} -d

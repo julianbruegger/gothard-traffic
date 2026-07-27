@@ -1,0 +1,39 @@
+---
+import { t, type Lang } from '../lib/i18n';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+
+// The visible Q&A and the FAQPage structured data are built from the same
+// translation keys, so they can never drift apart. FAQPage markup makes the
+// page eligible for Google's expandable FAQ rich result.
+const items = [1, 2, 3, 4, 5].map((n) => ({
+  q: t(lang, `faq.q${n}` as any),
+  a: t(lang, `faq.a${n}` as any),
+}));
+
+const faqLd = {
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: items.map((it) => ({
+    '@type': 'Question',
+    name: it.q,
+    acceptedAnswer: { '@type': 'Answer', text: it.a },
+  })),
+};
+---
+
+<section class="faq container" aria-labelledby="faq-title">
+  <h2 class="faq__title" id="faq-title">{t(lang, 'faq.title')}</h2>
+  <div class="faq__list">
+    {items.map((it, i) => (
+      <details class="faq__item" open={i === 0}>
+        <summary class="faq__q">{it.q}</summary>
+        <p class="faq__a">{it.a}</p>
+      </details>
+    ))}
+  </div>
+  <script type="application/ld+json" is:inline set:html={JSON.stringify(faqLd)} />
+</section>

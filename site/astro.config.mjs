@@ -11,5 +11,23 @@ export default defineConfig({
   build: {
     format: 'file',
   },
-  integrations: [sitemap()],
+  integrations: [
+    sitemap({
+      // Emit <xhtml:link rel="alternate" hreflang="…"> pairs for every page so
+      // Google understands the German (root) and English (/en) versions are the
+      // same content in two languages. lastmod (build time) nudges recrawl of a
+      // page whose live data changes constantly.
+      i18n: {
+        defaultLocale: 'de',
+        locales: {
+          de: 'de-CH',
+          en: 'en',
+        },
+      },
+      serialize(item) {
+        item.lastmod = new Date().toISOString();
+        return item;
+      },
+    }),
+  ],
 });

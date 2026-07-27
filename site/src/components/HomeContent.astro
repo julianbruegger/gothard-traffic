@@ -1,0 +1,53 @@
+---
+import StatusHero from './StatusHero.astro';
+import PlannedClosureBanner from './PlannedClosureBanner.astro';
+import PortalCard from './PortalCard.astro';
+import PassCard from './PassCard.astro';
+import TrendChart from './TrendChart.astro';
+import ForecastChart from './ForecastChart.astro';
+import DiversionSection from './DiversionSection.astro';
+import InfoSection from './InfoSection.astro';
+import Faq from './Faq.astro';
+import { t, type Lang } from '../lib/i18n';
+import type { GotthardData, HistoryPoint } from '../lib/types';
+import type { QueueTrend } from '../lib/trend';
+
+interface Props {
+  lang: Lang;
+  data: GotthardData;
+  history: HistoryPoint[];
+  northTrend: QueueTrend | null;
+  southTrend: QueueTrend | null;
+}
+const { lang, data, history, northTrend, southTrend } = Astro.props;
+---
+
+<main id="main">
+  <StatusHero lang={lang} data={data} />
+  <PlannedClosureBanner lang={lang} closures={data.tunnel.plannedClosures ?? []} />
+  <div class="container">
+    <div class="card-grid">
+      <PortalCard lang={lang} side="north" portal={data.tunnel.north} trend={northTrend} />
+      <PortalCard lang={lang} side="south" portal={data.tunnel.south} trend={southTrend} />
+      <PassCard lang={lang} pass={data.pass} />
+    </div>
+  </div>
+  <DiversionSection lang={lang} />
+  <TrendChart lang={lang} history={history} />
+  <ForecastChart lang={lang} />
+  <section class="forecast container" id="forecast-section" aria-labelledby="forecast-title">
+    <h2 class="forecast__title" id="forecast-title">{t(lang, 'forecast.title')}</h2>
+    <p class="forecast__subtitle">{t(lang, 'forecast.subtitle')}</p>
+    <div id="forecast-days" class="forecast__days" aria-live="polite"></div>
+    <div class="forecast__legend">
+      <span class="forecast__legend-dot" data-level="low"></span><span class="forecast__legend-label">{t(lang, 'forecast.low')}</span>
+      <span class="forecast__legend-dot" data-level="moderate"></span><span class="forecast__legend-label">{t(lang, 'forecast.moderate')}</span>
+      <span class="forecast__legend-dot" data-level="high"></span><span class="forecast__legend-label">{t(lang, 'forecast.high')}</span>
+      <span class="forecast__legend-dot" data-level="extreme"></span><span class="forecast__legend-label">{t(lang, 'forecast.extreme')}</span>
+    </div>
+    <p class="forecast__disclaimer">{t(lang, 'forecast.disclaimer')}</p>
+  </section>
+  <InfoSection lang={lang} />
+  <Faq lang={lang} />
+</main>
+<script src="../scripts/live.ts"></script>

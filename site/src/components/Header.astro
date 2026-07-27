@@ -6,26 +6,40 @@ interface Props {
   currentPage?: 'status' | 'forecasts';
 }
 const { lang, currentPage = 'status' } = Astro.props;
+
+// Language-neutral path of the current page (strip any /en prefix), used to
+// build in-language nav links and the DE/EN switch that point at the real
+// per-language URLs (German at the root, English under /en) instead of a
+// ?lang= query param that served duplicate content.
+const rawPath = Astro.url.pathname.replace(/\/index\.html$/, '/').replace(/\.html$/, '');
+const path = rawPath !== '/' ? rawPath.replace(/\/$/, '') : '/';
+const logical = path === '/en' ? '/' : path.startsWith('/en/') ? path.slice(3) : path;
+
+const prefix = (l: Lang) => (l === 'de' ? '' : '/en');
+const home = (l: Lang) => prefix(l) || '/';
+const forecasts = (l: Lang) => `${prefix(l)}/forecasts`;
+const deHref = logical === '/' ? '/' : logical;
+const enHref = logical === '/' ? '/en' : '/en' + logical;
 ---
 
 <header class="site-header">
   <div class="container site-header__bar">
-    <a class="site-header__brand" href="/">
+    <a class="site-header__brand" href={home(lang)}>
       <span class="site-header__mark" aria-hidden="true">GT</span>
       <span>{t(lang, 'site.title')}</span>
     </a>
     <nav class="site-nav" aria-label="Navigation">
-      <a href="/" class="site-nav__link" aria-current={currentPage === 'status' ? 'page' : undefined}>
+      <a href={home(lang)} class="site-nav__link" aria-current={currentPage === 'status' ? 'page' : undefined}>
         {t(lang, 'nav.status')}
       </a>
-      <a href="/forecasts" class="site-nav__link" aria-current={currentPage === 'forecasts' ? 'page' : undefined}>
+      <a href={forecasts(lang)} class="site-nav__link" aria-current={currentPage === 'forecasts' ? 'page' : undefined}>
         {lang === 'de' ? 'Prognosen' : 'Forecasts'}
       </a>
     </nav>
     <div class="header__actions">
       <nav class="lang-switch" aria-label="Language">
-        <a href="/?lang=de" aria-current={lang === 'de' ? 'true' : 'false'} data-lang-link="de">DE</a>
-        <a href="/?lang=en" aria-current={lang === 'en' ? 'true' : 'false'} data-lang-link="en">EN</a>
+        <a href={deHref} aria-current={lang === 'de' ? 'true' : 'false'} data-lang-link="de">DE</a>
+        <a href={enHref} aria-current={lang === 'en' ? 'true' : 'false'} data-lang-link="en">EN</a>
       </nav>
       <button type="button" class="theme-toggle" id="theme-toggle" aria-label={t(lang, 'theme.toggle')}>
         <span class="theme-toggle__moon" aria-hidden="true">☾</span>

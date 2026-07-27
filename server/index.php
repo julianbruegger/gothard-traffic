@@ -77,6 +77,14 @@ if (!I18n::isSupported($lang)) {
     $lang = 'de';
 }
 
+// English now lives at its own real URL (/en). Permanently redirect the old
+// ?lang=en query-parameter form there so search engines consolidate on one
+// canonical English page instead of indexing duplicate content at "/".
+if ($lang === 'en') {
+    header('Location: /en', true, 301);
+    exit;
+}
+
 $data = ssr_default_data();
 
 $configPath = __DIR__ . '/cron/config.php';
@@ -98,7 +106,8 @@ $scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' :
 $host   = $_SERVER['HTTP_HOST'] ?? 'localhost';
 $path   = strtok($_SERVER['REQUEST_URI'] ?? '/', '?');
 $base   = "{$scheme}://{$host}" . rtrim((string) $path, '/');
-$canonicalUrl = $lang === 'de' ? ($base === '' ? '/' : $base . '/') : $base . '/?lang=en';
+// Only German is served here (English is redirected to /en above).
+$canonicalUrl = $base === '' ? "{$scheme}://{$host}/" : $base . '/';
 
 $template = (string) file_get_contents($templatePath);
 $html     = Ssr::render($template, $data, $lang, $canonicalUrl);

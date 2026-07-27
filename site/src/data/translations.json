@@ -61,7 +61,18 @@
     "yearly.subtitle": "Tägliche Spitzenwartezeit · Südportal · 1. Juni – 30. September",
     "yearly.yAxisLabel": "Min",
     "yearly.forecastLabel": "Prognose",
-    "yearly.disclaimer": "Prognosewerte basieren auf dem Verkehrsmodell (Wochentag, Jahreszeit, Ferienkalender). Reale Staus können stark abweichen."
+    "yearly.disclaimer": "Prognosewerte basieren auf dem Verkehrsmodell (Wochentag, Jahreszeit, Ferienkalender). Reale Staus können stark abweichen.",
+    "faq.title": "Häufige Fragen zum Gotthard-Verkehr",
+    "faq.q1": "Wie lange muss ich aktuell am Gotthard-Tunnel warten?",
+    "faq.a1": "Die Wartezeit hängt von der Stau-Länge ab. Faustregel: 5 km Stau bedeuten meist 45–60 Minuten, 10 km oft 90–120 Minuten oder mehr. Die aktuellen Live-Werte für Nord- und Südportal stehen oben auf dieser Seite und werden alle 60 Sekunden aktualisiert.",
+    "faq.q2": "Ist der Gotthard-Strassentunnel nachts gesperrt?",
+    "faq.a2": "Der Gotthard-Strassentunnel (A2) ist normalerweise rund um die Uhr, also auch nachts, befahrbar. Das ASTRA führt aber regelmässig nächtliche Wartungs- und Reinigungsarbeiten durch und sperrt den Tunnel dann für einzelne Nächte – der Verkehr wird in dieser Zeit über den San Bernardino (A13) umgeleitet. Geplante Nacht- und Tagessperrungen werden auf dieser Seite angezeigt, sobald sie bekannt sind.",
+    "faq.q3": "Wann ist am Gotthard am meisten Stau?",
+    "faq.a3": "Erfahrungsgemäss am stärksten: Freitagnachmittag, Sonntag-Rückreiseverkehr sowie Sommer-Wochenenden und der Beginn der Schulferien. An Ostern, Pfingsten und rund um Feiertage bilden sich vor dem Nordportal (Göschenen) regelmässig lange Rückstaus Richtung Süden.",
+    "faq.q4": "Ist der Gotthardpass offen?",
+    "faq.a4": "Die Gotthard-Passstrasse ist eine Sommerroute und im Winter (etwa November bis Mai) wegen Schnee gesperrt. Der Tunnel bleibt ganzjährig die Hauptverbindung. Den aktuellen Status der Passstrasse zeigt diese Seite live an.",
+    "faq.q5": "Welche Ausweichrouten gibt es bei Stau am Gotthard?",
+    "faq.a5": "Bei starkem Rückstau lohnt sich der San-Bernardino-Tunnel (A13) via Chur, im Sommer die offene Gotthard-Passstrasse oder der Autoverlad Furka. Welche Alternative sinnvoll ist, hängt von Start, Ziel und aktueller Verkehrslage ab."
   },
   "en": {
     "site.title": "Gotthard Traffic Live",
@@ -125,6 +136,17 @@
     "yearly.subtitle": "Daily peak wait time · South portal · June 1 – September 30",
     "yearly.yAxisLabel": "Min",
     "yearly.forecastLabel": "forecast",
-    "yearly.disclaimer": "Forecast values are model-based (weekday, season, holiday calendar). Actual congestion may differ significantly."
+    "yearly.disclaimer": "Forecast values are model-based (weekday, season, holiday calendar). Actual congestion may differ significantly.",
+    "faq.title": "Frequently asked questions about Gotthard traffic",
+    "faq.q1": "How long is the wait at the Gotthard tunnel right now?",
+    "faq.a1": "The waiting time depends on the queue length. Rule of thumb: a 5 km queue usually means 45–60 minutes, 10 km often 90–120 minutes or more. The current live values for the north and south portals are shown at the top of this page and refresh every 60 seconds.",
+    "faq.q2": "Is the Gotthard road tunnel closed at night?",
+    "faq.a2": "The Gotthard road tunnel (A2) is normally open around the clock, including at night. However, ASTRA regularly carries out overnight maintenance and cleaning work and closes the tunnel for individual nights – traffic is then diverted via the San Bernardino (A13). Any planned night or daytime closures are shown on this page as soon as they are announced.",
+    "faq.q3": "When is Gotthard traffic worst?",
+    "faq.a3": "Typically worst: Friday afternoons, Sunday return traffic, summer weekends and the start of school holidays. Around Easter, Whitsun and public holidays, long queues towards the south regularly build up in front of the north portal (Göschenen).",
+    "faq.q4": "Is the Gotthard Pass open?",
+    "faq.a4": "The Gotthard Pass road is a summer route and is closed in winter (roughly November to May) due to snow. The tunnel remains the main connection all year round. This page shows the current status of the pass road live.",
+    "faq.q5": "What are the alternative routes when the Gotthard is jammed?",
+    "faq.a5": "During heavy congestion the San Bernardino tunnel (A13) via Chur is worth considering, plus the open Gotthard Pass road in summer or the Furka car train. Which alternative makes sense depends on your start, destination and the current traffic situation."
   }
 }

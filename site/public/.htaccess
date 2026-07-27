@@ -1,0 +1,29 @@
+# Serve the static Astro build on a plain Apache host (Hostpoint).
+#
+# The site is built with Astro `build.format: 'file'`, so pages are emitted as
+# `forecasts.html`, `index.html`, … while internal links (and the canonical
+# tags / sitemap) use clean, extensionless URLs like `/forecasts`. Without a
+# rewrite the host 404s on `/forecasts`. Map an extensionless request to its
+# `.html` file when one exists; real files (api/*.php, _astro/*), directories,
+# and the `/` root (served by index.php via DirectoryIndex) are left untouched.
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+
+  # A language home like /en is emitted as the flat file en.html, but a
+  # same-named directory (en/) also exists to hold its sub-pages
+  # (/en/forecasts). Without this, /en resolves to that directory and 404s (no
+  # index inside). Serve the .html for a bare single-segment path when it
+  # exists, before the directory passthrough below can claim it. Real files/dirs
+  # without a .html sibling (data/, _astro/, robots.txt) fall through untouched.
+  RewriteCond %{DOCUMENT_ROOT}/$1.html -f
+  RewriteRule ^([^/]+)/?$ $1.html [L]
+
+  # Don't rewrite requests that already resolve to a real file or directory.
+  RewriteCond %{REQUEST_FILENAME} -f [OR]
+  RewriteCond %{REQUEST_FILENAME} -d
+  RewriteRule ^ - [L]
+
+  # /forecasts -> /forecasts.html  (only when that file actually exists)
+  RewriteCond %{REQUEST_FILENAME}.html -f
+  RewriteRule ^(.+?)/?$ $1.html [L]
+</IfModule>

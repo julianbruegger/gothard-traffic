@@ -45,9 +45,10 @@ const WINDOW_MS = 24 * 60 * 60_000;
 // reads as a trend, spikes get smoothed toward reality, and evenly-spaced buckets
 // draw a continuous line instead of a dotted baseline.
 const BUCKET_MS = 30 * 60_000;
-// Bridge a short data gap (a missed cron run or two) so the line stays continuous,
-// but break it for a genuine outage rather than inventing a straight line across it.
-const MAX_BRIDGE_MS = 75 * 60_000;
+// Bridge gaps so the line stays continuous even when the feed is patchy (the
+// point of averaging: draw the trend we do have rather than a fragmented dotted
+// mess). Only a genuinely long outage (> 3h with no reading at all) breaks it.
+const MAX_BRIDGE_MS = 3 * 60 * 60_000;
 
 interface Bucket {
   center: number;

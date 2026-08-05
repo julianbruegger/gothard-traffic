@@ -39,7 +39,7 @@
     "footer.viewSource": "Quellcode auf GitHub",
     "lang.de": "Deutsch",
     "lang.en": "English",
-    "meta.description": "Live-Wartezeiten und Stau-Länge am Gotthard-Strassentunnel (Nord/Süd) sowie Status des Gotthardpasses – automatisch aktualisiert."
+    "meta.description": "Gotthard Verkehr aktuell: Live-Stau, Wartezeiten und Sperrungen am Gotthard-Strassentunnel (Nord Göschenen / Süd Airolo) sowie Status des Gotthardpasses."
   },
   "en": {
     "site.title": "Gotthard Traffic Live",
@@ -81,6 +81,6 @@
     "footer.viewSource": "Source code on GitHub",
     "lang.de": "Deutsch",
     "lang.en": "English",
-    "meta.description": "Live waiting times and queue length at the Gotthard road tunnel (north/south) and Gotthard Pass status - updated automatically."
+    "meta.description": "Gotthard traffic live: real-time queue length, waiting times and closures at the Gotthard road tunnel (north Göschenen / south Airolo) and Gotthard Pass status."
   }
 }

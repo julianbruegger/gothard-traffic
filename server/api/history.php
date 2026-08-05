@@ -20,7 +20,7 @@ require_once __DIR__ . '/../lib/SnapshotStore.php';
 try {
     $pdo   = Db::connect($config);
     $store = new SnapshotStore($pdo);
-    $rows  = $store->history(48);
+    $rows  = $store->history(24);
 } catch (Throwable $e) {
     http_response_code(503);
     echo json_encode(['error' => 'Database unavailable.']);

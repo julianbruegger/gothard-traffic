@@ -196,8 +196,12 @@ function toLevel(idx: number): TrafficLevel {
   return 'low';
 }
 
-// Convert a 0–10 congestion index into an estimated waiting time in minutes.
-// idx 10 ≈ 90 min (matches "10 km / 90+ min" at the top of the model).
+// Convert a congestion index into an estimated waiting time in minutes.
+// The index tracks queue-km, and TCS reports ~9–10 min delay per km, so idx 10 ≈
+// 90 min, idx 20 ≈ 180 min. There is no upper cap here: on the worst days the
+// Gotthard queue reaches 15–20 km (well over 2 hours), and clamping the estimate
+// at 90 min made the forecast structurally unable to represent those days (see
+// MAX_INDEX in indexAt for the source cap that used to flatten everything at 90).
 export function idxToWaitMinutes(idx: number): number {
   return Math.round(Math.max(0, idx) * 9);
 }
@@ -222,7 +226,13 @@ interface DayModel {
   mult: number;
   nProf: HProfile;
   sProf: HProfile;
+  nProfHigh: HProfile; // busy-day (upper-edge) profiles for the forecast range
+  sProfHigh: HProfile;
 }
+
+// Busy-day multiplier for the hand-tuned fallback model (when a weekday has no
+// empirical profile). The data-driven path uses measured per-weekday ratios.
+const DEFAULT_HIGH_RATIO = 1.6;
 
 // UTC moment corresponding to midnight (00:00) in Zurich for the given instant.
 function swissMidnightUTC(from: Date): Date {
@@ -260,6 +270,10 @@ function computeDayModel(dayUTC: Date, holidays: HolidayPeriod[], lang: 'de' | '
   // Empirical profiles are already fully scaled, so `mult` collapses to 1.
   const mult = empirical ? 1 : Math.min(1.3, seasonMult + boost);
   const { n: nProf, s: sProf } = empirical ?? profilesFor(dow);
+  // Upper edge of the forecast range ("busy day"): measured per-weekday ratios
+  // where we have data, else a flat multiplier over the fallback profiles.
+  const nProfHigh = empirical ? empirical.nHigh : nProf.map((v) => v * DEFAULT_HIGH_RATIO);
+  const sProfHigh = empirical ? empirical.sHigh : sProf.map((v) => v * DEFAULT_HIGH_RATIO);
 
   return {
     isoDate: `${year}-${pad2(month)}-${pad2(dom)}`,
@@ -270,18 +284,26 @@ function computeDayModel(dayUTC: Date, holidays: HolidayPeriod[], lang: 'de' | '
     mult,
     nProf,
     sProf,
+    nProfHigh,
+    sProfHigh,
   };
 }
 
-// Congestion index (0–10) at a fractional minute-of-day, linearly interpolating
-// between the hourly profile samples. This is what gives us 10-minute resolution.
+// Safety ceiling on the congestion index. Matches the ~30 km clamp applied to the
+// raw TCS reports (MAX_KM in build-empirical-profiles.mjs), i.e. ~270 min — high
+// enough never to clip a realistic prediction, unlike the old cap of 10 (90 min)
+// that flattened every busy day. Guards only against a runaway extrapolation.
+const MAX_INDEX = 30;
+
+// Congestion index at a fractional minute-of-day, linearly interpolating between
+// the hourly profile samples. This is what gives us 10-minute resolution.
 function indexAt(prof: HProfile, mult: number, minuteOfDay: number): number {
   const hf = minuteOfDay / 60;             // 0–24
   const h0 = Math.floor(hf) % 24;
   const h1 = (h0 + 1) % 24;
   const frac = hf - Math.floor(hf);
   const raw = prof[h0] + (prof[h1] - prof[h0]) * frac;
-  return Math.min(10, raw * mult);
+  return Math.min(MAX_INDEX, raw * mult);
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────
@@ -326,8 +348,10 @@ export interface ForecastPoint {
   minuteOfDay: number; // 0–1440
   northIdx: number;
   southIdx: number;
-  northWait: number;   // estimated wait minutes, north portal (Göschenen)
-  southWait: number;   // estimated wait minutes, south portal (Airolo)
+  northWait: number;     // estimated wait minutes, north portal (Göschenen) — typical day
+  southWait: number;     // estimated wait minutes, south portal (Airolo) — typical day
+  northWaitHigh: number; // upper edge of the range: what to expect on a busy day
+  southWaitHigh: number;
 }
 
 export interface DayCurve {
@@ -354,12 +378,16 @@ export function generateDayCurve(from: Date, lang: 'de' | 'en' = 'de', stepMin =
   for (let m = 0; m <= 1440; m += stepMin) {
     const northIdx = indexAt(model.nProf, model.mult, m);
     const southIdx = indexAt(model.sProf, model.mult, m);
+    const northIdxHigh = indexAt(model.nProfHigh, model.mult, m);
+    const southIdxHigh = indexAt(model.sProfHigh, model.mult, m);
     points.push({
       minuteOfDay: m,
       northIdx: +northIdx.toFixed(2),
       southIdx: +southIdx.toFixed(2),
       northWait: idxToWaitMinutes(northIdx),
       southWait: idxToWaitMinutes(southIdx),
+      northWaitHigh: idxToWaitMinutes(northIdxHigh),
+      southWaitHigh: idxToWaitMinutes(southIdxHigh),
     });
   }
 

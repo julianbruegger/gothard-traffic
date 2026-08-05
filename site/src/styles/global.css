@@ -911,6 +911,14 @@ a {
   background: none;
 }
 
+/* Shaded block matching the typical→busy-day range band on the chart. */
+.fchart__legend-swatch--range {
+  height: 10px;
+  border-radius: 2px;
+  background: color-mix(in srgb, var(--color-accent) 22%, transparent);
+  border: 1px solid color-mix(in srgb, var(--color-accent) 40%, transparent);
+}
+
 .fchart__disclaimer {
   margin-top: 0.5rem;
   font-size: 0.75rem;

@@ -244,6 +244,34 @@ function normalizeToPeak(profile, targetPeaks) {
 const profN = normalizeToPeak(wN.profile, baseN);
 const profS = normalizeToPeak(wS.profile, baseS);
 
+// ─── Busy-day range: how much worse a bad day is than the typical one ──────────
+// The normalized profiles above track the *mean* daily peak. But Gotthard queues
+// are strongly right-skewed — most days are moderate, a handful are catastrophic —
+// so on any given bad day the real queue runs well above that mean. To show an
+// honest "typical → busy day" range instead of a single line that any incident
+// blows past, we measure, per weekday and direction, the 90th-percentile daily
+// peak and express it as a multiplier over the mean. The forecast's upper band is
+// then `typical × ratio`. Clamped to [1, 3] and floored so a busy day is always
+// at least somewhat worse than typical even where samples are thin.
+function busyRatioByDow(dir) {
+  const perDow = Array.from({ length: 7 }, () => []);
+  const allDays = new Set([...Object.keys(bucket.N), ...Object.keys(bucket.S)]);
+  for (const iso of allDays) {
+    if (holidayOf(iso)) continue;
+    perDow[dowOf(iso)].push(dailyPeak(dir, iso));
+  }
+  return perDow.map((vals) => {
+    if (vals.length < 5) return 1.6; // too few days to trust a percentile
+    const sorted = [...vals].sort((a, b) => a - b);
+    const mean = sorted.reduce((a, b) => a + b, 0) / sorted.length;
+    const p90 = sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.9))];
+    if (mean <= 0) return 1.6;
+    return +Math.max(1.15, Math.min(3, p90 / mean)).toFixed(2);
+  });
+}
+const highRatioN = busyRatioByDow('N');
+const highRatioS = busyRatioByDow('S');
+
 function holidayEffect() {
   const out = {};
   const allDays = new Set([...Object.keys(bucket.N), ...Object.keys(bucket.S)]);
@@ -296,6 +324,7 @@ const data = {
     note: 'Index units: 0 = free flow, ~10 = 10 km / 90 min. N = Nordportal Göschenen (southbound), S = Südportal Airolo (northbound).',
   },
   weekdayHour: { N: profN, S: profS },
+  weekdayHighRatio: { N: highRatioN, S: highRatioS }, // busy-day (p90) multiplier over the typical peak, per weekday
   sampleDays: wN.dayCount, // baseline day count per weekday (Sun=0)
   holiday,
 };
@@ -311,7 +340,7 @@ console.log('\nTypical peak km by weekday (non-holiday baseline):');
 console.log('  DOW   N(south exodus)  S(north return)');
 for (let d = 0; d < 7; d++) {
   console.log(
-    `  ${DOW_LABEL[d]}    ${baseN[d].toFixed(1).padStart(6)}          ${baseS[d].toFixed(1).padStart(6)}`,
+    `  ${DOW_LABEL[d]}    ${baseN[d].toFixed(1).padStart(6)} (×${highRatioN[d]} busy)   ${baseS[d].toFixed(1).padStart(6)} (×${highRatioS[d]} busy)`,
   );
 }
 console.log('\nHoliday correlation:');

@@ -354,8 +354,12 @@ function renderForecastChart(history: HistoryPoint[]) {
     `<line x1="${chart.nowX}" y1="${chart.plot.top}" x2="${chart.nowX}" y2="${chart.plot.bottom}" stroke="var(--color-accent)" stroke-width="1" stroke-dasharray="2 2" opacity="0.6" />
      <text x="${chart.nowX}" y="${chart.plot.top + 8}" text-anchor="middle" font-size="9" fill="var(--color-accent)" font-family="var(--font-sans)">${nowLabel}</text>`;
 
-  const band = chart.bandPath
-    ? `<path d="${chart.bandPath}" fill="rgba(139, 92, 246, 0.10)" stroke="none" />`
+  // Shaded typical→busy-day forecast range, with a faint dashed upper edge.
+  const fcBand = chart.forecastBandPath
+    ? `<path d="${chart.forecastBandPath}" fill="var(--color-accent)" opacity="0.12" stroke="none" />`
+    : '';
+  const fcHigh = chart.forecastHighPath
+    ? `<path d="${chart.forecastHighPath}" fill="none" stroke="var(--color-accent)" stroke-width="1" stroke-dasharray="2 3" opacity="0.45" stroke-linejoin="round" />`
     : '';
   const historicPaths = chart.historic
     .map(h => `<path d="${h.path}" fill="none" stroke="${h.color}" stroke-width="1.5" stroke-linejoin="round" />`)
@@ -365,7 +369,7 @@ function renderForecastChart(history: HistoryPoint[]) {
     `<path d="${chart.forecastPath}" fill="none" stroke="var(--color-accent)" stroke-width="1.75" stroke-dasharray="5 4" opacity="0.8" stroke-linejoin="round" />
      <path d="${chart.actualPath}" fill="none" stroke="var(--color-accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />`;
 
-  svg.innerHTML = `<desc id="fchart-desc">${t(lang, 'fchart.title')}</desc>${band}${grid}${yLabels}${xLabels}${historicPaths}${nowMarker}${paths}<g id="fchart-hover" style="pointer-events:none"></g>`;
+  svg.innerHTML = `<desc id="fchart-desc">${t(lang, 'fchart.title')}</desc>${fcBand}${grid}${yLabels}${xLabels}${historicPaths}${nowMarker}${fcHigh}${paths}<g id="fchart-hover" style="pointer-events:none"></g>`;
 
   fchartState = { chart, points: curve.points, actual, nowMin, direction: fchartDirection };
   bindForecastChartHover(svg as unknown as SVGSVGElement);
@@ -394,16 +398,19 @@ function renderForecastChart(history: HistoryPoint[]) {
   // Dynamic subtitle: day + holiday context + predicted daily peak (selected direction).
   const subtitle = document.getElementById('fchart-subtitle');
   if (subtitle) {
-    let peak = 0, peakMin = 0;
+    let peak = 0, peakMin = 0, peakHigh = 0;
     for (const p of curve.points) {
       const w = fchartDirection === 'north' ? p.northWait : p.southWait;
-      if (w > peak) { peak = w; peakMin = p.minuteOfDay; }
+      const wh = fchartDirection === 'north' ? p.northWaitHigh : p.southWaitHigh;
+      if (w > peak) { peak = w; peakMin = p.minuteOfDay; peakHigh = wh; }
     }
     const ctx = curve.context ? ` · ${curve.context}` : '';
+    // Peak shown as a typical→busy range so a bad day doesn't look like a miss.
+    const peakRange = peakHigh > peak + 1 ? `${peak}–${peakHigh}` : `${peak}`;
     subtitle.textContent = peak > 0
       ? (lang === 'de'
-          ? `${curve.fullDayLabel}, ${curve.dateLabel}${ctx} · Vorhergesagte Spitze ca. ${peak} Min gegen ${minuteToHHMM(peakMin)}`
-          : `${curve.fullDayLabel}, ${curve.dateLabel}${ctx} · Predicted peak ~${peak} min around ${minuteToHHMM(peakMin)}`)
+          ? `${curve.fullDayLabel}, ${curve.dateLabel}${ctx} · Spitze ca. ${peakRange} Min (typisch–stark) gegen ${minuteToHHMM(peakMin)}`
+          : `${curve.fullDayLabel}, ${curve.dateLabel}${ctx} · Peak ~${peakRange} min (typical–busy) around ${minuteToHHMM(peakMin)}`)
       : (lang === 'de'
           ? `${curve.fullDayLabel}, ${curve.dateLabel}${ctx} · Kaum Stau erwartet`
           : `${curve.fullDayLabel}, ${curve.dateLabel}${ctx} · Little congestion expected`);
@@ -470,6 +477,7 @@ function bindForecastChartHover(svg: SVGSVGElement) {
     const fp = points[idx];
     const px = fchartXOf(fp.minuteOfDay, chart);
     const predicted = direction === 'north' ? fp.northWait : fp.southWait;
+    const predictedHigh = direction === 'north' ? fp.northWaitHigh : fp.southWaitHigh;
 
     const meas = nearestActual(actual, nowMin, fp.minuteOfDay, direction);
 
@@ -493,10 +501,14 @@ function bindForecastChartHover(svg: SVGSVGElement) {
       .map(h => `<div class="fchart__tt-sub" style="color:${h.color}">${isoDateLabel(h.isoDate)}: ${Math.round(h.values[idx])} ${unit}</div>`)
       .join('');
 
+    // Show the forecast as a typical→busy-day range (e.g. "45–120 min").
+    const rangeText = predictedHigh > predicted + 1
+      ? `${Math.round(predicted)}–${Math.round(predictedHigh)}`
+      : `${Math.round(predicted)}`;
     tip.innerHTML =
       `<div class="fchart__tt-time">${minuteToHHMM(fp.minuteOfDay)}</div>` +
       `<div class="fchart__tt-row"><span class="fchart__tt-key"><span class="fchart__tt-dot" style="background:var(--color-accent)"></span>${dirLabel}</span>` +
-        `<span class="fchart__tt-val">${predWord}: ${Math.round(predicted)} ${unit}</span></div>` +
+        `<span class="fchart__tt-val">${predWord}: ${rangeText} ${unit}</span></div>` +
       sub;
 
     tip.removeAttribute('hidden');

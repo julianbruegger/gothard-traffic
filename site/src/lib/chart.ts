@@ -53,10 +53,45 @@ export function buildSparkline(history: HistoryPoint[], width = 640, height = 22
   const xOf = (i: number) => PADDING_X + (innerW * (times[i] - tMin)) / tSpan;
   const yOf = (km: number) => PADDING_TOP + innerH - (km / maxKm) * innerH;
 
-  const toPath = (key: 'northQueueKm' | 'southQueueKm') =>
-    history
-      .map((p, i) => `${i === 0 ? 'M' : 'L'}${xOf(i).toFixed(1)},${yOf(p[key] ?? 0).toFixed(1)}`)
-      .join(' ');
+  // Break the drawn line where samples are more than this far apart, rather than
+  // bridging the gap with a straight line to zero.
+  const GAP_MS = 40 * 60_000;
+  const SMOOTH_RADIUS = 2; // triangular window (±2 samples) to calm the noise
+
+  // Light smoothing of the plotted series so the trend reads as a trend instead
+  // of a sample-to-sample sawtooth. Missing readings stay missing (line breaks),
+  // and the window never averages across a large time gap. Raw values are kept
+  // for `points` (hover) and the table below.
+  const smoothed = (key: 'northQueueKm' | 'southQueueKm'): Array<number | null> => {
+    const raw = history.map((p) => p[key] ?? null);
+    return raw.map((v, i) => {
+      if (v === null) return null;
+      let sum = 0;
+      let weight = 0;
+      for (let j = i - SMOOTH_RADIUS; j <= i + SMOOTH_RADIUS; j++) {
+        const s = raw[j];
+        if (j < 0 || j >= raw.length || s === null) continue;
+        if (Math.abs(times[j] - times[i]) > GAP_MS) continue;
+        const w = SMOOTH_RADIUS + 1 - Math.abs(j - i);
+        sum += s * w;
+        weight += w;
+      }
+      return weight ? sum / weight : v;
+    });
+  };
+
+  const toPath = (key: 'northQueueKm' | 'southQueueKm') => {
+    const vals = smoothed(key);
+    const seg: string[] = [];
+    let prevI = -1;
+    vals.forEach((v, i) => {
+      if (v === null) { prevI = -1; return; }
+      const cmd = prevI === -1 || times[i] - times[prevI] > GAP_MS ? 'M' : 'L';
+      seg.push(`${cmd}${xOf(i).toFixed(1)},${yOf(v).toFixed(1)}`);
+      prevI = i;
+    });
+    return seg.join(' ');
+  };
 
   // Time axis ticks — adaptive interval so there are always 2–8 ticks
   const ticks: TimeTick[] = [];

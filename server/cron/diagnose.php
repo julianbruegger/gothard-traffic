@@ -167,8 +167,13 @@ function classify(string $comment, string $abnormalType): string
         }
     }
 
-    // Whole tunnel bore closure.
-    if (str_contains($c, 'tunnel gesperrt') && str_contains($c, 'göschenen') && str_contains($c, 'airolo')) {
+    // Whole tunnel bore closure — incident (names the tunnel) or planned
+    // special transport (names both portals). Keep in sync with
+    // TrafficParser::isGotthardTunnelClosure().
+    if (str_contains($c, 'tunnel gesperrt')
+        && (str_contains($c, 'gotthard-tunnel')
+            || (str_contains($c, 'göschenen') && str_contains($c, 'airolo')))
+    ) {
         return 'TUNNEL CLOSED (if currently in its validity window)';
     }
 

@@ -80,6 +80,7 @@ final class TrafficParser
         $south = ['queueKm' => null, 'waitMinutes' => null, 'cause' => null];
         $pass = ['status' => 'unknown', 'note' => null];
         $tunnelClosed = false;
+        $closureReason = null;
         $plannedClosures = [];
         $debugMatches = [];
 
@@ -104,13 +105,19 @@ final class TrafficParser
                 // Handled BEFORE the "active now" gate so an upcoming closure
                 // (e.g. a special transport 23:00–01:00 tonight) is still
                 // surfaced as a planned event rather than silently dropped.
-                if (str_contains($c, 'tunnel gesperrt')
-                    && str_contains($c, 'göschenen') && str_contains($c, 'airolo')
-                ) {
+                if (self::isGotthardTunnelClosure($c)) {
                     [$from, $to] = self::extractWindow($xpath, $record, $comment);
                     $activeNow = ($from === null || $from <= $now) && ($to === null || $to >= $now);
                     if ($activeNow) {
                         $tunnelClosed = true;
+                        if ($closureReason === null) {
+                            $reason = self::extractCause($comment);
+                            // Drop the bare "Tunnel gesperrt" (that's the status,
+                            // not a cause) — keep only a real Ursache.
+                            if ($reason !== null && mb_strtolower($reason) !== 'tunnel gesperrt') {
+                                $closureReason = $reason;
+                            }
+                        }
                         $debugMatches[] = $doc->saveXML($record);
                     } elseif ($from !== null && $from > $now) {
                         $key = $from->format(DateTimeInterface::ATOM) . '|' . ($to?->format(DateTimeInterface::ATOM) ?? '');
@@ -199,6 +206,7 @@ final class TrafficParser
         return [
             'tunnel' => [
                 'status' => $status,
+                'closureReason' => $tunnelClosed ? $closureReason : null,
                 'north' => $north,
                 'south' => $south,
                 'plannedClosures' => array_values($plannedClosures),
@@ -256,6 +264,34 @@ final class TrafficParser
             return false;
         }
         return self::containsAny($c, self::PASS_TOKENS);
+    }
+
+    /**
+     * Does this comment describe the *road tunnel bore* being fully closed?
+     * Anchored on the ASTRA "Sachlage: Tunnel gesperrt" wording, then on the
+     * Gotthard road-tunnel identity. Two phrasings occur in the live feed:
+     *
+     *   a) unplanned incident (xsi:type RoadOrCarriagewayOrLaneManagement,
+     *      roadClosed): "A2 Chiasso <-> Gotthard Tunnel Gotthard-Tunnel Sachlage:
+     *      Tunnel gesperrt Ursache: Pannenfahrzeug" — names the tunnel, NOT the
+     *      portal towns.
+     *   b) planned special transport: "… zwischen Anschluss Göschenen und
+     *      Anschluss Airolo … Sachlage: Tunnel gesperrt Ursache: Ausnahmetransport"
+     *      — names both portal towns, not the tunnel.
+     *
+     * Requiring "gotthard-tunnel" (a) or BOTH portals (b) keeps other bores
+     * (Seelisberg, San Nicolao, Monte Ceneri …) and ramp closures ("Einfahrt/
+     * Ausfahrt gesperrt") from matching.
+     */
+    private static function isGotthardTunnelClosure(string $c): bool
+    {
+        if (!str_contains($c, 'tunnel gesperrt')) {
+            return false;
+        }
+        if (str_contains($c, 'gotthard-tunnel')) {
+            return true;
+        }
+        return str_contains($c, 'göschenen') && str_contains($c, 'airolo');
     }
 
     /**
@@ -408,16 +444,21 @@ final class TrafficParser
         return null;
     }
 
+    // The feed concatenates the German/French/Italian value texts with no
+    // separator ("… PannenfahrzeugLibéré: …"), so a cause capture must stop at
+    // these second-language markers or it swallows the whole multilingual blob.
+    private const LANG_BOUNDARY = 'Libéré|Révoqué|Approvato|Revocato';
+
     /** Short cause phrase from the comment: prefers "Ursache: …", then "Sachlage: …". */
     private static function extractCause(string $comment): ?string
     {
-        if (preg_match('/Ursache:\s*(.+?)(?:\s+(?:Zusatz|Dauer|Verkehrsführung|Sachlage)\b|$)/u', $comment, $m) === 1) {
+        if (preg_match('/Ursache:\s*(.+?)(?:\s+(?:Zusatz|Dauer|Verkehrsführung|Sachlage)\b|\s*(?:' . self::LANG_BOUNDARY . ')|$)/u', $comment, $m) === 1) {
             $v = trim($m[1]);
             if ($v !== '') {
                 return mb_substr($v, 0, 120);
             }
         }
-        if (preg_match('/Sachlage:\s*(.+?)(?:\s+(?:Länge|Ursache|Zusatz|Dauer|Verkehrsführung)\b|$)/u', $comment, $m) === 1) {
+        if (preg_match('/Sachlage:\s*(.+?)(?:\s+(?:Länge|Ursache|Zusatz|Dauer|Verkehrsführung)\b|\s*(?:' . self::LANG_BOUNDARY . ')|$)/u', $comment, $m) === 1) {
             $v = trim($m[1]);
             if ($v !== '') {
                 return mb_substr($v, 0, 120);

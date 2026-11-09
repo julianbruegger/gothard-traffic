@@ -40,6 +40,7 @@ $data = [
     'source'  => 'opentransportdata.swiss (ASTRA Traffic Situations)',
     'tunnel'  => [
         'status' => $row['tunnel_status'],
+        'closureReason' => $row['closure_reason'] ?? null,
         'north'  => [
             'queueKm'     => $row['north_queue_km'] !== null ? (float) $row['north_queue_km'] : null,
             'waitMinutes' => $row['north_wait_min'] !== null ? (int)   $row['north_wait_min'] : null,

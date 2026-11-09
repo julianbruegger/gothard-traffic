@@ -1,5 +1,6 @@
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
+import { computeQueueTrend } from './trend';
 import sampleData from '../data/sample-gotthard.json';
 import sampleHistory from '../data/sample-history.json';
 import type { GotthardData, HistoryPoint } from './types';
@@ -21,5 +22,7 @@ export function loadHomeData() {
   const root = join(process.cwd(), 'public/data');
   const data = readJson<GotthardData>(join(root, 'gotthard.json'), sampleData as GotthardData);
   const history = readJson<HistoryPoint[]>(join(root, 'history.json'), sampleHistory as HistoryPoint[]);
-  return { data, history };
+  const northTrend = computeQueueTrend(history, 'northQueueKm');
+  const southTrend = computeQueueTrend(history, 'southQueueKm');
+  return { data, history, northTrend, southTrend };
 }

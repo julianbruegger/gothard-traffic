@@ -28,6 +28,7 @@
     "trend.queueLabel": "Stau-Länge (km)",
     "trend.northLegend": "Nord",
     "trend.southLegend": "Süd",
+    "trend.closedLabel": "Tunnel gesperrt",
     "trend.noscript": "Aktivieren Sie JavaScript, um den Live-Verlaufsgraphen zu sehen.",
     "info.title": "Gut zu wissen",
     "info.ruleOfThumb": "Faustregel: 5 km Stau bedeuten meist 45–60 Minuten Wartezeit, 10 km oft 90–120 Minuten oder mehr.",
@@ -38,7 +39,7 @@
     "footer.viewSource": "Quellcode auf GitHub",
     "lang.de": "Deutsch",
     "lang.en": "English",
-    "meta.description": "Live-Wartezeiten und Stau-Länge am Gotthard-Strassentunnel (Nord/Süd) sowie Status des Gotthardpasses – automatisch aktualisiert."
+    "meta.description": "Gotthard Verkehr aktuell: Live-Stau, Wartezeiten und Sperrungen am Gotthard-Strassentunnel (Nord Göschenen / Süd Airolo) sowie Status des Gotthardpasses."
   },
   "en": {
     "site.title": "Gotthard Traffic Live",
@@ -69,6 +70,7 @@
     "trend.queueLabel": "Queue length (km)",
     "trend.northLegend": "North",
     "trend.southLegend": "South",
+    "trend.closedLabel": "Tunnel closed",
     "trend.noscript": "Enable JavaScript to see the live trend chart.",
     "info.title": "Good to know",
     "info.ruleOfThumb": "Rule of thumb: a 5 km queue usually means 45-60 minutes of waiting, 10 km often 90-120 minutes or more.",
@@ -79,6 +81,6 @@
     "footer.viewSource": "Source code on GitHub",
     "lang.de": "Deutsch",
     "lang.en": "English",
-    "meta.description": "Live waiting times and queue length at the Gotthard road tunnel (north/south) and Gotthard Pass status - updated automatically."
+    "meta.description": "Gotthard traffic live: real-time queue length, waiting times and closures at the Gotthard road tunnel (north Göschenen / south Airolo) and Gotthard Pass status."
   }
 }

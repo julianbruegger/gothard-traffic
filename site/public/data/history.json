@@ -4,153 +4,175 @@
     "northQueueKm": 0,
     "southQueueKm": 0,
     "northWaitMinutes": 0,
-    "southWaitMinutes": 0
+    "southWaitMinutes": 0,
+    "status": "open"
   },
   {
     "t": "2026-07-12T20:44:02.700Z",
     "northQueueKm": 0,
     "southQueueKm": 0,
     "northWaitMinutes": 0,
-    "southWaitMinutes": 0
+    "southWaitMinutes": 0,
+    "status": "open"
   },
   {
     "t": "2026-07-12T20:54:02.787Z",
     "northQueueKm": 0,
     "southQueueKm": 0,
     "northWaitMinutes": 0,
-    "southWaitMinutes": 0
+    "southWaitMinutes": 0,
+    "status": "open"
   },
   {
     "t": "2026-07-12T21:46:28.423Z",
     "northQueueKm": 0,
     "southQueueKm": 0,
     "northWaitMinutes": 0,
-    "southWaitMinutes": 0
+    "southWaitMinutes": 0,
+    "status": "open"
   },
   {
     "t": "2026-07-12T21:56:28.484Z",
     "northQueueKm": 0,
     "southQueueKm": 0,
     "northWaitMinutes": 0,
-    "southWaitMinutes": 0
+    "southWaitMinutes": 0,
+    "status": "open"
   },
   {
     "t": "2026-07-12T22:06:28.563Z",
     "northQueueKm": 0,
     "southQueueKm": 0,
     "northWaitMinutes": 0,
-    "southWaitMinutes": 0
+    "southWaitMinutes": 0,
+    "status": "open"
   },
   {
     "t": "2026-07-12T22:26:14.218Z",
     "northQueueKm": 0,
     "southQueueKm": 0,
     "northWaitMinutes": 0,
-    "southWaitMinutes": 0
+    "southWaitMinutes": 0,
+    "status": "open"
   },
   {
     "t": "2026-07-12T22:36:14.308Z",
     "northQueueKm": 0,
     "southQueueKm": 0,
     "northWaitMinutes": 0,
-    "southWaitMinutes": 0
+    "southWaitMinutes": 0,
+    "status": "open"
   },
   {
     "t": "2026-07-12T22:46:14.374Z",
     "northQueueKm": 0,
     "southQueueKm": 0,
     "northWaitMinutes": 0,
-    "southWaitMinutes": 0
+    "southWaitMinutes": 0,
+    "status": "open"
   },
   {
     "t": "2026-07-14T17:01:43.976Z",
     "northQueueKm": 0,
     "southQueueKm": 0,
     "northWaitMinutes": 0,
-    "southWaitMinutes": 0
+    "southWaitMinutes": 0,
+    "status": "open"
   },
   {
     "t": "2026-07-14T17:12:26.525Z",
     "northQueueKm": 0,
     "southQueueKm": 0,
     "northWaitMinutes": 0,
-    "southWaitMinutes": 0
+    "southWaitMinutes": 0,
+    "status": "closed"
   },
   {
     "t": "2026-07-14T17:22:26.637Z",
     "northQueueKm": 0,
     "southQueueKm": 0,
     "northWaitMinutes": 0,
-    "southWaitMinutes": 0
+    "southWaitMinutes": 0,
+    "status": "closed"
   },
   {
     "t": "2026-07-14T17:32:26.739Z",
     "northQueueKm": 0,
     "southQueueKm": 0,
     "northWaitMinutes": 0,
-    "southWaitMinutes": 0
+    "southWaitMinutes": 0,
+    "status": "open"
   },
   {
     "t": "2026-07-14T17:42:26.822Z",
     "northQueueKm": 0,
     "southQueueKm": 0,
     "northWaitMinutes": 0,
-    "southWaitMinutes": 0
+    "southWaitMinutes": 0,
+    "status": "open"
   },
   {
     "t": "2026-07-14T17:52:26.911Z",
     "northQueueKm": 0,
     "southQueueKm": 0,
     "northWaitMinutes": 0,
-    "southWaitMinutes": 0
+    "southWaitMinutes": 0,
+    "status": "open"
   },
   {
     "t": "2026-07-14T18:02:26.998Z",
     "northQueueKm": 0,
     "southQueueKm": 0,
     "northWaitMinutes": 0,
-    "southWaitMinutes": 0
+    "southWaitMinutes": 0,
+    "status": "open"
   },
   {
     "t": "2026-07-14T18:12:27.077Z",
     "northQueueKm": 0,
     "southQueueKm": 0,
     "northWaitMinutes": 0,
-    "southWaitMinutes": 0
+    "southWaitMinutes": 0,
+    "status": "open"
   },
   {
     "t": "2026-07-14T18:22:27.126Z",
     "northQueueKm": 0,
     "southQueueKm": 0,
     "northWaitMinutes": 0,
-    "southWaitMinutes": 0
+    "southWaitMinutes": 0,
+    "status": "open"
   },
   {
     "t": "2026-07-14T18:32:27.217Z",
     "northQueueKm": 0,
     "southQueueKm": 0,
     "northWaitMinutes": 0,
-    "southWaitMinutes": 0
+    "southWaitMinutes": 0,
+    "status": "open"
   },
   {
     "t": "2026-07-14T18:42:27.291Z",
     "northQueueKm": 0,
     "southQueueKm": 0,
     "northWaitMinutes": 0,
-    "southWaitMinutes": 0
+    "southWaitMinutes": 0,
+    "status": "open"
   },
   {
     "t": "2026-07-14T18:52:27.355Z",
     "northQueueKm": 0,
     "southQueueKm": 0,
     "northWaitMinutes": 0,
-    "southWaitMinutes": 0
+    "southWaitMinutes": 0,
+    "status": "open"
   },
   {
     "t": "2026-07-14T19:02:27.424Z",
     "northQueueKm": 0,
     "southQueueKm": 0,
     "northWaitMinutes": 0,
-    "southWaitMinutes": 0
+    "southWaitMinutes": 0,
+    "status": "open"
   }
 ]

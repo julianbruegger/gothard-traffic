@@ -1,5 +1,6 @@
 import { t, type Lang } from './i18n';
 import type { GotthardData, RoadStatus, ClosureWindow } from './types';
+import { FLAT_THRESHOLD_KM, type TrendDirection } from './trend';
 
 // DATEX "Ursache" / causeType values seen on Gotthard closures → friendly label.
 const CLOSURE_CAUSE: Record<string, { de: string; en: string }> = {
@@ -10,9 +11,12 @@ const CLOSURE_CAUSE: Record<string, { de: string; en: string }> = {
   wartung: { de: 'Wartungsarbeiten', en: 'Maintenance' },
   unterhalt: { de: 'Unterhaltsarbeiten', en: 'Maintenance' },
   unterhaltsarbeiten: { de: 'Unterhaltsarbeiten', en: 'Maintenance' },
+  pannenfahrzeug: { de: 'Pannenfahrzeug', en: 'Broken-down vehicle' },
+  unfall: { de: 'Unfall', en: 'Accident' },
+  brand: { de: 'Brand', en: 'Fire' },
 };
 
-function closureCauseLabel(cause: string | null, lang: Lang): string | null {
+export function closureCauseLabel(cause: string | null | undefined, lang: Lang): string | null {
   if (!cause) return null;
   const hit = CLOSURE_CAUSE[cause.trim().toLowerCase()];
   return hit ? hit[lang] : cause;
@@ -57,6 +61,16 @@ export function formatKm(km: number | null, lang: Lang): string {
   if (km === null || km === undefined) return '–';
   if (km <= 0) return t(lang, 'portal.noQueue');
   return `${km.toLocaleString(lang === 'de' ? 'de-CH' : 'en-CH', { minimumFractionDigits: 1, maximumFractionDigits: 1 })} km`;
+}
+
+export const TREND_ARROW: Record<TrendDirection, string> = { up: '↑', down: '↓', flat: '→' };
+
+/** Signed delta label for a queue-length trend badge, e.g. "+1.2 km", "−0.5 km", "±0.0 km". */
+export function formatTrendDelta(deltaKm: number, lang: Lang): string {
+  const sign = deltaKm > FLAT_THRESHOLD_KM ? '+' : deltaKm < -FLAT_THRESHOLD_KM ? '−' : '±';
+  const loc = lang === 'de' ? 'de-CH' : 'en-CH';
+  const magnitude = Math.abs(deltaKm).toLocaleString(loc, { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  return `${sign}${magnitude} km`;
 }
 
 export function formatMinutes(min: number | null, lang: Lang): string {
@@ -108,6 +122,16 @@ export function buildSummary(data: GotthardData, lang: Lang): string {
   const south = data.tunnel.south;
   const noNorthQueue = !north.queueKm || north.queueKm <= 0;
   const noSouthQueue = !south.queueKm || south.queueKm <= 0;
+
+  if (data.tunnel.status === 'closed') {
+    const reason = closureCauseLabel(data.tunnel.closureReason, lang);
+    if (lang === 'de') {
+      const lead = `Gotthard-Strassentunnel gesperrt${reason ? ` (${reason})` : ''}.`;
+      return `${lead} Gotthardpass: ${passStatusLabel(data.pass.status, lang).toLowerCase()}.`;
+    }
+    const lead = `Gotthard road tunnel closed${reason ? ` (${reason})` : ''}.`;
+    return `${lead} Gotthard Pass: ${passStatusLabel(data.pass.status, lang).toLowerCase()}.`;
+  }
 
   if (lang === 'de') {
     if (noNorthQueue && noSouthQueue) {

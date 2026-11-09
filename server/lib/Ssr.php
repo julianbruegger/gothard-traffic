@@ -25,8 +25,15 @@ final class Ssr
 
     public static function render(string $html, array $data, string $lang, string $canonicalUrl): string
     {
-        $title = I18n::t($lang, 'site.title') . ' – ' . Format::summary($data, $lang);
-        $description = I18n::t($lang, 'meta.description') . ' ' . Format::summary($data, $lang);
+        // Keep <title> and <meta description> evergreen and keyword-focused — the
+        // SAME stable strings the static Astro build emits. We deliberately do NOT
+        // splice the live queue/wait numbers (Format::summary) in here: search
+        // engines crawl a live-traffic page only every few weeks, so any volatile
+        // value baked into the snippet gets frozen and shown as "current" long
+        // after it's wrong. The live figures still reach crawlers through the
+        // visible body markers and the JSON-LD variableMeasured block below.
+        $title = I18n::t($lang, 'site.title') . ' – ' . I18n::t($lang, 'site.tagline');
+        $description = I18n::t($lang, 'meta.description');
 
         $html = preg_replace('/<title>.*?<\/title>/s', '<title>' . htmlspecialchars($title, ENT_QUOTES) . '</title>', $html, 1);
         $html = self::replaceMeta($html, 'description', $description);

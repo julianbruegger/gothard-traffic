@@ -20,7 +20,7 @@ require_once __DIR__ . '/../lib/SnapshotStore.php';
 try {
     $pdo   = Db::connect($config);
     $store = new SnapshotStore($pdo);
-    $rows  = $store->history(48);
+    $rows  = $store->history(24);
 } catch (Throwable $e) {
     http_response_code(503);
     echo json_encode(['error' => 'Database unavailable.']);
@@ -36,6 +36,7 @@ $points = array_map(static function (array $row) use ($tz): array {
         'southQueueKm'     => $row['south_queue_km'] !== null ? (float) $row['south_queue_km'] : null,
         'northWaitMinutes' => $row['north_wait_min'] !== null ? (int)   $row['north_wait_min'] : null,
         'southWaitMinutes' => $row['south_wait_min'] !== null ? (int)   $row['south_wait_min'] : null,
+        'status'           => $row['tunnel_status'] ?? 'unknown',
     ];
 }, $rows);
 

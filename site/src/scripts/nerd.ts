@@ -15,6 +15,7 @@ interface Stats {
   jamDynamics: { buildUpKmPerHour: number | null; dissolveKmPerHour: number | null };
   dataQuality: { snapshots: number; first: string | null; last: string | null; gaps: number };
   last7d: { t: string; north: number | null; south: number | null }[];
+  hourly30d?: { t: string; north: number | null; south: number | null }[];
 }
 
 const lang = (() => {
@@ -205,6 +206,187 @@ async function renderTrain() {
   }
 }
 
+
+// ─── Fun API: weather (Open-Meteo, no key) ───────────────────────────────────
+
+type Hourly = Stats['last7d'];
+interface WeatherHour { temp: number | null; precip: number | null; snow: number | null }
+
+const PORTALS = {
+  north: { lat: 46.668, lon: 8.589 }, // Göschenen
+  south: { lat: 46.529, lon: 8.608 }, // Airolo
+} as const;
+
+/** Hourly weather keyed by "YYYY-MM-DDTHH" (UTC), plus the current conditions. */
+async function fetchWeather(portal: 'north' | 'south') {
+  const { lat, lon } = PORTALS[portal];
+  const url =
+    `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
+    '&current=temperature_2m,precipitation,snowfall&hourly=temperature_2m,precipitation,snowfall' +
+    '&past_days=30&forecast_days=1&timezone=UTC';
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('weather');
+  const j = await res.json();
+  const hours = new Map<string, WeatherHour>();
+  (j.hourly.time as string[]).forEach((tm, i) =>
+    hours.set(tm.slice(0, 13), { temp: j.hourly.temperature_2m[i], precip: j.hourly.precipitation[i], snow: j.hourly.snowfall[i] })
+  );
+  return { now: j.current as { temperature_2m: number; precipitation: number; snowfall: number }, hours };
+}
+
+/** Pearson r after removing each UTC hour-of-day's mean from both series. */
+function deseasonedCorrelation(pairs: { h: number; x: number; y: number }[]): number | null {
+  if (pairs.length < 24) return null;
+  const mean = (a: number[]) => a.reduce((p, c) => p + c, 0) / a.length;
+  const byHour = new Map<number, { x: number[]; y: number[] }>();
+  for (const p of pairs) {
+    const e = byHour.get(p.h) ?? { x: [], y: [] };
+    e.x.push(p.x);
+    e.y.push(p.y);
+    byHour.set(p.h, e);
+  }
+  const means = new Map<number, [number, number]>();
+  byHour.forEach((e, h) => means.set(h, [mean(e.x), mean(e.y)]));
+  const dx = pairs.map((p) => p.x - means.get(p.h)![0]);
+  const dy = pairs.map((p) => p.y - means.get(p.h)![1]);
+  const sxy = dx.reduce((a, v, i) => a + v * dy[i], 0);
+  const sxx = dx.reduce((a, v) => a + v * v, 0);
+  const syy = dy.reduce((a, v) => a + v * v, 0);
+  return sxx > 0 && syy > 0 ? sxy / Math.sqrt(sxx * syy) : null;
+}
+
+function describeR(r: number | null): string {
+  if (r === null) return '–';
+  const a = Math.abs(r);
+  const strength = a < 0.1 ? 'none' : a < 0.3 ? 'weak' : a < 0.5 ? 'moderate' : 'strong';
+  const label = t(lang, `nerd.weather.r.${strength}` as 'nerd.weather.r.none');
+  return strength === 'none' ? label : `${label} (${r > 0 ? t(lang, 'nerd.weather.pos') : t(lang, 'nerd.weather.neg')})`;
+}
+
+async function renderWeather(hourly: Hourly) {
+  try {
+    const [north, south] = await Promise.all([fetchWeather('north'), fetchWeather('south')]);
+    const nowText = (w: typeof north) =>
+      `${num(w.now.temperature_2m)} °C · ${t(lang, 'nerd.weather.rain')} ${num(w.now.precipitation)} mm · ${t(lang, 'nerd.weather.snow')} ${num(w.now.snowfall)} cm`;
+    $('nerd-weather-now').className = 'nerd-dl';
+    $('nerd-weather-now').innerHTML =
+      row(`${t(lang, 'nerd.north')} – ${t(lang, 'nerd.weather.now')}`, esc(nowText(north))) +
+      row(`${t(lang, 'nerd.south')} – ${t(lang, 'nerd.weather.now')}`, esc(nowText(south)));
+
+    let body = '';
+    if (hourly.length >= 24) {
+      const vars: { label: string; get: (w: WeatherHour) => number | null }[] = [
+        { label: t(lang, 'nerd.weather.temp'), get: (w) => w.temp },
+        { label: t(lang, 'nerd.weather.rain'), get: (w) => w.precip },
+        { label: t(lang, 'nerd.weather.snow'), get: (w) => w.snow },
+      ];
+      let rows = '';
+      for (const [portal, w] of [['north', north], ['south', south]] as const) {
+        for (const v of vars) {
+          const pairs: { h: number; x: number; y: number }[] = [];
+          for (const p of hourly) {
+            const wait = p[portal];
+            const wh = w.hours.get(p.t.slice(0, 13));
+            const x = wh ? v.get(wh) : null;
+            if (wait !== null && x !== null && x !== undefined) pairs.push({ h: new Date(p.t).getUTCHours(), x, y: wait });
+          }
+          const r = deseasonedCorrelation(pairs);
+          rows += `<tr><td>${esc(portalName(portal))}</td><td>${esc(v.label)}</td><td>${r === null ? '–' : num(r, 2)}</td><td>${esc(describeR(r))}</td><td>${pairs.length}</td></tr>`;
+        }
+        let wet = 0, wetN = 0, dry = 0, dryN = 0;
+        for (const p of hourly) {
+          const wait = p[portal];
+          const wh = w.hours.get(p.t.slice(0, 13));
+          if (wait === null || !wh || wh.precip === null) continue;
+          if (wh.precip > 0.1) { wet += wait; wetN++; } else { dry += wait; dryN++; }
+        }
+        rows += `<tr><td>${esc(portalName(portal))}</td><td colspan="2">${esc(t(lang, 'nerd.weather.wetVsDry'))}</td><td colspan="2">${wetN ? num(wet / wetN) : '–'} ${t(lang, 'nerd.min')} (${wetN}) vs ${dryN ? num(dry / dryN) : '–'} ${t(lang, 'nerd.min')} (${dryN})</td></tr>`;
+      }
+      body = `<div class="nerd-scroll"><table class="nerd-table"><thead><tr><th></th><th></th><th>r</th><th>${esc(t(lang, 'nerd.weather.corr'))}</th><th>${esc(t(lang, 'nerd.weather.samples'))}</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+    } else {
+      body = `<p class="nerd-card__sub">${esc(t(lang, 'nerd.weather.insufficient'))}</p>`;
+    }
+    $('nerd-weather-corr').innerHTML = body;
+    $('nerd-weather').hidden = false;
+  } catch {
+    /* hide the card silently */
+  }
+}
+
+// ─── Fun API: school holidays (OpenHolidays, no key) ─────────────────────────
+
+const HOLIDAY_COUNTRIES = [
+  { code: 'CH', color: '#e53935' },
+  { code: 'DE', color: '#fb8c00' },
+  { code: 'NL', color: '#1e88e5' },
+] as const;
+
+async function renderHolidays(hourly: Hourly) {
+  try {
+    if (hourly.length === 0) return;
+    const zDay = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Zurich' });
+    const perDay = new Map<string, { sum: number; n: number }>();
+    for (const p of hourly) {
+      const v = [p.north, p.south].filter((x): x is number => x !== null);
+      if (v.length === 0) continue;
+      const d = zDay.format(new Date(p.t));
+      const e = perDay.get(d) ?? { sum: 0, n: 0 };
+      e.sum += v.reduce((a, b) => a + b, 0) / v.length;
+      e.n++;
+      perDay.set(d, e);
+    }
+    const days = [...perDay.keys()].sort();
+    if (days.length < 2) return;
+    const from = days[0];
+    const to = days[days.length - 1];
+
+    const lists = await Promise.all(
+      HOLIDAY_COUNTRIES.map(async (c) => {
+        const res = await fetch(`https://openholidaysapi.org/SchoolHolidays?countryIsoCode=${c.code}&languageIsoCode=EN&validFrom=${from}&validTo=${to}`);
+        if (!res.ok) throw new Error('holidays');
+        return (await res.json()) as { startDate: string; endDate: string }[];
+      })
+    );
+
+    const W = 720, T = 20, barH = 90, bandH = 10, gap = 4, L = 4;
+    const H = T + barH + 16 + HOLIDAY_COUNTRIES.length * (bandH + gap) + 14;
+    const slot = (W - L) / days.length;
+    const avgs = days.map((d) => perDay.get(d)!.sum / perDay.get(d)!.n);
+    const max = Math.max(1, ...avgs);
+    const xOf = (iso: string) => {
+      const i = days.findIndex((d) => d >= iso);
+      return L + slot * (i === -1 ? days.length : i);
+    };
+    let svg = `<svg viewBox="0 0 ${W} ${H}" class="nerd-svg" role="img" aria-label="${esc(t(lang, 'nerd.holidays.title'))}">`;
+    avgs.forEach((a, i) => {
+      const h = (barH * a) / max;
+      svg += `<rect x="${L + slot * i + 1}" y="${T + barH - h}" width="${Math.max(1, slot - 2)}" height="${h}" fill="var(--color-accent)" opacity="0.85"><title>${days[i]} – ${esc(t(lang, 'nerd.holidays.avg'))}: ${num(a)} ${t(lang, 'nerd.min')}</title></rect>`;
+    });
+    svg += `<text x="${L}" y="12" class="nerd-svg__t">${num(max, 0)} ${t(lang, 'nerd.min')}</text>`;
+    HOLIDAY_COUNTRIES.forEach((c, ci) => {
+      const y = T + barH + 16 + ci * (bandH + gap);
+      svg += `<text x="${W - 2}" y="${y + 8}" text-anchor="end" class="nerd-svg__t">${c.code}</text>`;
+      // Regional ranges overlap: merge them so bands don't stack their opacity.
+      const merged: { startDate: string; endDate: string }[] = [];
+      for (const h of [...lists[ci]].sort((a, b) => a.startDate.localeCompare(b.startDate))) {
+        const last = merged[merged.length - 1];
+        if (last && h.startDate <= last.endDate) last.endDate = h.endDate > last.endDate ? h.endDate : last.endDate;
+        else merged.push({ startDate: h.startDate, endDate: h.endDate });
+      }
+      for (const h of merged) {
+        const x1 = xOf(h.startDate < from ? from : h.startDate);
+        const x2 = xOf(h.endDate >= to ? '9999' : new Date(Date.parse(h.endDate) + 86_400_000).toISOString().slice(0, 10));
+        if (x2 > x1) svg += `<rect x="${x1}" y="${y}" width="${x2 - x1}" height="${bandH}" rx="2" fill="${c.color}" opacity="0.85"><title>${c.code}: ${h.startDate} – ${h.endDate}</title></rect>`;
+      }
+    });
+    svg += `<text x="${L}" y="${H - 2}" class="nerd-svg__t">${from}</text><text x="${W - 2}" y="${H - 2}" text-anchor="end" class="nerd-svg__t">${to}</text></svg>`;
+    $('nerd-holidays-chart').innerHTML = svg;
+    $('nerd-holidays').hidden = false;
+  } catch {
+    /* hide the card silently */
+  }
+}
+
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -233,6 +415,8 @@ async function main() {
   $('nerd-csv').addEventListener('click', () => downloadCsv(s));
   $('nerd-body').hidden = false;
   void renderTrain();
+  void renderWeather(s.hourly30d ?? []);
+  void renderHolidays(s.hourly30d ?? []);
 }
 
 void main();

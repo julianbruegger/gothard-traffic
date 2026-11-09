@@ -38,6 +38,7 @@ $checks = [
     'dissolve > 0'                                => $s['jamDynamics']['dissolveKmPerHour'] > 0,
     'data quality: 6 snapshots, 1 gap'            => $s['dataQuality']['snapshots'] === 6 && $s['dataQuality']['gaps'] === 1,
     'last7d has 2 hourly buckets'                 => count($s['last7d']) === 2,
+    'hourly30d has 2 hourly buckets'              => count($s['hourly30d']) === 2,
 ];
 
 $failures = 0;

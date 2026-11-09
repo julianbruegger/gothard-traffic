@@ -1327,3 +1327,32 @@ a {
     padding: 0.9rem 0.75rem;
   }
 }
+
+/* ---------- Nerd Mode ---------- */
+
+.nerd { margin: 2rem auto 3rem; }
+.nerd__title { font-size: 1.4rem; margin: 0 0 0.3rem; }
+.nerd__intro, .nerd-card__sub { color: var(--color-text-muted); font-size: 0.85rem; margin: 0 0 1rem; }
+.nerd__empty { color: var(--color-text-muted); }
+.nerd__grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); }
+.nerd__grid[hidden], .nerd-card[hidden], .nerd__empty[hidden] { display: none; }
+.nerd-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 1.1rem; box-shadow: var(--shadow-card); min-width: 0; }
+.nerd-card--wide, .nerd__actions { grid-column: 1 / -1; }
+.nerd-card h2 { font-size: 1rem; margin: 0 0 0.3rem; }
+.nerd-card h3 { font-size: 0.8rem; margin: 0.8rem 0 0.3rem; color: var(--color-text-muted); }
+.nerd-scroll { overflow-x: auto; }
+.nerd-dl { margin: 0; display: grid; gap: 0.6rem; }
+.nerd-dl dt { font-size: 0.78rem; color: var(--color-text-muted); }
+.nerd-dl dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.nerd-dl small { font-weight: 400; color: var(--color-text-muted); }
+.nerd-heat { border-collapse: separate; border-spacing: 2px; font-size: 0.65rem; min-width: 480px; }
+.nerd-heat th { font-weight: 500; color: var(--color-text-muted); padding: 0 2px; text-align: center; }
+.nerd-heat td { height: 16px; border-radius: 3px; background: color-mix(in srgb, var(--color-accent) calc(var(--a) * 100%), var(--color-surface-alt)); }
+.nerd-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+.nerd-table th, .nerd-table td { text-align: left; padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--color-border); }
+.nerd-svg { width: 100%; height: auto; display: block; }
+.nerd-svg__t { font-size: 10px; fill: var(--color-text-muted); font-family: var(--font-sans); }
+.nerd-legend { display: flex; gap: 1rem; font-size: 0.78rem; margin: 0.4rem 0 0; color: var(--color-text-muted); }
+.nerd-legend span::before { content: ''; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 0.35rem; background: var(--c); }
+.nerd__btn { font: inherit; padding: 0.55rem 1rem; border-radius: var(--radius-lg); border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-text); cursor: pointer; }
+.nerd__btn:hover { border-color: var(--color-accent); }

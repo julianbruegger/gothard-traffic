@@ -1,0 +1,73 @@
+---
+import { t, type Lang } from '../lib/i18n';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+---
+
+<section class="nerd container" aria-labelledby="nerd-title">
+  <h1 class="nerd__title" id="nerd-title">{t(lang, 'nerd.title')}</h1>
+  <p class="nerd__intro">{t(lang, 'nerd.intro')}</p>
+  <p id="nerd-empty" class="nerd__empty" hidden>{t(lang, 'nerd.noData')}</p>
+
+  <div id="nerd-body" class="nerd__grid" hidden>
+    <article class="nerd-card nerd-card--wide">
+      <h2>{t(lang, 'nerd.heatmap.title')}</h2>
+      <p class="nerd-card__sub">{t(lang, 'nerd.heatmap.sub')}</p>
+      <h3>{t(lang, 'nerd.north')}</h3>
+      <div id="nerd-heat-north" class="nerd-scroll"></div>
+      <h3>{t(lang, 'nerd.south')}</h3>
+      <div id="nerd-heat-south" class="nerd-scroll"></div>
+    </article>
+
+    <article class="nerd-card">
+      <h2>{t(lang, 'nerd.records.title')}</h2>
+      <dl id="nerd-records" class="nerd-dl"></dl>
+    </article>
+
+    <article class="nerd-card">
+      <h2>{t(lang, 'nerd.asym.title')}</h2>
+      <p class="nerd-card__sub">{t(lang, 'nerd.asym.sub')}</p>
+      <div id="nerd-asym"></div>
+    </article>
+
+    <article class="nerd-card">
+      <h2>{t(lang, 'nerd.mpk.title')}</h2>
+      <p class="nerd-card__sub">{t(lang, 'nerd.mpk.sub')}</p>
+      <dl id="nerd-mpk" class="nerd-dl"></dl>
+    </article>
+
+    <article class="nerd-card">
+      <h2>{t(lang, 'nerd.dyn.title')}</h2>
+      <dl id="nerd-dyn" class="nerd-dl"></dl>
+    </article>
+
+    <article class="nerd-card">
+      <h2>{t(lang, 'nerd.closures.title')}</h2>
+      <div id="nerd-closures"></div>
+    </article>
+
+    <article class="nerd-card">
+      <h2>{t(lang, 'nerd.quality.title')}</h2>
+      <dl id="nerd-quality" class="nerd-dl"></dl>
+    </article>
+
+    <article class="nerd-card nerd-card--wide">
+      <h2>{t(lang, 'nerd.fvr.title')}</h2>
+      <p class="nerd-card__sub">{t(lang, 'nerd.fvr.sub')}</p>
+      <div id="nerd-fvr"></div>
+      <dl id="nerd-mae" class="nerd-dl"></dl>
+    </article>
+
+    <article class="nerd-card" id="nerd-train" hidden>
+      <h2>{t(lang, 'nerd.train.title')}</h2>
+      <dl id="nerd-train-body" class="nerd-dl"></dl>
+    </article>
+
+    <p class="nerd__actions"><button type="button" id="nerd-csv" class="nerd__btn">{t(lang, 'nerd.csv')}</button></p>
+  </div>
+</section>
+
+<script src="../scripts/nerd.ts"></script>

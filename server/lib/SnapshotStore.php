@@ -90,4 +90,23 @@ final class SnapshotStore
         $stmt->execute([':hours' => $hours]);
         return $stmt->fetchAll();
     }
+
+    /**
+     * Rows for the Nerd Mode statistics: the last $days days, oldest first.
+     * Filters on fetched_at so the index is used.
+     */
+    public function statsRows(int $days = 365): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT fetched_at, tunnel_status, closure_reason,
+                    north_queue_km, north_wait_min,
+                    south_queue_km, south_wait_min
+               FROM gotthard_snapshots
+              WHERE fetched_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL :days DAY)
+              ORDER BY fetched_at ASC'
+        );
+        $stmt->bindValue(':days', $days, PDO::PARAM_INT);
+        $stmt->execute();
+        return $stmt->fetchAll();
+    }
 }

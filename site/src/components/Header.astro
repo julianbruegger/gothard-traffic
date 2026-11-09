@@ -4,7 +4,7 @@ import Icon from './Icon.astro';
 
 interface Props {
   lang: Lang;
-  currentPage?: 'status' | 'forecasts' | 'statistics';
+  currentPage?: 'status' | 'forecasts' | 'statistics' | 'nerd';
 }
 const { lang, currentPage = 'status' } = Astro.props;
 
@@ -25,6 +25,7 @@ const links = [
   { key: 'status', href: home(lang), label: t(lang, 'nav.live'), icon: 'live' },
   { key: 'forecasts', href: `${prefix(lang)}/forecasts`, label: t(lang, 'nav.forecast'), icon: 'calendar' },
   { key: 'statistics', href: `${prefix(lang)}/statistics`, label: t(lang, 'nav.stats'), icon: 'bar_chart' },
+  { key: 'nerd', href: `${prefix(lang)}/nerd`, label: t(lang, 'nav.nerd'), icon: 'table' },
 ] as const;
 ---
 

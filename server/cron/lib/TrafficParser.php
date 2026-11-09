@@ -107,14 +107,14 @@ final class TrafficParser
                 // surfaced as a planned event rather than silently dropped.
                 if (self::isGotthardTunnelClosure($c)) {
                     [$from, $to] = self::extractWindow($xpath, $record, $comment);
-                    $activeNow = ($from === null || $from <= $now) && ($to === null || $to >= $now);
+                    $activeNow = self::isClosureActiveNow($xpath, $record, $from, $to, $now);
                     if ($activeNow) {
                         $tunnelClosed = true;
                         if ($closureReason === null) {
-                            $reason = self::extractCause($comment);
+                            $reason = self::cleanClosureCause(self::extractCause($comment));
                             // Drop the bare "Tunnel gesperrt" (that's the status,
                             // not a cause) — keep only a real Ursache.
-                            if ($reason !== null && mb_strtolower($reason) !== 'tunnel gesperrt') {
+                            if ($reason !== null) {
                                 $closureReason = $reason;
                             }
                         }
@@ -250,6 +250,70 @@ final class TrafficParser
         }
 
         return [null, null];
+    }
+
+    /**
+     * Is a closure in effect right now? Honours every <validPeriod> and its
+     * recurring daily window (<recurringTimePeriodOfDay>, Swiss local time,
+     * may wrap past midnight), so a nightly-only roadworks closure is not
+     * reported as closed all day. Falls back to the overall [from, to] window
+     * when no structured periods exist.
+     */
+    private static function isClosureActiveNow(DOMXPath $xpath, DOMElement $record, ?DateTimeImmutable $from, ?DateTimeImmutable $to, DateTimeImmutable $now): bool
+    {
+        $periods = $xpath->query(".//*[local-name()='validPeriod']", $record);
+        if ($periods === false || $periods->length === 0) {
+            return ($from === null || $from <= $now) && ($to === null || $to >= $now);
+        }
+
+        $local = $now->setTimezone(new DateTimeZone('Europe/Zurich'));
+        $minutesNow = (int) $local->format('G') * 60 + (int) $local->format('i');
+
+        foreach ($periods as $period) {
+            $start = self::parseDate(self::nodeValue($xpath, $period, 'startOfPeriod'));
+            $end   = self::parseDate(self::nodeValue($xpath, $period, 'endOfPeriod'));
+            if (($start !== null && $start > $now) || ($end !== null && $end < $now)) {
+                continue;
+            }
+            $daily = $xpath->query(".//*[local-name()='recurringTimePeriodOfDay']", $period);
+            if ($daily === false || $daily->length === 0) {
+                return true;
+            }
+            foreach ($daily as $window) {
+                $a = self::parseTimeOfDay(self::nodeValue($xpath, $window, 'startTimeOfPeriod'));
+                $b = self::parseTimeOfDay(self::nodeValue($xpath, $window, 'endTimeOfPeriod'));
+                if ($a === null || $b === null) {
+                    return true; // unreadable window: don't hide a real closure
+                }
+                $inside = $a <= $b
+                    ? ($minutesNow >= $a && $minutesNow < $b)
+                    : ($minutesNow >= $a || $minutesNow < $b);
+                if ($inside) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+
+    /** "22:00:00" / "22:00:00+02:00" → minutes since midnight, or null. */
+    private static function parseTimeOfDay(string $v): ?int
+    {
+        if (preg_match('/^(\d{1,2}):(\d{2})/', trim($v), $m) !== 1) {
+            return null;
+        }
+        return (int) $m[1] * 60 + (int) $m[2];
+    }
+
+    /** Strip the bare "Tunnel gesperrt" status prefix and trailing punctuation. */
+    private static function cleanClosureCause(?string $cause): ?string
+    {
+        if ($cause === null) {
+            return null;
+        }
+        $cause = trim(preg_replace('/^tunnel gesperrt\s*/iu', '', $cause) ?? $cause);
+        $cause = trim($cause, " 	,;:.");
+        return $cause === '' ? null : $cause;
     }
 
     private static function makeDate(string $y, string $mo, string $d, string $h, string $i, DateTimeZone $tz): ?DateTimeImmutable

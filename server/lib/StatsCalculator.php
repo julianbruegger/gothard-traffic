@@ -36,7 +36,8 @@ final class StatsCalculator
             'closures'     => $this->closures($pts),
             'jamDynamics'  => $this->jamDynamics($pts),
             'dataQuality'  => $this->dataQuality($pts),
-            'last7d'       => $this->last7d($pts, $now),
+            'last7d'       => $this->hourly($pts, $now, 7),
+            'hourly30d'    => $this->hourly($pts, $now, 30),
         ];
     }
 
@@ -249,10 +250,10 @@ final class StatsCalculator
         ];
     }
 
-    /** Hourly average wait per portal for the last 7 days (for forecast vs reality). */
-    private function last7d(array $pts, DateTimeImmutable $now): array
+    /** Hourly average wait per portal for the last $days days (forecast vs reality, weather correlation). */
+    private function hourly(array $pts, DateTimeImmutable $now, int $days): array
     {
-        $from = $now->getTimestamp() - 7 * 86400;
+        $from = $now->getTimestamp() - $days * 86400;
         $acc = [];
         foreach ($pts as $p) {
             if ($p['ts'] < $from) {

@@ -159,7 +159,21 @@
     "nerd.weather.neg": "weniger",
     "nerd.holidays.title": "Schulferien und Stau",
     "nerd.holidays.sub": "Ø Wartezeit pro Tag (letzte 30 Tage) mit Schulferien in CH, DE und NL (OpenHolidays). Startet ein Ferienblock vor einem Stau-Anstieg?",
-    "nerd.holidays.avg": "Ø Wartezeit"
+    "nerd.holidays.avg": "Ø Wartezeit",
+    "nerd.corr.title": "Korrelationen",
+    "nerd.corr.sub": "Was hängt womit zusammen? r = Zusammenhang von -1 bis +1, Tagesrhythmus herausgerechnet.",
+    "nerd.corr.northSouth": "Nord- und Südstau gleichzeitig",
+    "nerd.corr.northSouthLead": "Stärkster Zusammenhang bei Versatz",
+    "nerd.corr.lagSouthLater": "Süd folgt Nord nach {h} h",
+    "nerd.corr.lagSouthEarlier": "Süd kommt {h} h vor Nord",
+    "nerd.corr.lagSame": "gleichzeitig",
+    "nerd.corr.weatherDb": "Wetter (eigene Messreihe)",
+    "nerd.corr.weatherEmpty": "Noch keine gespeicherte Wetter-Historie. Sie füllt sich stündlich (oder mit --backfill-weather).",
+    "nerd.corr.weekend": "Wochenende vs. Werktag",
+    "nerd.corr.weekendRatio": "Wochenende = {x}× Werktag",
+    "nerd.corr.afterClosure": "3 Stunden nach einer Vollsperrung",
+    "nerd.corr.afterClosureRatio": "{x}× Durchschnitt ({n} Sperrungen)",
+    "nerd.corr.none": "Noch zu wenig Daten."
   },
   "en": {
     "site.title": "Gotthard Traffic Live",
@@ -321,6 +335,20 @@
     "nerd.weather.neg": "less",
     "nerd.holidays.title": "School holidays and jams",
     "nerd.holidays.sub": "Average wait per day (last 30 days) with school holidays in CH, DE and NL (OpenHolidays). Does a holiday start precede a jam rise?",
-    "nerd.holidays.avg": "Avg wait"
+    "nerd.holidays.avg": "Avg wait",
+    "nerd.corr.title": "Correlations",
+    "nerd.corr.sub": "What goes with what? r = relationship from -1 to +1, daily rhythm removed.",
+    "nerd.corr.northSouth": "North and south jams at the same time",
+    "nerd.corr.northSouthLead": "Strongest relationship at offset",
+    "nerd.corr.lagSouthLater": "south follows north after {h} h",
+    "nerd.corr.lagSouthEarlier": "south comes {h} h before north",
+    "nerd.corr.lagSame": "simultaneous",
+    "nerd.corr.weatherDb": "Weather (our own stored history)",
+    "nerd.corr.weatherEmpty": "No stored weather history yet. It fills hourly (or via --backfill-weather).",
+    "nerd.corr.weekend": "Weekend vs. weekday",
+    "nerd.corr.weekendRatio": "weekend = {x}× weekday",
+    "nerd.corr.afterClosure": "3 hours after a full closure",
+    "nerd.corr.afterClosureRatio": "{x}× average ({n} closures)",
+    "nerd.corr.none": "Not enough data yet."
   }
 }

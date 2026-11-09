@@ -41,6 +41,30 @@ $checks = [
     'hourly30d has 2 hourly buckets'              => count($s['hourly30d']) === 2,
 ];
 
+// Correlations: south follows north by 2 hours over 20 days of synthetic hours.
+$rows2 = [];
+$base = new DateTimeImmutable('2026-08-03 00:00:00', new DateTimeZone('UTC'));
+$wave = static fn (int $i): float => 10 + 8 * sin($i * 0.7) + 5 * cos($i * 0.31);
+for ($i = 0; $i < 480; $i++) {
+    $n = max(0.0, $wave($i));
+    $sv = max(0.0, $wave($i - 2));
+    $rows2[] = row($base->modify("+{$i} hours")->format('Y-m-d H:i:s'), 'open', null, $n / 10, (int) round($n), $sv / 10, (int) round($sv));
+}
+$weather = [];
+for ($i = 0; $i < 480; $i++) {
+    $w = max(0.0, $wave($i));
+    $weather[] = ['observed_at' => $base->modify("+{$i} hours")->format('Y-m-d H:i:s'), 'portal' => 'north',
+        'temperature_c' => 5, 'precipitation_mm' => $w > 12 ? 1.0 : 0.0, 'snowfall_cm' => 0];
+}
+$c = (new StatsCalculator())->compute($rows2, new DateTimeImmutable('2026-08-24', new DateTimeZone('UTC')), $weather)['correlations'];
+$checks['corr: best north/south lag is +2h']     = ($c['northSouth']['best']['lagHours'] ?? null) === 2;
+$checks['corr: lagged r is strong']              = ($c['northSouth']['best']['r'] ?? 0) > 0.9;
+$checks['corr: wet hours wait longer (north)']   = $c['weather'][0]['wetAvg'] > $c['weather'][0]['dryAvg'];
+$checks['corr: precipitation r positive (north)'] = ($c['weather'][0]['r']['precipitation'] ?? 0) > 0.3;
+$checks['corr: no south weather -> r null']      = $c['weather'][1]['r']['temperature'] === null;
+$checks['corr: weekend ratio computed']          = $c['weekend']['north']['ratio'] !== null;
+$checks['corr: no closures -> 0 events']         = $c['afterClosure']['events'] === 0;
+
 $failures = 0;
 foreach ($checks as $label => $ok) {
     echo ($ok ? 'PASS' : 'FAIL') . ": {$label}\n";

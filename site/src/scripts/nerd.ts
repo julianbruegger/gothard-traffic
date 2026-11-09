@@ -15,6 +15,12 @@ interface Stats {
   jamDynamics: { buildUpKmPerHour: number | null; dissolveKmPerHour: number | null };
   dataQuality: { snapshots: number; first: string | null; last: string | null; gaps: number };
   last7d: { t: string; north: number | null; south: number | null }[];
+  correlations?: {
+    northSouth: { sameHour: number | null; best: { lagHours: number; r: number } | null };
+    weather: { portal: string; hours: number; r: { temperature: number | null; precipitation: number | null; snowfall: number | null }; wetAvg: number | null; dryAvg: number | null; wetHours: number }[];
+    weekend: Record<string, { weekday: number | null; weekend: number | null; ratio: number | null }>;
+    afterClosure: { events: number } & Record<string, unknown>;
+  };
   hourly30d?: { t: string; north: number | null; south: number | null }[];
 }
 
@@ -387,6 +393,56 @@ async function renderHolidays(hourly: Hourly) {
   }
 }
 
+// ─── Correlations (computed server-side from snapshots + stored weather) ────
+
+function renderCorrelations(c: NonNullable<Stats['correlations']>) {
+  const fill = (key: Parameters<typeof t>[1], vars: Record<string, string>) =>
+    Object.entries(vars).reduce((s, [k, v]) => s.replace(`{${k}}`, v), t(lang, key));
+  let rows = '';
+
+  const ns = c.northSouth;
+  if (ns.sameHour !== null) {
+    rows += `<tr><td>${esc(t(lang, 'nerd.corr.northSouth'))}</td><td>${num(ns.sameHour, 2)}</td><td>${esc(describeR(ns.sameHour))}</td></tr>`;
+  }
+  if (ns.best) {
+    const lag = ns.best.lagHours;
+    const label = lag === 0
+      ? t(lang, 'nerd.corr.lagSame')
+      : lag > 0 ? fill('nerd.corr.lagSouthLater', { h: String(lag) }) : fill('nerd.corr.lagSouthEarlier', { h: String(-lag) });
+    rows += `<tr><td>${esc(t(lang, 'nerd.corr.northSouthLead'))}: ${esc(label)}</td><td>${num(ns.best.r, 2)}</td><td>${esc(describeR(ns.best.r))}</td></tr>`;
+  }
+
+  const hasWeather = c.weather.some((w) => w.hours >= 24);
+  if (hasWeather) {
+    const vars = [['temperature', 'nerd.weather.temp'], ['precipitation', 'nerd.weather.rain'], ['snowfall', 'nerd.weather.snow']] as const;
+    for (const w of c.weather) {
+      for (const [k, label] of vars) {
+        const r = w.r[k];
+        rows += `<tr><td>${esc(t(lang, 'nerd.corr.weatherDb'))} · ${esc(portalName(w.portal))} · ${esc(t(lang, label))}</td><td>${r === null ? '–' : num(r, 2)}</td><td>${esc(describeR(r))}</td></tr>`;
+      }
+      rows += `<tr><td>${esc(portalName(w.portal))} · ${esc(t(lang, 'nerd.weather.wetVsDry'))}</td><td colspan="2">${num(w.wetAvg)} ${t(lang, 'nerd.min')} (${w.wetHours}) vs ${num(w.dryAvg)} ${t(lang, 'nerd.min')}</td></tr>`;
+    }
+  } else {
+    rows += `<tr><td colspan="3">${esc(t(lang, 'nerd.corr.weatherEmpty'))}</td></tr>`;
+  }
+
+  for (const portal of ['north', 'south'] as const) {
+    const w = c.weekend[portal];
+    if (w?.ratio !== null && w?.ratio !== undefined) {
+      rows += `<tr><td>${esc(t(lang, 'nerd.corr.weekend'))} · ${esc(portalName(portal))}</td><td colspan="2">${esc(fill('nerd.corr.weekendRatio', { x: num(w.ratio, 2) }))}</td></tr>`;
+    }
+    const ac = c.afterClosure[portal] as { ratio: number | null } | undefined;
+    if (ac?.ratio !== null && ac?.ratio !== undefined) {
+      rows += `<tr><td>${esc(t(lang, 'nerd.corr.afterClosure'))} · ${esc(portalName(portal))}</td><td colspan="2">${esc(fill('nerd.corr.afterClosureRatio', { x: num(ac.ratio, 2), n: String(c.afterClosure.events) }))}</td></tr>`;
+    }
+  }
+
+  $('nerd-corr-body').innerHTML = rows
+    ? `<div class="nerd-scroll"><table class="nerd-table"><tbody>${rows}</tbody></table></div>`
+    : `<p class="nerd-card__sub">${esc(t(lang, 'nerd.corr.none'))}</p>`;
+  $('nerd-corr').hidden = false;
+}
+
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 
 async function main() {
@@ -414,6 +470,7 @@ async function main() {
   renderForecastVsReality(s.last7d);
   $('nerd-csv').addEventListener('click', () => downloadCsv(s));
   $('nerd-body').hidden = false;
+  if (s.correlations) renderCorrelations(s.correlations);
   void renderTrain();
   void renderWeather(s.hourly30d ?? []);
   void renderHolidays(s.hourly30d ?? []);

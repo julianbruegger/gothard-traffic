@@ -25,11 +25,19 @@ $config = require $configPath;
 require_once __DIR__ . '/../lib/Db.php';
 require_once __DIR__ . '/../lib/SnapshotStore.php';
 require_once __DIR__ . '/../lib/StatsCalculator.php';
+require_once __DIR__ . '/../lib/WeatherStore.php';
 
 try {
     $pdo   = Db::connect($config);
     $rows  = (new SnapshotStore($pdo))->statsRows(365);
-    $stats = (new StatsCalculator())->compute($rows);
+    // Weather history is optional: the table may not exist yet.
+    $weather = [];
+    try {
+        $weather = (new WeatherStore($pdo))->history(365);
+    } catch (Throwable $e) {
+        $weather = [];
+    }
+    $stats = (new StatsCalculator())->compute($rows, null, $weather);
 } catch (Throwable $e) {
     http_response_code(503);
     echo json_encode(['error' => 'Database unavailable.']);

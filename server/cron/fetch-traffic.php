@@ -12,10 +12,13 @@ if (PHP_SAPI !== 'cli') {
 require __DIR__ . '/lib/DatexClient.php';
 require __DIR__ . '/lib/TrafficParser.php';
 require __DIR__ . '/lib/PassStatusClient.php';
+require __DIR__ . '/lib/WeatherClient.php';
 require __DIR__ . '/../lib/Db.php';
 require __DIR__ . '/../lib/SnapshotStore.php';
+require __DIR__ . '/../lib/WeatherStore.php';
 
 $debug = in_array('--debug', $argv, true);
+$backfillWeather = in_array('--backfill-weather', $argv, true);
 
 $configPath = __DIR__ . '/config.php';
 if (!is_file($configPath)) {
@@ -30,6 +33,27 @@ $errorLogPath = $config['error_log'] ?? __DIR__ . '/../data/fetch-error.log';
 function iso_now(): string
 {
     return (new DateTimeImmutable('now', new DateTimeZone('UTC')))->format(DateTimeInterface::ATOM);
+}
+
+// One-off: `php fetch-traffic.php --backfill-weather` loads the last 90 days of
+// hourly weather (Open-Meteo keeps ~3 months) so history starts before the
+// collector began storing it.
+if ($backfillWeather) {
+    try {
+        $weatherStore = new WeatherStore(Db::connect($config));
+        $n = 0;
+        foreach ((new WeatherClient($config))->fetchHistory(90) as $portal => $rows) {
+            foreach ($rows as $w) {
+                $weatherStore->upsert($portal, $w);
+                $n++;
+            }
+        }
+        fwrite(STDOUT, "Backfilled {$n} weather rows.\n");
+        exit(0);
+    } catch (Throwable $e) {
+        fwrite(STDERR, 'Weather backfill failed: ' . $e->getMessage() . "\n");
+        exit(1);
+    }
 }
 
 try {
@@ -78,6 +102,28 @@ try {
     $pdo   = Db::connect($config);
     $store = new SnapshotStore($pdo);
     $store->insert($result, $now);
+
+    // Hourly weather history (advisory, non-fatal): never let a weather problem
+    // or a not-yet-migrated table stop the traffic snapshot above.
+    if (($config['weather_enabled'] ?? true)) {
+        try {
+            $weatherStore = new WeatherStore($pdo);
+            $hour = gmdate('Y-m-d H:00:00');
+            if (!$weatherStore->hasHour($hour)) {
+                foreach ((new WeatherClient($config))->fetchCurrent() as $portal => $w) {
+                    $weatherStore->upsert($portal, $w);
+                }
+                if ($debug) {
+                    fwrite(STDOUT, "Weather stored for {$hour}.\n");
+                }
+            }
+        } catch (Throwable $e) {
+            @file_put_contents($errorLogPath, '[' . iso_now() . '] weather: ' . $e->getMessage() . "\n", FILE_APPEND);
+            if ($debug) {
+                fwrite(STDOUT, 'Weather failed: ' . $e->getMessage() . "\n");
+            }
+        }
+    }
 
     fwrite(STDOUT, "[{$now}] OK — north " . ($result['tunnel']['north']['queueKm'] ?? 0) . ' km'
         . ', south ' . ($result['tunnel']['south']['queueKm'] ?? 0) . " km\n");

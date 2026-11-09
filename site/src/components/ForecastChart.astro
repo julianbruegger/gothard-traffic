@@ -1,60 +1,67 @@
 ---
 import { t, type Lang } from '../lib/i18n';
+import Icon from './Icon.astro';
 
 interface Props {
   lang: Lang;
 }
 const { lang } = Astro.props;
+const levels = [
+  ['low', t(lang, 'forecast.low')],
+  ['moderate', t(lang, 'forecast.moderate')],
+  ['high', t(lang, 'forecast.high')],
+  ['extreme', t(lang, 'forecast.extreme')],
+] as const;
 ---
 
-<section class="fchart container" aria-labelledby="fchart-title">
-  <h2 class="fchart__title" id="fchart-title">{t(lang, 'fchart.title')}</h2>
-
-  <div class="fchart__controls">
-    <div class="fchart__portal-toggle" role="group" aria-label={t(lang, 'fchart.title')}>
-      <button type="button" id="fchart-portal-north" class="fchart__toggle-btn" data-active="true">
-        {t(lang, 'fchart.portalNorth')}
+<section class="section fchart" id="fchart-section" data-direction="north" aria-labelledby="fchart-title">
+  <div class="section__head">
+    <div class="section__titles">
+      <h2 class="section__title" id="fchart-title">{t(lang, 'fchart.title')}</h2>
+      <p class="section__sub" id="fchart-subtitle">{t(lang, 'fchart.subtitle')}</p>
+    </div>
+    <div class="seg" role="group" aria-label={lang === 'de' ? 'Fahrtrichtung' : 'Direction'}>
+      <button type="button" id="fchart-portal-north" class="seg__btn" data-active="true" aria-pressed="true">
+        <Icon name="arrow_down" size={18} />{t(lang, 'dir.south')}
       </button>
-      <button type="button" id="fchart-portal-south" class="fchart__toggle-btn">
-        {t(lang, 'fchart.portalSouth')}
+      <button type="button" id="fchart-portal-south" class="seg__btn" data-active="false" aria-pressed="false">
+        <Icon name="arrow_up" size={18} />{t(lang, 'dir.north')}
       </button>
     </div>
-    <div class="fchart__daynav" id="fchart-daynav" role="group" aria-label={t(lang, 'fchart.dayNav')}></div>
   </div>
 
-  <p class="fchart__subtitle" id="fchart-subtitle">{t(lang, 'fchart.subtitle')}</p>
+  <div class="filter-chips" id="fchart-daynav" role="group" aria-label={t(lang, 'fchart.dayNav')}></div>
 
-  <div class="fchart__wrap">
-    <svg
-      id="forecast-chart"
-      viewBox="0 0 640 260"
-      role="img"
-      aria-labelledby="fchart-desc"
-      style="width: 100%; height: auto;"
-    >
+  <div class="legend" id="fchart-legend">
+    <span class="legend__item" id="fchart-legend-actual" hidden style="color: var(--series)"><span class="swatch--line"></span><span style="color: var(--md-on-surface-variant)">{t(lang, 'fchart.actual')}</span></span>
+    <span class="legend__item" style="color: var(--series)"><span class="swatch--dashed"></span><span style="color: var(--md-on-surface-variant)">{t(lang, 'fchart.predicted')}</span></span>
+    <span class="legend__item"><span class="swatch swatch--wide" style="background: var(--series-tint)"></span>{t(lang, 'fchart.range')}</span>
+    <span class="legend__item" id="fchart-legend-closed" hidden><span class="swatch swatch--wide" style="background: var(--closed-bg)"></span>{t(lang, 'trend.closedLabel')}</span>
+    <span class="legend__item" id="fchart-legend-gap" hidden style="color: var(--series)"><span class="swatch--dotted"></span><span style="color: var(--md-on-surface-variant)">{t(lang, 'fchart.closedGap')}</span></span>
+    <span class="fchart__legend-historic" id="fchart-legend-historic"></span>
+  </div>
+
+  <div class="chart-wrap fchart__wrap">
+    <svg id="forecast-chart" viewBox="0 0 640 260" role="img" aria-labelledby="fchart-desc">
       <desc id="fchart-desc">{t(lang, 'fchart.title')}</desc>
     </svg>
-    <noscript>
-      <p>{t(lang, 'fchart.noscript')}</p>
-    </noscript>
+    <noscript><p>{t(lang, 'fchart.noscript')}</p></noscript>
+  </div>
+  <p class="fchart__note" id="fchart-note" hidden></p>
 
-    <p class="fchart__note" id="fchart-note" hidden></p>
-
-    <div class="fchart__legend" id="fchart-legend">
-      <span class="fchart__legend-item">
-        <span class="fchart__legend-swatch fchart__legend-swatch--dashed"></span>
-        {t(lang, 'fchart.predicted')}
-      </span>
-      <span class="fchart__legend-item">
-        <span class="fchart__legend-swatch fchart__legend-swatch--range"></span>
-        {t(lang, 'fchart.range')}
-      </span>
-      <span class="fchart__legend-item" id="fchart-legend-actual" hidden>
-        <span class="fchart__legend-swatch fchart__legend-swatch--solid"></span>
-        {t(lang, 'fchart.actual')}
-      </span>
-      <span class="fchart__legend-historic" id="fchart-legend-historic"></span>
+  <div class="leave" id="leave" data-dir="north">
+    <div class="leave__head">
+      <h3 class="leave__title"><Icon name="schedule" />{t(lang, 'leave.title')}</h3>
+      <p class="leave__window">{t(lang, 'leave.quiet')}: <strong id="leave-window">–</strong></p>
+    </div>
+    <div class="leave__cells" id="leave-cells"></div>
+    <div class="leave__hours" aria-hidden="true"><span>00</span><span>03</span><span>06</span><span>09</span><span>12</span><span>15</span><span>18</span><span>21</span></div>
+    <div class="legend">
+      {levels.map(([lv, label]) => (
+        <span class="legend__item"><span class="swatch" data-level-dir="north" data-level={lv} id={`leave-legend-${lv}`}></span>{label}</span>
+      ))}
     </div>
   </div>
-  <p class="fchart__disclaimer">{t(lang, 'forecast.disclaimer')}</p>
+
+  <p class="section__note">{t(lang, 'forecast.disclaimer')}</p>
 </section>

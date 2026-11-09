@@ -1,50 +1,82 @@
 ---
 import { t, type Lang } from '../lib/i18n';
-import { formatKm, formatMinutes, formatTrendDelta, TREND_ARROW } from '../lib/format';
-import type { PortalStatus } from '../lib/types';
+import { formatKm, formatMinutes, formatTrendDelta } from '../lib/format';
+import { buildSparkline } from '../lib/chart';
+import type { HistoryPoint, PortalStatus } from '../lib/types';
 import type { QueueTrend } from '../lib/trend';
+import Icon from './Icon.astro';
 
 interface Props {
   lang: Lang;
   side: 'north' | 'south';
   portal: PortalStatus;
   trend: QueueTrend | null;
+  history: HistoryPoint[];
 }
-const { lang, side, portal, trend } = Astro.props;
-const titleKey = side === 'north' ? 'portal.north' : 'portal.south';
+const { lang, side, portal, trend, history } = Astro.props;
+
+// The north portal (Göschenen) queues traffic heading south, and vice versa —
+// cards are titled by travel direction, which is what drivers think in.
+const title = t(lang, side === 'north' ? 'dir.south' : 'dir.north');
+const sub = t(lang, side === 'north' ? 'dir.southSub' : 'dir.northSub');
+const km = portal.queueKm ?? 0;
+const meterPct = Math.min(100, Math.max(0, (km / 15) * 100));
+const free = !portal.queueKm || portal.queueKm <= 0;
+const spark = buildSparkline(history, 280, 56, { padX: 2, padTop: 4, padBottom: 2, minMaxKm: 5 });
 
 const open = (key: string) => `<!--SSR:${side}-${key}-->`;
 const close = `<!--/SSR-->`;
 ---
 
 <article class="card" aria-labelledby={`${side}-title`}>
-  <div class="card__header">
-    <h2 class="card__title" id={`${side}-title`}>{t(lang, titleKey)}</h2>
+  <div class="card__head">
+    <span class={`card__avatar card__avatar--${side}`}><Icon name={side === 'north' ? 'arrow_down' : 'arrow_up'} size={22} /></span>
+    <div>
+      <h2 class="card__title" id={`${side}-title`}>{title}</h2>
+      <span class="card__sub">{sub}</span>
+    </div>
   </div>
-  <dl class="card__stats">
-    <div class="card__stat-row">
-      <dt class="card__stat-label">{t(lang, 'portal.queue')}</dt>
-      <dd class="card__stat-value-row">
-        <span class="card__stat-value" id={`${side}-queue`}
-          ><Fragment set:html={open('queue')} />{formatKm(portal.queueKm, lang)}<Fragment set:html={close} /></span>
-        <span
-          class="trend-badge"
-          id={`${side}-trend`}
-          data-direction={trend?.direction}
-          hidden={!trend}
-        ><Fragment set:html={open('trend')} />{trend && `${TREND_ARROW[trend.direction]} ${formatTrendDelta(trend.deltaKm, lang)}`}<Fragment set:html={close} /></span>
-      </dd>
-    </div>
-    <div class="card__stat-row">
-      <dt class="card__stat-label">{t(lang, 'portal.wait')}</dt>
-      <dd class="card__stat-value" id={`${side}-wait`}
-        ><Fragment set:html={open('wait')} />{formatMinutes(portal.waitMinutes, lang)}<Fragment set:html={close} /></dd>
-    </div>
-  </dl>
-  {portal.cause && (
-    <p class="card__cause" id={`${side}-cause`}
-      ><Fragment set:html={open('cause')} />{portal.cause}<Fragment set:html={close} /></p>
-  )}
+
+  <div class="card__figures">
+    <p>
+      <span class="visually-hidden">{t(lang, 'portal.wait')}: </span>
+      <span class="card__wait" id={`${side}-wait`}><Fragment set:html={open('wait')} />{formatMinutes(portal.waitMinutes, lang)}<Fragment set:html={close} /></span>
+    </p>
+    <p>
+      <span class="visually-hidden">{t(lang, 'portal.queue')}: </span>
+      <span class="card__km" id={`${side}-queue`}><Fragment set:html={open('queue')} />{formatKm(portal.queueKm, lang)}<Fragment set:html={close} /></span>
+    </p>
+    <span class="trend-badge" id={`${side}-trend`} data-direction={trend?.direction} hidden={!trend}>
+      <Icon name="trending_up" size={18} class="icon trend-icon trend-icon--up" />
+      <Icon name="trending_down" size={18} class="icon trend-icon trend-icon--down" />
+      <Icon name="trending_flat" size={18} class="icon trend-icon trend-icon--flat" />
+      <span id={`${side}-trend-text`}><Fragment set:html={open('trend')} />{trend && formatTrendDelta(trend.deltaKm, lang)}<Fragment set:html={close} /></span>
+    </span>
+    <span class="chip chip--sm" id={`${side}-free`} hidden={!free}><Icon name="check_circle" size={18} class="icon status-icon--open" />{t(lang, 'status.open')}</span>
+  </div>
+
+  <div class="meter">
+    <span class="card__label">{t(lang, 'portal.queue')}</span>
+    <div class="meter__track" aria-hidden="true"><div class={`meter__fill meter__fill--${side}`} id={`${side}-meter`} style={`width: ${meterPct.toFixed(1)}%`}></div></div>
+    <div class="meter__scale" aria-hidden="true"><span>{t(lang, 'portal.portal')}</span><span>5 km</span><span>10 km</span><span>15 km</span></div>
+  </div>
+
+  <div class="spark">
+    <span class="card__label">{t(lang, 'portal.sparkLabel')}</span>
+    <svg viewBox="0 0 280 56" preserveAspectRatio="none" role="img" aria-label={`${title}: ${t(lang, 'portal.sparkLabel')}`}>
+      <g id={`${side}-spark-closed`}>
+        {spark.closures.map((b) => <rect x={b.x1} y="0" width={Math.max(b.x2 - b.x1, 1)} height="56" fill="var(--closed-bg)" />)}
+      </g>
+      <line x1="0" y1="54" x2="280" y2="54" stroke="var(--md-outline-variant)" stroke-width="1" vector-effect="non-scaling-stroke" />
+      <path id={`${side}-spark-line`} d={side === 'north' ? spark.northPath : spark.southPath} fill="none" stroke={`var(--c-${side})`} stroke-width="2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+      <path id={`${side}-spark-gap`} d={side === 'north' ? spark.northGapPath : spark.southGapPath} fill="none" stroke={`var(--c-${side})`} stroke-width="2" stroke-linecap="round" stroke-dasharray="0.1 5" vector-effect="non-scaling-stroke" />
+    </svg>
+  </div>
+
+  <p class="card__cause" id={`${side}-cause-row`} hidden={!portal.cause}>
+    <Icon name="info" size={18} />
+    <span id={`${side}-cause`}><Fragment set:html={open('cause')} />{portal.cause ?? ''}<Fragment set:html={close} /></span>
+  </p>
   <ul class="card__closures" id={`${side}-closures`} hidden={!portal.closures?.length}>
     {(portal.closures ?? []).map(c => <li class="card__closure-tag">{c}</li>)}
   </ul>

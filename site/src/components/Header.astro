@@ -1,9 +1,10 @@
 ---
 import { t, type Lang } from '../lib/i18n';
+import Icon from './Icon.astro';
 
 interface Props {
   lang: Lang;
-  currentPage?: 'status' | 'forecasts';
+  currentPage?: 'status' | 'forecasts' | 'statistics';
 }
 const { lang, currentPage = 'status' } = Astro.props;
 
@@ -17,33 +18,37 @@ const logical = path === '/en' ? '/' : path.startsWith('/en/') ? path.slice(3) :
 
 const prefix = (l: Lang) => (l === 'de' ? '' : '/en');
 const home = (l: Lang) => prefix(l) || '/';
-const forecasts = (l: Lang) => `${prefix(l)}/forecasts`;
 const deHref = logical === '/' ? '/' : logical;
 const enHref = logical === '/' ? '/en' : '/en' + logical;
+
+const links = [
+  { key: 'status', href: home(lang), label: t(lang, 'nav.live'), icon: 'live' },
+  { key: 'forecasts', href: `${prefix(lang)}/forecasts`, label: t(lang, 'nav.forecast'), icon: 'calendar' },
+  { key: 'statistics', href: `${prefix(lang)}/statistics`, label: t(lang, 'nav.stats'), icon: 'bar_chart' },
+] as const;
 ---
 
 <header class="site-header">
   <div class="container site-header__bar">
     <a class="site-header__brand" href={home(lang)}>
-      <span class="site-header__mark" aria-hidden="true">GT</span>
+      <span class="site-header__mark"><Icon name="terrain" size={24} /></span>
       <span>{t(lang, 'site.title')}</span>
     </a>
-    <nav class="site-nav" aria-label="Navigation">
-      <a href={home(lang)} class="site-nav__link" aria-current={currentPage === 'status' ? 'page' : undefined}>
-        {t(lang, 'nav.status')}
-      </a>
-      <a href={forecasts(lang)} class="site-nav__link" aria-current={currentPage === 'forecasts' ? 'page' : undefined}>
-        {lang === 'de' ? 'Prognosen' : 'Forecasts'}
-      </a>
+    <nav class="site-nav" aria-label={lang === 'de' ? 'Hauptnavigation' : 'Main navigation'}>
+      {links.map((l) => (
+        <a href={l.href} class="site-nav__link" aria-current={currentPage === l.key ? 'page' : undefined}>
+          <Icon name={l.icon} size={20} />{l.label}
+        </a>
+      ))}
     </nav>
     <div class="header__actions">
-      <nav class="lang-switch" aria-label="Language">
-        <a href={deHref} aria-current={lang === 'de' ? 'true' : 'false'} data-lang-link="de">DE</a>
-        <a href={enHref} aria-current={lang === 'en' ? 'true' : 'false'} data-lang-link="en">EN</a>
+      <nav class="lang-switch" aria-label={lang === 'de' ? 'Sprache' : 'Language'}>
+        <a href={deHref} lang="de" aria-current={lang === 'de' ? 'true' : 'false'} data-lang-link="de">DE</a>
+        <a href={enHref} lang="en" aria-current={lang === 'en' ? 'true' : 'false'} data-lang-link="en">EN</a>
       </nav>
-      <button type="button" class="theme-toggle" id="theme-toggle" aria-label={t(lang, 'theme.toggle')}>
-        <span class="theme-toggle__moon" aria-hidden="true">☾</span>
-        <span class="theme-toggle__sun" aria-hidden="true">☀</span>
+      <button type="button" class="icon-btn theme-toggle" id="theme-toggle" aria-label={t(lang, 'theme.toggle')}>
+        <Icon name="moon" size={22} class="icon theme-toggle__moon" />
+        <Icon name="sun" size={22} class="icon theme-toggle__sun" />
       </button>
     </div>
   </div>

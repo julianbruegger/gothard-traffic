@@ -1,0 +1,14 @@
+---
+import Layout from '../layouts/Layout.astro';
+import Header from '../components/Header.astro';
+import Footer from '../components/Footer.astro';
+import StatsContent from '../components/StatsContent.astro';
+
+const lang = 'de' as const;
+---
+
+<Layout lang={lang} updatedIso={null}>
+  <Header lang={lang} currentPage="statistics" />
+  <StatsContent lang={lang} />
+  <Footer lang={lang} dataSource="TCS-Staumeldungen" />
+</Layout>

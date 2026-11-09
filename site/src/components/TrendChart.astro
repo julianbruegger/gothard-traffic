@@ -3,6 +3,7 @@ import { t, type Lang } from '../lib/i18n';
 import { buildSparkline } from '../lib/chart';
 import { formatKm, formatUpdated } from '../lib/format';
 import type { HistoryPoint } from '../lib/types';
+import Icon from './Icon.astro';
 
 interface Props {
   lang: Lang;
@@ -10,100 +11,76 @@ interface Props {
 }
 const { lang, history } = Astro.props;
 const chart = buildSparkline(history);
+const km = (v: number) => `${String(v).replace('.', lang === 'de' ? ',' : '.')} km`;
 ---
 
-<section class="trend container" aria-labelledby="trend-title">
-  <h2 class="trend__title" id="trend-title">{t(lang, 'trend.title')}</h2>
-
-  <div class="trend__chart-wrap">
-    <svg
-      id="trend-svg"
-      viewBox={`0 0 ${chart.width} ${chart.height}`}
-      role="img"
-      aria-labelledby="trend-desc"
-      preserveAspectRatio="none"
-      style="width: 100%; height: auto; cursor: crosshair;"
-    >
-      <desc id="trend-desc">{t(lang, 'trend.queueLabel')}</desc>
-
-      <!-- Closure bands: periods the tunnel was fully closed -->
-      <g id="trend-closures">
-        {chart.closures.map(band => (
-          <rect
-            x={band.x1} y="8" width={Math.max(band.x2 - band.x1, 1)} height={chart.height - 32}
-            fill="var(--color-closed-bg)"
-            stroke="var(--color-closed)" stroke-width="1" stroke-dasharray="3 2"
-          >
-            <title>{t(lang, 'trend.closedLabel')}</title>
-          </rect>
-        ))}
-      </g>
-
-      <!-- Grid lines at every tick -->
-      {chart.ticks.map(tick => (
-        <line
-          x1={tick.x} y1="8" x2={tick.x} y2={chart.height - 24}
-          stroke="var(--color-border)" stroke-width="1" stroke-dasharray="4 3"
-        />
-      ))}
-
-      <path id="trend-path-north" d={chart.northPath} fill="none" stroke="var(--color-accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
-      <path id="trend-path-south" d={chart.southPath} fill="none" stroke="var(--color-unknown)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
-
-      <!-- Time axis labels -->
-      {chart.ticks.map(tick => (
-        <text
-          x={tick.x} y={chart.height - 6}
-          text-anchor="middle"
-          font-size="11"
-          fill="var(--color-text-muted)"
-          font-family="var(--font-sans)"
-        >{tick.label}</text>
-      ))}
-
-      <g id="trend-hover" style="pointer-events: none;"></g>
-    </svg>
-    <noscript>
-      <p>{t(lang, 'trend.noscript')}</p>
-    </noscript>
-    <div class="trend__legend">
-      <span class="trend__legend-item">
-        <span class="trend__legend-swatch" style="background: var(--color-accent);"></span>
-        {t(lang, 'trend.northLegend')}
-      </span>
-      <span class="trend__legend-item">
-        <span class="trend__legend-swatch" style="background: var(--color-unknown);"></span>
-        {t(lang, 'trend.southLegend')}
-      </span>
-      <span class="trend__legend-item">
-        <span class="trend__legend-swatch trend__legend-swatch--closed" style="background: var(--color-closed-bg); border: 1px dashed var(--color-closed);"></span>
-        {t(lang, 'trend.closedLabel')}
-      </span>
+<section class="section" id="trend" aria-labelledby="trend-title">
+  <div class="section__head">
+    <div class="section__titles">
+      <h2 class="section__title" id="trend-title">{t(lang, 'trend.title')}</h2>
     </div>
   </div>
+  <div class="legend">
+    <span class="legend__item" style="color: var(--c-north)"><span class="swatch--line"></span><span style="color: var(--md-on-surface-variant)">{t(lang, 'dir.south')}</span></span>
+    <span class="legend__item" style="color: var(--c-south)"><span class="swatch--line"></span><span style="color: var(--md-on-surface-variant)">{t(lang, 'dir.north')}</span></span>
+    <span class="legend__item"><span class="swatch swatch--wide" style="background: var(--closed-bg)"></span>{t(lang, 'trend.closedLabel')}</span>
+    <span class="legend__item"><span class="swatch--dotted" style="color: var(--md-on-surface-variant)"></span>{t(lang, 'fchart.closedGap')}</span>
+  </div>
 
-  <details>
-    <summary>{t(lang, 'trend.queueLabel')} — {t(lang, 'nav.trend')}</summary>
-    <table class="data-table" id="trend-table">
-      <caption>{t(lang, 'trend.title')}</caption>
-      <thead>
-        <tr>
-          <th scope="col">{t(lang, 'hero.lastUpdated')}</th>
-          <th scope="col">{t(lang, 'portal.north')}</th>
-          <th scope="col">{t(lang, 'portal.south')}</th>
-          <th scope="col">{t(lang, 'nav.status')}</th>
-        </tr>
-      </thead>
-      <tbody id="trend-table-body">
-        {history.map((point) => (
-          <tr data-closed={point.status === 'closed' ? '' : undefined}>
-            <td>{formatUpdated(point.t, lang)}</td>
-            <td>{formatKm(point.northQueueKm, lang)}</td>
-            <td>{formatKm(point.southQueueKm, lang)}</td>
-            <td>{point.status === 'closed' ? `⛔ ${t(lang, 'status.closed')}` : '–'}</td>
-          </tr>
+  <div class="chart-wrap trend__chart-wrap">
+    <svg id="trend-svg" viewBox={`0 0 ${chart.width} ${chart.height}`} role="img" aria-labelledby="trend-desc" style="cursor: crosshair">
+      <desc id="trend-desc">{t(lang, 'trend.queueLabel')}</desc>
+      <g id="trend-closures">
+        {chart.closures.map(band => (
+          <rect x={band.x1} y="8" width={Math.max(band.x2 - band.x1, 1)} height={chart.height - 32} fill="var(--closed-bg)" />
         ))}
-      </tbody>
-    </table>
+      </g>
+      <g id="trend-grid">
+        {chart.yTicks.map(tk => (
+          <>
+            <line x1="8" x2={chart.width - 8} y1={tk.y} y2={tk.y} stroke={tk.km === 0 ? 'var(--md-outline)' : 'var(--md-outline-variant)'} stroke-width="1" />
+            {tk.km > 0 && <text x="10" y={tk.y - 4} font-size="11" fill="var(--md-on-surface-variant)">{km(tk.km)}</text>}
+          </>
+        ))}
+      </g>
+      <path id="trend-path-north" d={chart.northPath} fill="none" stroke="var(--c-north)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+      <path id="trend-path-south" d={chart.southPath} fill="none" stroke="var(--c-south)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
+      <path id="trend-gap-north" d={chart.northGapPath} fill="none" stroke="var(--c-north)" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="0.1 6" />
+      <path id="trend-gap-south" d={chart.southGapPath} fill="none" stroke="var(--c-south)" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="0.1 6" />
+      <g id="trend-ticks">
+        {chart.ticks.map(tick => (
+          <text x={tick.x} y={chart.height - 6} text-anchor="middle" font-size="11" fill="var(--md-on-surface-variant)">{tick.label}</text>
+        ))}
+      </g>
+      <g id="trend-hover" style="pointer-events: none;"></g>
+    </svg>
+    <noscript><p>{t(lang, 'trend.noscript')}</p></noscript>
+  </div>
+
+  <details class="table-toggle">
+    <summary><Icon name="table" />{t(lang, 'table.show')}</summary>
+    <div class="table-scroll">
+      <table class="data-table" id="trend-table">
+        <caption>{t(lang, 'trend.title')}</caption>
+        <thead>
+          <tr>
+            <th scope="col">{t(lang, 'hero.lastUpdated')}</th>
+            <th scope="col" class="num">{t(lang, 'dir.south')}</th>
+            <th scope="col" class="num">{t(lang, 'dir.north')}</th>
+            <th scope="col">{t(lang, 'nav.status')}</th>
+          </tr>
+        </thead>
+        <tbody id="trend-table-body">
+          {history.map((point) => (
+            <tr data-closed={point.status === 'closed' ? '' : undefined}>
+              <td>{formatUpdated(point.t, lang)}</td>
+              <td class="num">{point.status === 'closed' ? '–' : formatKm(point.northQueueKm, lang)}</td>
+              <td class="num">{point.status === 'closed' ? '–' : formatKm(point.southQueueKm, lang)}</td>
+              <td>{point.status === 'closed' ? t(lang, 'status.closed') : '–'}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
   </details>
 </section>

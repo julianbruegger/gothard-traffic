@@ -2,6 +2,7 @@
 import { t, type Lang } from '../lib/i18n';
 import { passStatusLabel } from '../lib/format';
 import type { PassStatus } from '../lib/types';
+import Icon from './Icon.astro';
 
 interface Props {
   lang: Lang;
@@ -9,17 +10,39 @@ interface Props {
 }
 const { lang, pass } = Astro.props;
 const label = passStatusLabel(pass.status, lang);
+const months = lang === 'de' ? ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'] : ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
+// Typical opening season of the pass road: June to October.
+const openMonths = new Set([5, 6, 7, 8, 9]);
 ---
 
 <article class="card" aria-labelledby="pass-title">
-  <div class="card__header">
-    <h2 class="card__title" id="pass-title">{t(lang, 'pass.title')}</h2>
+  <div class="card__head">
+    <span class="card__avatar"><Icon name="terrain" size={22} /></span>
+    <div>
+      <h2 class="card__title" id="pass-title">{t(lang, 'pass.title')}</h2>
+      <span class="card__sub">{t(lang, 'pass.sub')}</span>
+    </div>
   </div>
-  <div class="status-badge" id="pass-badge" data-status={pass.status}>
-    <span class="status-badge__dot" aria-hidden="true"></span>
-    <span id="pass-status-label"><!--SSR:pass-status-label-->{label}<!--/SSR--></span>
+  <div>
+    <span class="chip status-chip" id="pass-badge" data-status={pass.status}>
+      <Icon name="check_circle" class="icon status-icon--open" />
+      <Icon name="warning" class="icon status-icon--congested" />
+      <Icon name="error" class="icon status-icon--restricted" />
+      <Icon name="block" class="icon status-icon--closed" />
+      <Icon name="help" class="icon status-icon--unknown" />
+      <span id="pass-status-label"><!--SSR:pass-status-label-->{label}<!--/SSR--></span>
+    </span>
   </div>
-  {pass.note && (
-    <p class="card__cause" id="pass-note"><!--SSR:pass-note-->{pass.note}<!--/SSR--></p>
-  )}
+  <p class="card__cause" id="pass-note-row" hidden={!pass.note}>
+    <Icon name="info" size={18} />
+    <span id="pass-note"><!--SSR:pass-note-->{pass.note ?? ''}<!--/SSR--></span>
+  </p>
+  <div class="season">
+    <span class="card__label">{t(lang, 'pass.season')}</span>
+    <div class="season__bar" aria-hidden="true">
+      {months.map((_, i) => <span data-open={openMonths.has(i) ? '' : undefined}></span>)}
+    </div>
+    <div class="season__labels" aria-hidden="true">{months.map((m) => <span>{m}</span>)}</div>
+  </div>
+  <p class="card__cause"><Icon name="snow" size={18} />{t(lang, 'pass.winter')}</p>
 </article>

@@ -1,6 +1,6 @@
 import { isLang, DEFAULT_LANG, t } from '../lib/i18n';
 import { formatKm, formatMinutes, formatUpdated, formatTrendDelta, statusLabel, passStatusLabel, buildSummary, closureTitle, closureDetail } from '../lib/format';
-import { buildSparkline, type SparklineResult } from '../lib/chart';
+import { axesSvg, buildSparkline, type SparklineResult } from '../lib/chart';
 import { computeQueueTrend } from '../lib/trend';
 import { generateForecast, generateDayCurve, swissDayInfo, idxToWaitMinutes, type ForecastPoint, type TrafficLevel } from '../lib/forecast';
 import { iconSvg } from '../lib/icons';
@@ -188,12 +188,8 @@ function bindTrendChartHover(svg: SVGSVGElement) {
   svg.style.touchAction = 'pan-y';
 }
 
-function kmLabel(v: number): string {
-  return `${String(v).replace('.', lang === 'de' ? ',' : '.')} km`;
-}
-
 function renderSparks(history: HistoryPoint[]) {
-  const spark = buildSparkline(history, 280, 56, { padX: 2, padTop: 4, padBottom: 2, minMaxKm: 5 });
+  const spark = buildSparkline(history, 280, 56, { padLeft: 2, padRight: 2, padTop: 4, padBottom: 2, minScaleKm: 5 });
   for (const side of ['north', 'south'] as const) {
     setAttr(`${side}-spark-line`, 'd', side === 'north' ? spark.northPath : spark.southPath);
     setAttr(`${side}-spark-gap`, 'd', side === 'north' ? spark.northGapPath : spark.southGapPath);
@@ -223,20 +219,8 @@ function renderHistory(history: HistoryPoint[]) {
       .map((b) => `<rect x="${b.x1}" y="8" width="${Math.max(b.x2 - b.x1, 1)}" height="${chart.height - 32}" fill="var(--closed-bg)"><title>${closedLabel}</title></rect>`)
       .join('');
   }
-  const grid = document.getElementById('trend-grid');
-  if (grid) {
-    grid.innerHTML = chart.yTicks
-      .map((tk) =>
-        `<line x1="8" x2="${chart.width - 8}" y1="${tk.y}" y2="${tk.y}" stroke="${tk.km === 0 ? 'var(--md-outline)' : 'var(--md-outline-variant)'}" stroke-width="1" />` +
-        (tk.km > 0 ? `<text x="10" y="${tk.y - 4}" font-size="11" fill="var(--md-on-surface-variant)">${kmLabel(tk.km)}</text>` : ''))
-      .join('');
-  }
-  const ticks = document.getElementById('trend-ticks');
-  if (ticks) {
-    ticks.innerHTML = chart.ticks
-      .map((tk) => `<text x="${tk.x}" y="${chart.height - 6}" text-anchor="middle" font-size="11" fill="var(--md-on-surface-variant)">${tk.label}</text>`)
-      .join('');
-  }
+  const axes = document.getElementById('trend-axes');
+  if (axes) axes.innerHTML = axesSvg(chart);
 
   const tbody = document.getElementById('trend-table-body');
   if (tbody) {

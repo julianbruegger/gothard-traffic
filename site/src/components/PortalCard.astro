@@ -22,7 +22,7 @@ const sub = t(lang, side === 'north' ? 'dir.southSub' : 'dir.northSub');
 const km = portal.queueKm ?? 0;
 const meterPct = Math.min(100, Math.max(0, (km / 15) * 100));
 const free = !portal.queueKm || portal.queueKm <= 0;
-const spark = buildSparkline(history, 280, 56, { padX: 2, padTop: 4, padBottom: 2, minMaxKm: 5 });
+const spark = buildSparkline(history, 280, 56, { padLeft: 2, padRight: 2, padTop: 4, padBottom: 2, minScaleKm: 5 });
 
 const open = (key: string) => `<!--SSR:${side}-${key}-->`;
 const close = `<!--/SSR-->`;

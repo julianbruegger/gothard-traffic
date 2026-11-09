@@ -1,6 +1,6 @@
 ---
 import { t, type Lang } from '../lib/i18n';
-import { buildSparkline } from '../lib/chart';
+import { axesSvg, buildSparkline } from '../lib/chart';
 import { formatKm, formatUpdated } from '../lib/format';
 import type { HistoryPoint } from '../lib/types';
 import Icon from './Icon.astro';
@@ -11,7 +11,6 @@ interface Props {
 }
 const { lang, history } = Astro.props;
 const chart = buildSparkline(history);
-const km = (v: number) => `${String(v).replace('.', lang === 'de' ? ',' : '.')} km`;
 ---
 
 <section class="section" id="trend" aria-labelledby="trend-title">
@@ -35,23 +34,12 @@ const km = (v: number) => `${String(v).replace('.', lang === 'de' ? ',' : '.')} 
           <rect x={band.x1} y="8" width={Math.max(band.x2 - band.x1, 1)} height={chart.height - 32} fill="var(--closed-bg)" />
         ))}
       </g>
-      <g id="trend-grid">
-        {chart.yTicks.map(tk => (
-          <>
-            <line x1="8" x2={chart.width - 8} y1={tk.y} y2={tk.y} stroke={tk.km === 0 ? 'var(--md-outline)' : 'var(--md-outline-variant)'} stroke-width="1" />
-            {tk.km > 0 && <text x="10" y={tk.y - 4} font-size="11" fill="var(--md-on-surface-variant)">{km(tk.km)}</text>}
-          </>
-        ))}
-      </g>
+      <!-- km + Swiss-time hour axes, re-rendered by live.ts on every refresh -->
+      <g id="trend-axes" set:html={axesSvg(chart)} />
       <path id="trend-path-north" d={chart.northPath} fill="none" stroke="var(--c-north)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
       <path id="trend-path-south" d={chart.southPath} fill="none" stroke="var(--c-south)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />
       <path id="trend-gap-north" d={chart.northGapPath} fill="none" stroke="var(--c-north)" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="0.1 6" />
       <path id="trend-gap-south" d={chart.southGapPath} fill="none" stroke="var(--c-south)" stroke-width="2.5" stroke-linecap="round" stroke-dasharray="0.1 6" />
-      <g id="trend-ticks">
-        {chart.ticks.map(tick => (
-          <text x={tick.x} y={chart.height - 6} text-anchor="middle" font-size="11" fill="var(--md-on-surface-variant)">{tick.label}</text>
-        ))}
-      </g>
       <g id="trend-hover" style="pointer-events: none;"></g>
     </svg>
     <noscript><p>{t(lang, 'trend.noscript')}</p></noscript>

@@ -5,6 +5,12 @@ export interface TimeTick {
   label: string;
 }
 
+/** A horizontal gridline on the km axis. */
+export interface ValueTick {
+  y: number;
+  label: string;
+}
+
 /** A resampled bucket's pixel position, for hover interaction. */
 export interface ChartPoint {
   x: number;
@@ -31,15 +37,37 @@ export interface SparklineResult {
   height: number;
   maxKm: number;
   ticks: TimeTick[];
-  /** Horizontal gridlines at 0, ½ and the top of the (rounded) km scale. */
-  yTicks: Array<{ y: number; km: number }>;
+  yTicks: ValueTick[];
+  plotLeft: number;   // x where the plot area starts (right of the km labels)
+  plotBottom: number; // y of the zero line
   points: ChartPoint[];
   closures: ClosureBand[];
 }
 
-const DEFAULT_PADDING_X = 8;
-const DEFAULT_PADDING_TOP = 8;
+const DEFAULT_PADDING_LEFT = 48; // space for the km labels ("2.5 km")
+const PADDING_RIGHT = 8;
+const PADDING_TOP = 8;
 const DEFAULT_PADDING_BOTTOM = 24; // space for time labels
+
+/** Overrides for compact uses (the direction-card sparklines). */
+export interface SparklineOptions {
+  padLeft?: number;
+  padRight?: number;
+  padTop?: number;
+  padBottom?: number;
+  /** Lower bound for the top of the km scale. */
+  minScaleKm?: number;
+}
+
+// The km axis never shrinks below this, so a 1–2 km queue reads as the small
+// queue it is instead of filling the whole chart height.
+const MIN_SCALE_KM = 5;
+const NICE_STEPS_KM = [5, 10, 15, 20, 30, 40, 60];
+const niceMaxKm = (km: number) => NICE_STEPS_KM.find((s) => s >= km) ?? Math.ceil(km / 20) * 20;
+
+// Axis labels are Swiss local time (CET/CEST), whatever the viewer's timezone.
+const zurichHour = new Intl.DateTimeFormat('en-GB', { timeZone: 'Europe/Zurich', hour: '2-digit', hourCycle: 'h23' });
+const localHourOf = (ms: number) => +zurichHour.format(new Date(ms));
 
 // The chart always covers a fixed trailing window (matches the "last 24 hours"
 // heading) so the x-axis is stable regardless of how far back the feed reaches.
@@ -62,20 +90,14 @@ interface Bucket {
   closed: boolean;
 }
 
-export interface SparklineOptions {
-  padX?: number;
-  padTop?: number;
-  padBottom?: number;
-  /** Lower bound for the y-axis top, so a 0.3 km queue doesn't fill the chart. */
-  minMaxKm?: number;
-}
-
 export function buildSparkline(history: HistoryPoint[], width = 640, height = 220, opts: SparklineOptions = {}): SparklineResult {
-  const PADDING_X = opts.padX ?? DEFAULT_PADDING_X;
-  const PADDING_TOP = opts.padTop ?? DEFAULT_PADDING_TOP;
+  const PADDING_LEFT = opts.padLeft ?? DEFAULT_PADDING_LEFT;
+  const PAD_RIGHT = opts.padRight ?? PADDING_RIGHT;
+  const PAD_TOP = opts.padTop ?? PADDING_TOP;
   const PADDING_BOTTOM = opts.padBottom ?? DEFAULT_PADDING_BOTTOM;
   const empty: SparklineResult = {
     northPath: '', southPath: '', northGapPath: '', southGapPath: '', width, height, maxKm: 0, ticks: [], yTicks: [], points: [], closures: [],
+    plotLeft: PADDING_LEFT, plotBottom: height - PADDING_BOTTOM,
   };
   if (history.length === 0) return empty;
 
@@ -86,9 +108,9 @@ export function buildSparkline(history: HistoryPoint[], width = 640, height = 22
   const start = end - WINDOW_MS;
   const tSpan = WINDOW_MS;
 
-  const innerW = width - PADDING_X * 2;
-  const innerH = height - PADDING_TOP - PADDING_BOTTOM;
-  const xOf = (t: number) => PADDING_X + (innerW * (t - start)) / tSpan;
+  const innerW = width - PADDING_LEFT - PAD_RIGHT;
+  const innerH = height - PAD_TOP - PADDING_BOTTOM;
+  const xOf = (t: number) => PADDING_LEFT + (innerW * (t - start)) / tSpan;
 
   // ── Resample the window into fixed buckets, averaging each side's readings ──
   const bucketCount = Math.ceil(WINDOW_MS / BUCKET_MS);
@@ -100,11 +122,18 @@ export function buildSparkline(history: HistoryPoint[], width = 640, height = 22
     if (t < start || t > end) return;
     const bi = Math.min(bucketCount - 1, Math.floor((t - start) / BUCKET_MS));
     const b = acc[bi];
-    // While the tunnel is closed the feed reports 0 km, but the queue in front of
-    // the barrier keeps building: treat it as "no reading", not as an empty road.
+    // While closed the feed reports 0 km (or nothing), but the queue keeps
+    // building behind the barrier: the queue is unknown, so every reading taken
+    // during a closure stays out of the average and the line bridges the gap.
     if (p.status === 'closed') { b.closed = true; return; }
-    if (p.northQueueKm !== null && p.northQueueKm !== undefined) { b.nSum += p.northQueueKm; b.nCount++; }
-    if (p.southQueueKm !== null && p.southQueueKm !== undefined) { b.sSum += p.southQueueKm; b.sCount++; }
+    // The feed reports no queue as null. On an open tunnel that is a real
+    // reading of 0 km. Skipping it made the line start out of nowhere at the
+    // first queue instead of rising from the zero line.
+    const km = (v: number | null | undefined) => v ?? 0;
+    const n = km(p.northQueueKm);
+    const s = km(p.southQueueKm);
+    if (n !== null) { b.nSum += n; b.nCount++; }
+    if (s !== null) { b.sSum += s; b.sCount++; }
   });
 
   const buckets: Bucket[] = acc.map((b, bi) => ({
@@ -114,16 +143,15 @@ export function buildSparkline(history: HistoryPoint[], width = 640, height = 22
     closed: b.closed,
   }));
 
-  const rawMax = Math.max(
-    opts.minMaxKm ?? 2,
+  const maxKm = niceMaxKm(Math.max(
+    opts.minScaleKm ?? MIN_SCALE_KM,
     ...buckets.map((b) => Math.max(b.north ?? 0, b.south ?? 0)),
-  );
-  // Round the scale up to a value whose half is a whole number of km.
-  const maxKm = [2, 4, 6, 10, 20, 30, 40, 60].find((m) => m >= rawMax) ?? Math.ceil(rawMax / 20) * 20;
-  const yOf = (km: number) => PADDING_TOP + innerH - (km / maxKm) * innerH;
+  ));
+  const yOf = (km: number) => PAD_TOP + innerH - (km / maxKm) * innerH;
 
-  // Solid line through the readings; a closure in between breaks it and adds a
-  // dotted bridge instead. Only a genuinely long outage (no closure) leaves a gap.
+  // Solid line through the readings. Readings while closed are unknown (the
+  // queue keeps building behind the barrier), so a closure breaks the solid
+  // line and a dotted connector bridges it instead of dropping to 0 km.
   const toPaths = (key: 'north' | 'south') => {
     const solid: string[] = [];
     const gap: string[] = [];
@@ -151,17 +179,22 @@ export function buildSparkline(history: HistoryPoint[], width = 640, height = 22
   const southPaths = toPaths('south');
 
   // ── Time axis ticks — adaptive interval so there are always a few ticks ──
+  // Placed on full Swiss-local hours (the old fixed +2 h was an hour off in winter).
   const ticks: TimeTick[] = [];
   const hours = tSpan / 3_600_000;
   const tickH = hours <= 4 ? 1 : hours <= 12 ? 2 : hours <= 30 ? 6 : 12;
-  const tickMs = tickH * 3_600_000;
-  const firstTick = Math.ceil(start / tickMs) * tickMs;
-  for (let ts = firstTick; ts <= end; ts += tickMs) {
-    const d = new Date(ts);
-    const h = (d.getUTCHours() + 2) % 24; // approx CEST
+  for (let ts = Math.ceil(start / 3_600_000) * 3_600_000; ts <= end; ts += 3_600_000) {
+    const h = localHourOf(ts);
+    if (h % tickH !== 0) continue;
     const label = tickH < 6 ? `${String(h).padStart(2, '0')}:00` : `${String(h).padStart(2, '0')}h`;
     ticks.push({ x: +xOf(ts).toFixed(1), label });
   }
+
+  // ── Km axis: zero line, middle and top ──
+  const yTicks: ValueTick[] = [0, maxKm / 2, maxKm].map((km) => ({
+    y: +yOf(km).toFixed(1),
+    label: `${Number.isInteger(km) ? km : km.toFixed(1)} km`,
+  }));
 
   // ── Closure bands: contiguous buckets flagged closed merge into one band ──
   const closures: ClosureBand[] = [];
@@ -198,8 +231,34 @@ export function buildSparkline(history: HistoryPoint[], width = 640, height = 22
     height,
     maxKm,
     ticks,
-    yTicks: [0, maxKm / 2, maxKm].map((km) => ({ y: +yOf(km).toFixed(1), km })),
+    yTicks,
+    plotLeft: PADDING_LEFT,
+    plotBottom: PAD_TOP + innerH,
     points,
     closures,
   };
+}
+
+/**
+ * SVG markup for both axes (km gridlines + labels, hour gridlines + labels).
+ * Shared by the server render and the 60-second client refresh, so the scale
+ * and the time labels stay in step with the redrawn line.
+ */
+export function axesSvg(chart: SparklineResult): string {
+  const right = chart.width - PADDING_RIGHT;
+  const muted = 'var(--md-on-surface-variant)';
+  const font = 'font-size="11" font-family="var(--font-sans)"';
+  const yAxis = chart.yTicks
+    .map((tk) =>
+      `<line x1="${chart.plotLeft}" y1="${tk.y}" x2="${right}" y2="${tk.y}" stroke="var(--md-outline-variant)" stroke-width="1"${tk.y < chart.plotBottom ? ' stroke-dasharray="4 3"' : ''} />` +
+      `<text x="${chart.plotLeft - 4}" y="${tk.y + 4}" text-anchor="end" ${font} fill="${muted}">${tk.label}</text>`,
+    )
+    .join('');
+  const xAxis = chart.ticks
+    .map((tk) =>
+      `<line x1="${tk.x}" y1="${PADDING_TOP}" x2="${tk.x}" y2="${chart.plotBottom}" stroke="var(--md-outline-variant)" stroke-width="1" stroke-dasharray="4 3" />` +
+      `<text x="${tk.x}" y="${chart.height - 6}" text-anchor="middle" ${font} fill="${muted}">${tk.label}</text>`,
+    )
+    .join('');
+  return yAxis + xAxis;
 }

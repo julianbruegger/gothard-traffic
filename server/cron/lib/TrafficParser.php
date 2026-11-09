@@ -119,14 +119,23 @@ final class TrafficParser
                             }
                         }
                         $debugMatches[] = $doc->saveXML($record);
-                    } elseif ($from !== null && $from > $now) {
-                        $key = $from->format(DateTimeInterface::ATOM) . '|' . ($to?->format(DateTimeInterface::ATOM) ?? '');
-                        $plannedClosures[$key] = [
-                            'from'  => $from->format(DateTimeInterface::ATOM),
-                            'to'    => $to?->format(DateTimeInterface::ATOM),
-                            'cause' => self::extractCause($comment),
-                        ];
-                        $debugMatches[] = $doc->saveXML($record);
+                    } else {
+                        // Upcoming one-off window, or — for a recurring nightly
+                        // campaign currently outside its window — tonight's window.
+                        if ($from !== null && $from > $now) {
+                            [$pFrom, $pTo] = [$from, $to];
+                        } else {
+                            [$pFrom, $pTo] = self::nextDailyWindow($xpath, $record, $now) ?? [null, null];
+                        }
+                        if ($pFrom !== null) {
+                            $key = $pFrom->format(DateTimeInterface::ATOM) . '|' . ($pTo?->format(DateTimeInterface::ATOM) ?? '');
+                            $plannedClosures[$key] = [
+                                'from'  => $pFrom->format(DateTimeInterface::ATOM),
+                                'to'    => $pTo?->format(DateTimeInterface::ATOM),
+                                'cause' => self::cleanClosureCause(self::extractCause($comment)),
+                            ];
+                            $debugMatches[] = $doc->saveXML($record);
+                        }
                     }
                     // Expired closure (window fully in the past) → drop silently.
                     continue;
@@ -301,6 +310,57 @@ final class TrafficParser
             }
         }
         return false;
+    }
+
+    /**
+     * Next start of a recurring daily closure window after $now (looks up to 3
+     * Swiss-local days ahead), as [from, to], or null if none falls inside a
+     * validPeriod.
+     *
+     * @return array{0: DateTimeImmutable, 1: DateTimeImmutable}|null
+     */
+    private static function nextDailyWindow(DOMXPath $xpath, DOMElement $record, DateTimeImmutable $now): ?array
+    {
+        $tz = new DateTimeZone('Europe/Zurich');
+        $periods = $xpath->query(".//*[local-name()='validPeriod']", $record);
+        if ($periods === false) {
+            return null;
+        }
+        $best = null;
+        foreach ($periods as $period) {
+            $pStart = self::parseDate(self::nodeValue($xpath, $period, 'startOfPeriod'));
+            $pEnd   = self::parseDate(self::nodeValue($xpath, $period, 'endOfPeriod'));
+            $daily  = $xpath->query(".//*[local-name()='recurringTimePeriodOfDay']", $period);
+            if ($daily === false) {
+                continue;
+            }
+            foreach ($daily as $window) {
+                $a = self::parseTimeOfDay(self::nodeValue($xpath, $window, 'startTimeOfPeriod'));
+                $b = self::parseTimeOfDay(self::nodeValue($xpath, $window, 'endTimeOfPeriod'));
+                if ($a === null || $b === null) {
+                    continue;
+                }
+                for ($d = -1; $d <= 3; $d++) {
+                    $day   = $now->setTimezone($tz)->setTime(0, 0)->modify("{$d} day");
+                    $start = $day->setTime(intdiv($a, 60), $a % 60);
+                    $end   = $day->setTime(intdiv($b, 60), $b % 60);
+                    if ($b <= $a) {
+                        $end = $end->modify('+1 day');
+                    }
+                    if ($start <= $now) {
+                        continue;
+                    }
+                    if (($pStart !== null && $start < $pStart) || ($pEnd !== null && $start > $pEnd)) {
+                        continue;
+                    }
+                    if ($best === null || $start < $best[0]) {
+                        $best = [$start, $end];
+                    }
+                    break;
+                }
+            }
+        }
+        return $best;
     }
 
     /** "22:00:00" / "22:00:00+02:00" → minutes since midnight, or null. */

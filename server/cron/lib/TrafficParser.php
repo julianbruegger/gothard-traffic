@@ -185,6 +185,13 @@ final class TrafficParser
                 $waitMin = self::extractWaitMinutes($xpath, $record, $c);
                 $cause   = self::extractCause($comment);
 
+                // ASTRA often leaves a minor (<= 1 km) jam message published
+                // for many hours after it cleared. Its record version time
+                // stops moving, so treat such a queue as stale and ignore it.
+                if ($this->isStaleMinorQueue($xpath, $record, $queueKm, $now)) {
+                    continue;
+                }
+
                 $debugMatches[] = $doc->saveXML($record);
                 if ($side === 'south') {
                     $south = self::keepWorst($south, $queueKm, $waitMin, $cause);
@@ -354,6 +361,24 @@ final class TrafficParser
             return false;
         }
         return true;
+    }
+
+    /**
+     * A queue of <= 1 km whose situationRecordVersionTime is older than
+     * `stale_queue_hours` (default 2) is a leftover message, not a live jam.
+     * Records without a version time are never treated as stale.
+     */
+    private function isStaleMinorQueue(DOMXPath $xpath, DOMElement $record, ?float $queueKm, DateTimeImmutable $now): bool
+    {
+        if ($queueKm === null || $queueKm > 1.0) {
+            return false;
+        }
+        $version = self::parseDate(self::firstValue($xpath, $record, 'situationRecordVersionTime'));
+        if ($version === null) {
+            return false;
+        }
+        $hours = (float) ($this->config['stale_queue_hours'] ?? 2);
+        return ($now->getTimestamp() - $version->getTimestamp()) > $hours * 3600;
     }
 
     private static function parseDate(string $value): ?DateTimeImmutable

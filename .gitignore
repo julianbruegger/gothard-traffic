@@ -7,3 +7,7 @@ server/data/
 deploy-staging/
 *.log
 .DS_Store
+
+# Raw phpMyAdmin export of gotthard_snapshots (large; condensed into site/src/data/observed-days.json)
+gotthard_snapshots*.csv
+gotthard_snapshots*.csv.gz

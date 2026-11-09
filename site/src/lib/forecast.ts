@@ -10,6 +10,12 @@ import {
   measuredHolidayMult,
   seasonBaseline,
 } from './forecast-empirical';
+import {
+  fitObservedModel,
+  observedDayProfiles,
+  observedDays,
+  type ObservedModel,
+} from './observed-model';
 
 export type TrafficLevel = 'low' | 'moderate' | 'high' | 'extreme';
 
@@ -197,14 +203,18 @@ function toLevel(idx: number): TrafficLevel {
 }
 
 // Convert a congestion index into an estimated waiting time in minutes.
-// The index tracks queue-km, and TCS reports ~9–10 min delay per km, so idx 10 ≈
-// 90 min, idx 20 ≈ 180 min. There is no upper cap here: on the worst days the
-// Gotthard queue reaches 15–20 km (well over 2 hours), and clamping the estimate
-// at 90 min made the forecast structurally unable to represent those days (see
-// MAX_INDEX in indexAt for the source cap that used to flatten everything at 90).
-export function idxToWaitMinutes(idx: number): number {
-  return Math.round(Math.max(0, idx) * 9);
+// The index tracks queue-km. TCS reports ~9 min delay per km (the default, used
+// for the tweet-based history); ASTRA, the source of the live readings and of
+// the measured forecast model, uses exactly 10 min per km. There is no upper cap
+// here: on the worst days the Gotthard queue reaches 15–20 km (well over 2
+// hours), and clamping the estimate at 90 min made the forecast structurally
+// unable to represent those days (see MAX_INDEX in indexAt).
+export function idxToWaitMinutes(idx: number, minPerKm = 9): number {
+  return Math.round(Math.max(0, idx) * minPerKm);
 }
+
+/** ASTRA's delay per km of queue (Zeitverlust = 10 min × Länge). */
+const ASTRA_MIN_PER_KM = 10;
 
 // ─── Day/date labels ──────────────────────────────────────────────────────────
 
@@ -228,7 +238,53 @@ interface DayModel {
   sProf: HProfile;
   nProfHigh: HProfile; // busy-day (upper-edge) profiles for the forecast range
   sProfHigh: HProfile;
+  minPerKm: number;    // delay per km of the source the profiles are in
 }
+
+/**
+ * Calendar prior for one Swiss-local date, per direction: the season weight
+ * times the holiday effect (measured from the TCS history where available,
+ * else the hand-tuned additive boost). The measured model below learns how far
+ * reality deviates from this; months without measurements use it as-is.
+ */
+function calendarLevel(
+  month: number,
+  dom: number,
+  dow: number,
+  holidays: HolidayPeriod[],
+): { n: number; s: number; holiday: HolidayPeriod | undefined } {
+  const holiday = holidays.find((h) => h.matches(month, dom, dow));
+  const season = SEASON[month - 1];
+  const additive = Math.min(1.3, season + (holiday?.boost ?? 0));
+  const measured = measuredHolidayMult(holiday?.empiricalKey);
+  return {
+    n: measured ? season * measured.n : additive,
+    s: measured ? season * measured.s : additive,
+    holiday,
+  };
+}
+
+const holidayCache = new Map<number, HolidayPeriod[]>();
+function holidaysOf(year: number): HolidayPeriod[] {
+  let h = holidayCache.get(year);
+  if (!h) holidayCache.set(year, (h = buildHolidayPeriods(year)));
+  return h;
+}
+
+/** Calendar prior for an ISO date ("2026-08-14"), used to fit the measured model. */
+export function calendarLevelOf(isoDate: string): { n: number; s: number } {
+  const [y, m, d] = isoDate.split('-').map(Number);
+  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  const { n, s } = calendarLevel(m, d, dow, holidaysOf(y));
+  return { n, s };
+}
+
+/**
+ * Model learned from the collector's own ASTRA readings (observed-days.json),
+ * fitted once at load. null when there is too little data, in which case the
+ * TCS-based empirical profiles and then the hand-tuned curves take over.
+ */
+export const OBSERVED_MODEL: ObservedModel | null = fitObservedModel(observedDays, calendarLevelOf);
 
 // Busy-day multiplier for the hand-tuned fallback model (when a weekday has no
 // empirical profile). The data-driven path uses measured per-weekday ratios.
@@ -240,17 +296,51 @@ function swissMidnightUTC(from: Date): Date {
   const dayStart = new Date(Date.UTC(
     swissNow.getUTCFullYear(), swissNow.getUTCMonth(), swissNow.getUTCDate()
   ));
-  return new Date(dayStart.getTime() - swissOffset(from) * 3_600_000);
+  // Use the offset in force at that midnight, not at `from`: on DST-switch days
+  // they differ, and using `from`'s offset landed on 23:00 of the previous day
+  // (so the forecast for 28 Mar / 31 Oct was computed for the day before).
+  // Two hours before UTC midnight is always on the pre-midnight side of the switch.
+  const offsetAtMidnight = swissOffset(new Date(dayStart.getTime() - 2 * 3_600_000));
+  return new Date(dayStart.getTime() - offsetAtMidnight * 3_600_000);
 }
 
-function computeDayModel(dayUTC: Date, holidays: HolidayPeriod[], lang: 'de' | 'en'): DayModel {
+function computeDayModel(
+  dayUTC: Date,
+  holidays: HolidayPeriod[],
+  lang: 'de' | 'en',
+  observedModel: ObservedModel | null = OBSERVED_MODEL,
+): DayModel {
   const daySwiss = toSwiss(dayUTC);
   const year  = daySwiss.getUTCFullYear();
   const month = daySwiss.getUTCMonth() + 1; // 1-12
   const dom   = daySwiss.getUTCDate();
   const dow   = daySwiss.getUTCDay(); // 0=Sun
+  const isoDate = `${year}-${pad2(month)}-${pad2(dom)}`;
+  const labels = {
+    isoDate,
+    dayLabel: lang === 'de' ? SHORT_DE[dow] : SHORT_EN[dow],
+    fullDayLabel: lang === 'de' ? LONG_DE[dow] : LONG_EN[dow],
+    dateLabel: lang === 'de' ? `${pad2(dom)}.${pad2(month)}.` : `${pad2(month)}/${pad2(dom)}`,
+  };
 
-  const matchedHoliday = holidays.find(h => h.matches(month, dom, dow));
+  // 1st choice: the model learned from our own ASTRA readings. Its profiles are
+  // already in km at the right level for this date, so `mult` collapses to 1.
+  const level = calendarLevel(month, dom, dow, holidays);
+  const measuredDay = observedModel ? observedDayProfiles(observedModel, isoDate, level) : null;
+  if (measuredDay) {
+    return {
+      ...labels,
+      context: level.holiday ? level.holiday.name[lang] : null,
+      mult: 1,
+      nProf: measuredDay.n,
+      sProf: measuredDay.s,
+      nProfHigh: measuredDay.nHigh,
+      sProfHigh: measuredDay.sHigh,
+      minPerKm: ASTRA_MIN_PER_KM,
+    };
+  }
+
+  const matchedHoliday = level.holiday;
   const seasonMult = SEASON[month - 1];
   const boost = matchedHoliday?.boost ?? 0;
 
@@ -276,16 +366,14 @@ function computeDayModel(dayUTC: Date, holidays: HolidayPeriod[], lang: 'de' | '
   const sProfHigh = empirical ? empirical.sHigh : sProf.map((v) => v * DEFAULT_HIGH_RATIO);
 
   return {
-    isoDate: `${year}-${pad2(month)}-${pad2(dom)}`,
-    dayLabel: lang === 'de' ? SHORT_DE[dow] : SHORT_EN[dow],
-    fullDayLabel: lang === 'de' ? LONG_DE[dow] : LONG_EN[dow],
-    dateLabel: lang === 'de' ? `${pad2(dom)}.${pad2(month)}.` : `${pad2(month)}/${pad2(dom)}`,
+    ...labels,
     context: matchedHoliday ? matchedHoliday.name[lang] : null,
     mult,
     nProf,
     sProf,
     nProfHigh,
     sProfHigh,
+    minPerKm: 9,
   };
 }
 
@@ -308,7 +396,12 @@ function indexAt(prof: HProfile, mult: number, minuteOfDay: number): number {
 
 // ─── Public API ───────────────────────────────────────────────────────────────
 
-export function generateForecast(from: Date, lang: 'de' | 'en' = 'de', days = 4): ForecastDay[] {
+export function generateForecast(
+  from: Date,
+  lang: 'de' | 'en' = 'de',
+  days = 4,
+  observedModel: ObservedModel | null = OBSERVED_MODEL,
+): ForecastDay[] {
   const allHolidays = [
     ...buildHolidayPeriods(from.getUTCFullYear()),
     ...buildHolidayPeriods(from.getUTCFullYear() + 1), // in case we cross a year boundary
@@ -318,8 +411,9 @@ export function generateForecast(from: Date, lang: 'de' | 'en' = 'de', days = 4)
   const result: ForecastDay[] = [];
 
   for (let dayOff = 0; dayOff < days; dayOff++) {
-    const dayUTC = new Date(dayStartUTC.getTime() + dayOff * 86_400_000);
-    const model = computeDayModel(dayUTC, allHolidays, lang);
+    // Step via mid-day so a 23 h / 25 h DST day can never repeat or skip a date.
+    const dayUTC = swissMidnightUTC(new Date(dayStartUTC.getTime() + dayOff * 86_400_000 + 12 * 3_600_000));
+    const model = computeDayModel(dayUTC, allHolidays, lang, observedModel);
 
     const hours: ForecastHour[] = [];
     for (let h = 0; h < 24; h++) {
@@ -366,13 +460,18 @@ export interface DayCurve {
  * Predicted wait-time curve for the Swiss-local day containing `from`,
  * sampled every `stepMin` minutes (default 10) from 00:00 to 24:00 inclusive.
  */
-export function generateDayCurve(from: Date, lang: 'de' | 'en' = 'de', stepMin = 10): DayCurve {
+export function generateDayCurve(
+  from: Date,
+  lang: 'de' | 'en' = 'de',
+  stepMin = 10,
+  observedModel: ObservedModel | null = OBSERVED_MODEL,
+): DayCurve {
   const allHolidays = [
     ...buildHolidayPeriods(from.getUTCFullYear()),
     ...buildHolidayPeriods(from.getUTCFullYear() + 1),
   ];
   const dayUTC = swissMidnightUTC(from);
-  const model = computeDayModel(dayUTC, allHolidays, lang);
+  const model = computeDayModel(dayUTC, allHolidays, lang, observedModel);
 
   const points: ForecastPoint[] = [];
   for (let m = 0; m <= 1440; m += stepMin) {
@@ -384,10 +483,10 @@ export function generateDayCurve(from: Date, lang: 'de' | 'en' = 'de', stepMin =
       minuteOfDay: m,
       northIdx: +northIdx.toFixed(2),
       southIdx: +southIdx.toFixed(2),
-      northWait: idxToWaitMinutes(northIdx),
-      southWait: idxToWaitMinutes(southIdx),
-      northWaitHigh: idxToWaitMinutes(northIdxHigh),
-      southWaitHigh: idxToWaitMinutes(southIdxHigh),
+      northWait: idxToWaitMinutes(northIdx, model.minPerKm),
+      southWait: idxToWaitMinutes(southIdx, model.minPerKm),
+      northWaitHigh: idxToWaitMinutes(northIdxHigh, model.minPerKm),
+      southWaitHigh: idxToWaitMinutes(southIdxHigh, model.minPerKm),
     });
   }
 

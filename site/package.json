@@ -12,7 +12,9 @@
     "fetch": "node scripts/fetch-data.mjs",
     "fetch:watch": "node scripts/fetch-data.mjs --watch",
     "fetch:history": "node scripts/fetch-yearly-history.mjs",
-    "build:profiles": "node scripts/build-empirical-profiles.mjs"
+    "build:profiles": "node scripts/build-empirical-profiles.mjs",
+    "build:observed": "node scripts/build-observed-days.mjs",
+    "backtest": "esbuild scripts/backtest-forecast.ts --bundle --platform=node --format=esm --outfile=.astro/backtest.mjs --log-level=error && node .astro/backtest.mjs"
   },
   "dependencies": {
     "@astrojs/sitemap": "^3.7.3",

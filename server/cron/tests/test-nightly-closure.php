@@ -38,6 +38,11 @@ $assertions = [
     'inside daily window -> closed'  => $rIn['status'] === 'closed',
     'cause cleaned to Baustelle'     => $rIn['closureReason'] === 'Baustelle',
     'outside daily window -> open'   => $rOut['status'] === 'open',
+    'outside window -> next window planned' => count($rOut['plannedClosures']) === 1
+        && new DateTimeImmutable($rOut['plannedClosures'][0]['from']) > new DateTimeImmutable('now')
+        && new DateTimeImmutable($rOut['plannedClosures'][0]['from']) <= new DateTimeImmutable('+3 hours 1 minute')
+        && ($rOut['plannedClosures'][0]['cause'] ?? null) === 'Baustelle',
+    'inside window -> no planned entry' => count($rIn['plannedClosures']) === 0,
 ];
 $failures = 0;
 foreach ($assertions as $label => $ok) {

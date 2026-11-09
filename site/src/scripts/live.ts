@@ -348,12 +348,22 @@ function renderForecastChart(history: HistoryPoint[]) {
 
   // Keep only the selected day's measured points (today only — live history
   // doesn't reach back to other days), aligned to Swiss local minute-of-day.
+  // The feed reports "no queue" as null. On an open tunnel that is a real
+  // reading of 0 min; skipping it made the measured line float: it appeared out
+  // of nowhere at the first queue and stopped mid-air when the queue cleared.
+  // Only a queue length without a wait time stays unknown (null).
+  const wait = (min: number | null, km: number | null) => min ?? ((km ?? 0) > 0 ? null : 0);
   const actual: ActualPoint[] = [];
   if (isToday) {
     for (const p of history) {
       const info = swissDayInfo(new Date(p.t));
       if (info.isoDate !== curve.isoDate) continue;
-      actual.push({ minuteOfDay: info.minuteOfDay, north: p.northWaitMinutes, south: p.southWaitMinutes, closed: p.status === 'closed' });
+      actual.push({
+        minuteOfDay: info.minuteOfDay,
+        north: wait(p.northWaitMinutes, p.northQueueKm),
+        south: wait(p.southWaitMinutes, p.southQueueKm),
+        closed: p.status === 'closed',
+      });
     }
   }
 

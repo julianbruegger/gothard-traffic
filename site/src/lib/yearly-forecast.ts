@@ -120,14 +120,62 @@ function modelDayPoint(date: string): DayPoint {
 
 // ─── Series builder ───────────────────────────────────────────────────────────
 
+const SMOOTH_RADIUS = 3; // centred 7-day moving average
+
+/** Fill missing values by linear interpolation between the nearest real neighbours. */
+function interpolateGaps(values: (number | null)[]): number[] | null {
+  const known = values.map((v, i) => (v === null ? -1 : i)).filter(i => i >= 0);
+  if (known.length === 0) return null;
+  return values.map((v, i) => {
+    if (v !== null) return v;
+    let prev = -1;
+    let next = -1;
+    for (const k of known) {
+      if (k < i) prev = k;
+      else { next = k; break; }
+    }
+    if (prev === -1) return values[next] as number;
+    if (next === -1) return values[prev] as number;
+    const f = (i - prev) / (next - prev);
+    return (values[prev] as number) * (1 - f) + (values[next] as number) * f;
+  });
+}
+
+function movingAverage(values: number[]): number[] {
+  return values.map((_, i) => {
+    const from = Math.max(0, i - SMOOTH_RADIUS);
+    const to = Math.min(values.length - 1, i + SMOOTH_RADIUS);
+    let sum = 0;
+    for (let k = from; k <= to; k++) sum += values[k];
+    return sum / (to - from + 1);
+  });
+}
+
+function smoothField(raw: (number | null)[]): number[] {
+  const filled = interpolateGaps(raw);
+  return movingAverage(filled ?? raw.map(() => 0));
+}
+
 function buildYearSeries(
   year: number,
   historical: DayPoint[] | null,
 ): YearSeries {
   const dates = getDatesInRange(year);
   const lookup = new Map(historical?.map(p => [p.date, p]) ?? []);
-  const points = dates.map(date => lookup.get(date) ?? modelDayPoint(date));
-  return { year, points };
+
+  // Real measurements only: gaps are bridged by interpolation and the daily
+  // noise is averaged out, instead of mixing in model values for missing days.
+  // Without any history for the year, fall back to the model.
+  const hasHistory = dates.some(d => lookup.has(d));
+  if (!hasHistory) {
+    const modelPts = dates.map(modelDayPoint);
+    const south = movingAverage(modelPts.map(p => p.southMinutes));
+    const north = movingAverage(modelPts.map(p => p.northMinutes));
+    return { year, points: dates.map((date, i) => ({ date, northMinutes: north[i], southMinutes: south[i] })) };
+  }
+  const north = smoothField(dates.map(d => lookup.get(d)?.northMinutes ?? null));
+  const south = smoothField(dates.map(d => lookup.get(d)?.southMinutes ?? null));
+  return { year, points: dates.map((date, i) => ({ date, northMinutes: north[i], southMinutes: south[i] })) };
 }
 
 // ─── SVG path builders ────────────────────────────────────────────────────────

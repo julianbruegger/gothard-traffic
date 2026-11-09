@@ -1,6 +1,6 @@
 import { isLang, DEFAULT_LANG, t } from '../lib/i18n';
 import { formatKm, formatMinutes, formatUpdated, formatTrendDelta, TREND_ARROW, statusLabel, passStatusLabel, buildSummary, closureTitle, closureDetail } from '../lib/format';
-import { buildSparkline, type SparklineResult } from '../lib/chart';
+import { axesSvg, buildSparkline, type SparklineResult } from '../lib/chart';
 import { computeQueueTrend } from '../lib/trend';
 import { generateForecast, generateDayCurve, swissDayInfo, type ForecastDay, type ForecastPoint, type TrafficLevel } from '../lib/forecast';
 import { buildForecastChart, type ActualPoint, type Direction, type ForecastChartResult } from '../lib/forecast-chart';
@@ -184,6 +184,8 @@ function renderHistory(history: HistoryPoint[]) {
   const southPath = document.getElementById('trend-path-south');
   if (northPath) northPath.setAttribute('d', chart.northPath);
   if (southPath) southPath.setAttribute('d', chart.southPath);
+  const axes = document.getElementById('trend-axes');
+  if (axes) axes.innerHTML = axesSvg(chart);
 
   const closuresGroup = document.getElementById('trend-closures');
   if (closuresGroup) {

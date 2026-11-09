@@ -20,6 +20,21 @@ CREATE TABLE IF NOT EXISTS gotthard_snapshots (
     INDEX idx_fetched_at (fetched_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Hourly weather at the two portals (Open-Meteo), for correlating jams with
+-- temperature / rain / snow. One row per UTC hour and portal.
+-- Existing installs: just run this CREATE TABLE (it is idempotent).
+CREATE TABLE IF NOT EXISTS gotthard_weather (
+    id               BIGINT UNSIGNED  NOT NULL AUTO_INCREMENT,
+    observed_at      DATETIME         NOT NULL COMMENT 'UTC, top of the hour',
+    portal           VARCHAR(5)       NOT NULL COMMENT 'north (Göschenen) or south (Airolo)',
+    temperature_c    DECIMAL(4,1)     DEFAULT NULL,
+    precipitation_mm DECIMAL(5,2)     DEFAULT NULL,
+    snowfall_cm      DECIMAL(5,2)     DEFAULT NULL,
+    weather_code     SMALLINT         DEFAULT NULL COMMENT 'WMO weather code',
+    PRIMARY KEY (id),
+    UNIQUE KEY uq_observed_portal (observed_at, portal)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Migration for installs created before planned_closures existed (safe, nullable):
 -- ALTER TABLE gotthard_snapshots ADD COLUMN planned_closures TEXT DEFAULT NULL AFTER pass_note;
 

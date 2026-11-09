@@ -33,6 +33,12 @@ return [
     // ── Secondary pass-status source (alpen-paesse.ch) ────────────────────────
     // Cross-checks / fills the Gotthard PASS status when the DATEX feed carries
     // no pass record (typically summer). DATEX stays authoritative. Set
+    // Weather history (Open-Meteo, no key): once per hour the collector stores
+    // temperature / rain / snow for both portals in gotthard_weather.
+    // Requires the gotthard_weather table from schema.sql.
+    // 'weather_enabled' => false to disable it.
+    'weather_enabled' => true,
+
     // 'pass_source_enabled' => false to disable the extra HTTP request.
     'pass_source_enabled' => true,
     'pass_source_url'     => 'https://www.alpen-paesse.ch/de/alpenpaesse/gotthardpass/',

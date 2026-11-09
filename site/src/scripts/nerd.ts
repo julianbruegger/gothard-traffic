@@ -113,7 +113,7 @@ function renderClosures(rows: Stats['closures']) {
 function renderForecastVsReality(last7d: Stats['last7d']) {
   const host = $('nerd-fvr');
   if (last7d.length === 0) {
-    host.innerHTML = '';
+    host.innerHTML = `<p class="nerd-card__sub">${esc(t(lang, 'nerd.fvr.empty'))}</p>`;
     $('nerd-mae').innerHTML = '';
     return;
   }

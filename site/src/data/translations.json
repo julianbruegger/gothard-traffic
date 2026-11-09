@@ -138,7 +138,8 @@
     "nerd.train.departs": "Abfahrt",
     "nerd.train.duration": "Fahrzeit",
     "nerd.train.wait": "Aktuelle Wartezeit Nordportal",
-    "nerd.min": "Min"
+    "nerd.min": "Min",
+    "nerd.fvr.empty": "Noch keine Messungen der letzten 7 Tage vorhanden."
   },
   "en": {
     "site.title": "Gotthard Traffic Live",
@@ -279,6 +280,7 @@
     "nerd.train.departs": "Departs",
     "nerd.train.duration": "Duration",
     "nerd.train.wait": "Current wait at north portal",
-    "nerd.min": "min"
+    "nerd.min": "min",
+    "nerd.fvr.empty": "No measurements from the last 7 days yet."
   }
 }

@@ -22,7 +22,7 @@ final class StatsCalculator
         $this->zurich = new DateTimeZone('Europe/Zurich');
     }
 
-    public function compute(array $rows, ?DateTimeImmutable $now = null): array
+    public function compute(array $rows, ?DateTimeImmutable $now = null, array $weather = []): array
     {
         $now ??= new DateTimeImmutable('now', $this->utc);
         $pts = $this->prepare($rows);
@@ -38,6 +38,7 @@ final class StatsCalculator
             'dataQuality'  => $this->dataQuality($pts),
             'last7d'       => $this->hourly($pts, $now, 7),
             'hourly30d'    => $this->hourly($pts, $now, 30),
+            'correlations' => $this->correlations($pts, $weather),
         ];
     }
 
@@ -269,6 +270,209 @@ final class StatsCalculator
         $out = [];
         foreach ($acc as $hour => [$n, $s, $c]) {
             $out[] = ['t' => (string) $hour, 'north' => self::avg($n, $c), 'south' => self::avg($s, $c)];
+        }
+        return $out;
+    }
+
+    // ─── Correlations ────────────────────────────────────────────────────────
+
+    /**
+     * @param list<array> $pts      prepared snapshot points
+     * @param list<array> $weather  rows of gotthard_weather (observed_at, portal,
+     *                              temperature_c, precipitation_mm, snowfall_cm)
+     */
+    private function correlations(array $pts, array $weather): array
+    {
+        $north = $this->hourlySeries($pts, 'nWait');
+        $south = $this->hourlySeries($pts, 'sWait');
+
+        return [
+            'northSouth'   => $this->northSouth($north, $south),
+            'weather'      => $this->weatherCorrelations($north, $south, $weather),
+            'weekend'      => $this->weekendEffect($pts),
+            'afterClosure' => $this->afterClosure($pts),
+        ];
+    }
+
+    /** @return array<int, float> UTC hour start (unix ts) => mean wait in that hour */
+    private function hourlySeries(array $pts, string $key): array
+    {
+        $acc = [];
+        foreach ($pts as $p) {
+            $h = intdiv($p['ts'], 3600) * 3600;
+            $acc[$h] ??= [0.0, 0];
+            $acc[$h][0] += $p[$key];
+            $acc[$h][1]++;
+        }
+        return array_map(static fn (array $a): float => $a[0] / $a[1], $acc);
+    }
+
+    /**
+     * Pearson r after removing each UTC hour-of-day's mean from both series, so
+     * the shared daily rhythm does not masquerade as a relationship.
+     *
+     * @param list<array{0: int, 1: float, 2: float}> $triples [hourOfDay, x, y]
+     */
+    public static function deseasonedPearson(array $triples): ?float
+    {
+        if (count($triples) < 24) {
+            return null;
+        }
+        $by = [];
+        foreach ($triples as [$h, $x, $y]) {
+            $by[$h][0][] = $x;
+            $by[$h][1][] = $y;
+        }
+        $means = [];
+        foreach ($by as $h => [$xs, $ys]) {
+            $means[$h] = [array_sum($xs) / count($xs), array_sum($ys) / count($ys)];
+        }
+        $sxy = $sxx = $syy = 0.0;
+        foreach ($triples as [$h, $x, $y]) {
+            $dx = $x - $means[$h][0];
+            $dy = $y - $means[$h][1];
+            $sxy += $dx * $dy;
+            $sxx += $dx * $dx;
+            $syy += $dy * $dy;
+        }
+        if (!($sxx > 0 && $syy > 0)) {
+            return null;
+        }
+        $r = round($sxy / sqrt($sxx * $syy), 2);
+        return $r == 0.0 ? 0.0 : $r; // avoid "-0"
+    }
+
+    /** Do jams on both sides coincide, and does one lead the other? */
+    private function northSouth(array $north, array $south): array
+    {
+        $r = [];
+        for ($lag = -6; $lag <= 6; $lag++) { // south at t+lag vs north at t
+            $triples = [];
+            foreach ($north as $t => $n) {
+                $s = $south[$t + $lag * 3600] ?? null;
+                if ($s !== null) {
+                    $triples[] = [intdiv($t, 3600) % 24, $n, $s];
+                }
+            }
+            $r[$lag] = self::deseasonedPearson($triples);
+        }
+        $best = null;
+        foreach ($r as $lag => $v) {
+            if ($v !== null && ($best === null || abs($v) > abs($best['r']))) {
+                $best = ['lagHours' => $lag, 'r' => $v];
+            }
+        }
+        return ['sameHour' => $r[0] ?? null, 'best' => $best];
+    }
+
+    private function weatherCorrelations(array $north, array $south, array $weather): array
+    {
+        $byPortal = ['north' => [], 'south' => []];
+        foreach ($weather as $w) {
+            $t = (new DateTimeImmutable($w['observed_at'], $this->utc))->getTimestamp();
+            $byPortal[$w['portal']][$t] = [
+                'temperature'   => $w['temperature_c'] !== null ? (float) $w['temperature_c'] : null,
+                'precipitation' => $w['precipitation_mm'] !== null ? (float) $w['precipitation_mm'] : null,
+                'snowfall'      => $w['snowfall_cm'] !== null ? (float) $w['snowfall_cm'] : null,
+            ];
+        }
+
+        $out = [];
+        foreach (['north' => $north, 'south' => $south] as $portal => $wait) {
+            $row = ['portal' => $portal, 'hours' => 0, 'r' => [], 'wetAvg' => null, 'dryAvg' => null, 'wetHours' => 0];
+            $wet = [0.0, 0];
+            $dry = [0.0, 0];
+            foreach (['temperature', 'precipitation', 'snowfall'] as $var) {
+                $triples = [];
+                foreach ($wait as $t => $w) {
+                    $x = $byPortal[$portal][$t][$var] ?? null;
+                    if ($x !== null) {
+                        $triples[] = [intdiv($t, 3600) % 24, $x, $w];
+                    }
+                }
+                $row['r'][$var] = self::deseasonedPearson($triples);
+                $row['hours'] = max($row['hours'], count($triples));
+            }
+            foreach ($wait as $t => $w) {
+                $p = $byPortal[$portal][$t]['precipitation'] ?? null;
+                if ($p === null) {
+                    continue;
+                }
+                if ($p > 0.1) {
+                    $wet[0] += $w;
+                    $wet[1]++;
+                } else {
+                    $dry[0] += $w;
+                    $dry[1]++;
+                }
+            }
+            $row['wetAvg']   = self::avg($wet[0], $wet[1]);
+            $row['dryAvg']   = self::avg($dry[0], $dry[1]);
+            $row['wetHours'] = $wet[1];
+            $out[] = $row;
+        }
+        return $out;
+    }
+
+    /** Average wait on weekdays vs weekends (Swiss local days), per portal. */
+    private function weekendEffect(array $pts): array
+    {
+        $out = [];
+        foreach (['north' => 'nWait', 'south' => 'sWait'] as $portal => $key) {
+            $wk = [0.0, 0];
+            $we = [0.0, 0];
+            foreach ($pts as $p) {
+                if ($p['dow'] >= 5) {
+                    $we[0] += $p[$key];
+                    $we[1]++;
+                } else {
+                    $wk[0] += $p[$key];
+                    $wk[1]++;
+                }
+            }
+            $w = self::avg($wk[0], $wk[1]);
+            $e = self::avg($we[0], $we[1]);
+            $out[$portal] = [
+                'weekday' => $w,
+                'weekend' => $e,
+                'ratio'   => ($w !== null && $w > 0 && $e !== null) ? round($e / $w, 2) : null,
+            ];
+        }
+        return $out;
+    }
+
+    /** Average wait in the 3 hours after a full closure ends, vs the overall average. */
+    private function afterClosure(array $pts): array
+    {
+        $window = 3 * 3600;
+        $ends = [];
+        for ($i = 1; $i < count($pts); $i++) {
+            if ($pts[$i - 1]['status'] === 'closed' && $pts[$i]['status'] !== 'closed') {
+                $ends[] = $pts[$i]['ts'];
+            }
+        }
+        $out = ['events' => count($ends)];
+        foreach (['north' => 'nWait', 'south' => 'sWait'] as $portal => $key) {
+            $all = [0.0, 0];
+            $after = [0.0, 0];
+            foreach ($pts as $p) {
+                $all[0] += $p[$key];
+                $all[1]++;
+                foreach ($ends as $e) {
+                    if ($p['ts'] >= $e && $p['ts'] < $e + $window) {
+                        $after[0] += $p[$key];
+                        $after[1]++;
+                        break;
+                    }
+                }
+            }
+            $a = self::avg($after[0], $after[1]);
+            $o = self::avg($all[0], $all[1]);
+            $out[$portal] = [
+                'afterAvg' => $a,
+                'overallAvg' => $o,
+                'ratio' => ($a !== null && $o !== null && $o > 0) ? round($a / $o, 2) : null,
+            ];
         }
         return $out;
     }

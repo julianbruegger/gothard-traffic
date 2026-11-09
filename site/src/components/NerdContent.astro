@@ -61,6 +61,13 @@ const { lang } = Astro.props;
       <dl id="nerd-mae" class="nerd-dl"></dl>
     </article>
 
+    <article class="nerd-card nerd-card--wide" id="nerd-corr" hidden>
+      <h2>{t(lang, 'nerd.corr.title')}</h2>
+      <p class="nerd-card__sub">{t(lang, 'nerd.corr.sub')}</p>
+      <div id="nerd-corr-body"></div>
+      <p class="nerd-card__sub">{t(lang, 'nerd.weather.note')}</p>
+    </article>
+
     <article class="nerd-card nerd-card--wide" id="nerd-weather" hidden>
       <h2>{t(lang, 'nerd.weather.title')}</h2>
       <p class="nerd-card__sub">{t(lang, 'nerd.weather.sub')}</p>

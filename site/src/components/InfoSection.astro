@@ -1,17 +1,27 @@
 ---
 import { t, type Lang } from '../lib/i18n';
+import Icon from './Icon.astro';
 
 interface Props {
   lang: Lang;
 }
 const { lang } = Astro.props;
+const items = [
+  { icon: 'schedule', title: lang === 'de' ? 'Faustregel' : 'Rule of thumb', text: t(lang, 'info.ruleOfThumb') },
+  { icon: 'warning', title: lang === 'de' ? 'Stärkste Zeiten' : 'Busiest times', text: t(lang, 'info.worstTimes') },
+  { icon: 'split', title: lang === 'de' ? 'Alternativen' : 'Alternatives', text: t(lang, 'info.alternatives') },
+] as const;
 ---
 
-<section class="info container" aria-labelledby="info-title">
-  <h2 class="info__title" id="info-title">{t(lang, 'info.title')}</h2>
-  <ul class="info__list">
-    <li>{t(lang, 'info.ruleOfThumb')}</li>
-    <li>{t(lang, 'info.alternatives')}</li>
-    <li>{t(lang, 'info.worstTimes')}</li>
-  </ul>
+<section id="info" aria-labelledby="info-title" style="display: flex; flex-direction: column; gap: 16px">
+  <h2 class="section__title" id="info-title">{t(lang, 'info.title')}</h2>
+  <div class="grid-auto">
+    {items.map((it) => (
+      <div class="info-card">
+        <Icon name={it.icon} size={24} />
+        <h3>{it.title}</h3>
+        <p>{it.text}</p>
+      </div>
+    ))}
+  </div>
 </section>

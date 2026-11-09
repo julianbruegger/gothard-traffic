@@ -25,8 +25,8 @@ const faqLd = {
 };
 ---
 
-<section class="faq container" aria-labelledby="faq-title">
-  <h2 class="faq__title" id="faq-title">{t(lang, 'faq.title')}</h2>
+<section class="section faq" aria-labelledby="faq-title">
+  <h2 class="section__title" id="faq-title">{t(lang, 'faq.title')}</h2>
   <div class="faq__list">
     {items.map((it, i) => (
       <details class="faq__item" open={i === 0}>

@@ -1,0 +1,265 @@
+---
+import type { Lang } from '../lib/i18n';
+import { t } from '../lib/i18n';
+import Icon from './Icon.astro';
+import profiles from '../data/empirical-profiles.json';
+import historic from '../data/historic-days.json';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const L = (de: string, en: string) => (lang === 'de' ? de : en);
+const loc = lang === 'de' ? 'de-CH' : 'en-CH';
+const num = (v: number, d = 1) => v.toLocaleString(loc, { minimumFractionDigits: d, maximumFractionDigits: d });
+const int = (v: number) => v.toLocaleString(loc);
+const hm = (m: number) => `${String(Math.floor(m / 60)).padStart(2, '0')}:${String(m % 60).padStart(2, '0')}`;
+
+const DOW_LONG = lang === 'de'
+  ? ['Sonntag', 'Montag', 'Dienstag', 'Mittwoch', 'Donnerstag', 'Freitag', 'Samstag']
+  : ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const DOW = lang === 'de' ? ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'] : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const ORDER = [1, 2, 3, 4, 5, 6, 0];
+const WH = profiles.weekdayHour as Record<'N' | 'S', number[][]>;
+const sum = (a: number[]) => a.reduce((s, v) => s + v, 0);
+
+// ── Weekday load (km × hours per average day) ──
+const load = ORDER.map((d) => ({ d, n: sum(WH.N[d]), s: sum(WH.S[d]) }));
+const loadMax = Math.max(...load.flatMap((l) => [l.n, l.s]));
+const worst = load.reduce((a, b) => (b.n > a.n ? b : a));
+const worstHour = WH.N[worst.d].indexOf(Math.max(...WH.N[worst.d]));
+const quietest = load.reduce((a, b) => (b.n + b.s < a.n + a.s ? b : a));
+const thu = load.find((l) => l.d === 4)!;
+
+// ── Easter: longest reported queue per year ──
+type PerDay = { iso: string; n: number; s: number };
+const perDay = (profiles.holiday as unknown as Record<string, { perDay: PerDay[]; peakN: number }>).easter.perDay;
+const byYear = new Map<number, { n: number; s: number }>();
+for (const p of perDay) {
+  const y = Number(p.iso.slice(0, 4));
+  const cur = byYear.get(y) ?? { n: 0, s: 0 };
+  byYear.set(y, { n: Math.max(cur.n, p.n), s: Math.max(cur.s, p.s) });
+}
+const years = Array.from(byYear.keys());
+const y0 = Math.min(...years), y1 = Math.max(...years);
+const easter = Array.from({ length: y1 - y0 + 1 }, (_, i) => ({ year: y0 + i, v: byYear.get(y0 + i) ?? null }));
+const eMaxRaw = Math.max(...easter.flatMap((e) => (e.v ? [e.v.n, e.v.s] : [0])));
+const eMax = Math.ceil(eMaxRaw / 10) * 10;
+const EL = 40, ER = 552, EB = 252, ET = 24;
+const eY = (v: number) => EB - (v / eMax) * (EB - ET);
+const slot = (ER - EL) / easter.length;
+const bw = Math.min(16, slot / 2 - 3);
+const barPath = (x: number, w: number, v: number) => {
+  const top = eY(v);
+  const h = EB - top;
+  if (h <= 0) return '';
+  const r = Math.min(4, h, w / 2);
+  return `M${x} ${EB} V${top + r} Q${x} ${top} ${x + r} ${top} H${x + w - r} Q${x + w} ${top} ${x + w} ${top + r} V${EB} Z`;
+};
+const eRecord = easter.reduce((a, b) => ((b.v?.n ?? 0) > (a.v?.n ?? 0) ? b : a));
+const eRecordIdx = easter.indexOf(eRecord);
+
+// ── Replay: the heaviest days in the TCS day-by-day reports ──
+type Pt = [number, number];
+const days = historic.days as unknown as Record<string, { n?: Pt[]; s?: Pt[] }>;
+// Drop isolated readings from another road section (a sudden dip that recovers).
+const clean = (pts: Pt[]) => pts.filter((p, i) => {
+  const prev = pts[i - 1], next = pts[i + 1];
+  return !(prev && next && prev[1] - p[1] > 5 && next[1] - p[1] > 5);
+});
+const candidates = Object.entries(days).flatMap(([iso, d]) =>
+  (['n', 's'] as const).filter((k) => d[k]?.length).map((k) => {
+    const pts = clean(d[k]!);
+    const peak = pts.reduce((a, b) => (b[1] > a[1] ? b : a));
+    return { iso, k, pts, peak };
+  }));
+const replay = candidates.sort((a, b) => b.peak[1] - a.peak[1] || b.iso.localeCompare(a.iso)).slice(0, 5)
+  .sort((a, b) => a.iso.localeCompare(b.iso));
+const RW = 1200, RL = 48, RR = 1184, RT = 24, RB = 288;
+const rMax = 25;
+const rX = (m: number) => RL + ((RR - RL) * m) / 1440;
+const rY = (v: number) => RB - (Math.min(v, rMax) / rMax) * (RB - RT);
+const dateFmt = new Intl.DateTimeFormat(loc, { weekday: 'short', day: 'numeric', month: 'numeric', year: 'numeric', timeZone: 'UTC' });
+const replayDays = replay.map((r, i) => {
+  const dow = new Date(`${r.iso}T12:00:00Z`).getUTCDay();
+  let step = `M${rX(r.pts[0][0]).toFixed(1)} ${rY(r.pts[0][1]).toFixed(1)}`;
+  for (const p of r.pts.slice(1)) step += ` H${rX(p[0]).toFixed(1)} V${rY(p[1]).toFixed(1)}`;
+  const typ = WH[r.k === 'n' ? 'N' : 'S'][dow];
+  const typPath = 'M' + typ.map((v, h) => `${rX(h * 60 + 30).toFixed(1)} ${rY(v).toFixed(1)}`).join(' L');
+  const dir = r.k === 'n' ? 'north' : 'south';
+  const px = rX(r.peak[0]), py = rY(r.peak[1]);
+  return {
+    id: `rp-${i}`, iso: r.iso, dir, dow,
+    label: dateFmt.format(new Date(`${r.iso}T12:00:00Z`)),
+    dirLabel: t(lang, dir === 'north' ? 'dir.south' : 'dir.north'),
+    step, typPath, typMax: Math.max(...typ),
+    peak: r.peak, px, py,
+    anchor: r.peak[0] > 1250 ? '-100%' : r.peak[0] < 120 ? '0' : '-50%',
+    waitH: Math.round((r.peak[1] * 9) / 30) / 2,
+  };
+});
+const defaultReplay = replayDays.reduce((a, b) => (b.peak[1] > a.peak[1] ? b : a));
+
+// ── Data basis: days with reports per weekday ──
+const sampleDays = profiles.sampleDays as number[];
+const sampleMax = Math.max(...sampleDays);
+---
+
+<main id="main" class="container page">
+  <div class="page-head">
+    <h1>{L('Zehn Jahre Gotthard-Stau', 'Ten years of Gotthard queues')}</h1>
+    <p>{L(
+      `Ausgewertet aus den Staumeldungen des TCS von ${profiles.meta.dateStart.slice(0, 4)} bis ${profiles.meta.dateEnd.slice(0, 4)}.`,
+      `Analysed from TCS traffic reports, ${profiles.meta.dateStart.slice(0, 4)} to ${profiles.meta.dateEnd.slice(0, 4)}.`,
+    )}</p>
+  </div>
+
+  <div class="tiles">
+    <div class="tile"><span class="tile__label">{L('Meldungen ausgewertet', 'Reports analysed')}</span><span class="tile__value">{int(profiles.meta.usedReports)}</span><span class="tile__note">{L(`von ${int(profiles.meta.tweetCount)} TCS-Meldungen`, `of ${int(profiles.meta.tweetCount)} TCS reports`)}</span></div>
+    <div class="tile"><span class="tile__label">{L('Längster Osterstau', 'Longest Easter queue')}</span><span class="tile__value">{eRecord.v?.n} km</span><span class="tile__note">{eRecord.year}, {t(lang, 'dir.south')}</span></div>
+    <div class="tile"><span class="tile__label">{L('Schlimmster Wochentag', 'Worst weekday')}</span><span class="tile__value">{DOW_LONG[worst.d]}</span><span class="tile__note">{t(lang, 'dir.south')}, {L('Spitze um', 'peak at')} {String(worstHour).padStart(2, '0')}:00</span></div>
+    <div class="tile"><span class="tile__label">{L('Ruhigster Wochentag', 'Quietest weekday')}</span><span class="tile__value">{DOW_LONG[quietest.d]}</span><span class="tile__note">{L('beide Richtungen zusammen', 'both directions combined')}</span></div>
+  </div>
+
+  <!-- Replay of real days -->
+  <section class="section" aria-labelledby="rp-title">
+    <div class="section__titles">
+      <h2 class="section__title" id="rp-title">{L('Die längsten Staus im Rückblick', 'The longest queues, replayed')}</h2>
+      <p class="section__sub">{L('Stau-Länge laut TCS-Meldungen, verglichen mit dem typischen gleichen Wochentag', 'Queue length from TCS reports, compared with a typical day of the same weekday')}</p>
+    </div>
+    <div class="filter-chips" role="group" aria-label={L('Tag wählen', 'Choose a day')} id="rp-chips">
+      {replayDays.map((d) => (
+        <button type="button" class="filter-chip" data-target={d.id} aria-pressed={d.id === defaultReplay.id ? 'true' : 'false'}>
+          <Icon name="check" size={18} class="icon seg__check" />{d.label}
+        </button>
+      ))}
+    </div>
+    {replayDays.map((d) => (
+      <div class="replay-day" id={d.id} hidden={d.id !== defaultReplay.id}>
+        <div class="legend">
+          <span class="legend__item" style={`color: var(--c-${d.dir})`}><span class="swatch--line"></span><span style="color: var(--md-on-surface-variant)">{d.label}, {d.dirLabel}</span></span>
+          <span class="legend__item" style="color: var(--c-neutral-line)"><span class="swatch--dashed"></span><span style="color: var(--md-on-surface-variant)">{L(`Typischer ${DOW_LONG[d.dow]}`, `Typical ${DOW_LONG[d.dow]}`)} ({L('Spitze', 'peak')} {num(d.typMax)} km)</span></span>
+        </div>
+        <div class="chart-scroll"><div class="chart-wrap" style="min-width: 760px">
+          <svg viewBox={`0 0 ${RW} 320`} role="img" aria-label={`${d.dirLabel}, ${d.label}: ${L('Spitze', 'peak')} ${d.peak[1]} km ${L('um', 'at')} ${hm(d.peak[0])}; ${L('typisch', 'typical')} ${num(d.typMax)} km`}>
+            {[0, 5, 10, 15, 20, 25].map((v) => (
+              <>
+                <line x1={RL} x2={RR} y1={rY(v)} y2={rY(v)} stroke={v === 0 ? 'var(--md-outline)' : 'var(--md-outline-variant)'} stroke-width="1" />
+                <text x={RL - 8} y={rY(v) + 4} text-anchor="end" font-size="12" fill="var(--md-on-surface-variant)">{v} km</text>
+              </>
+            ))}
+            {[0, 3, 6, 9, 12, 15, 18, 21, 24].map((h) => (
+              <text x={rX(h * 60)} y="310" text-anchor="middle" font-size="12" fill="var(--md-on-surface-variant)">{String(h).padStart(2, '0')}:00</text>
+            ))}
+            <path d={d.typPath} fill="none" stroke="var(--c-neutral-line)" stroke-width="2" stroke-dasharray="5 4" stroke-linejoin="round" />
+            <path d={d.step} fill="none" stroke={`var(--c-${d.dir})`} stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" />
+            <line x1={d.px} x2={d.px} y1={d.py} y2={RB} stroke="var(--md-on-surface)" stroke-width="1" stroke-dasharray="2 3" />
+            <circle cx={d.px} cy={d.py} r="6" fill={`var(--c-${d.dir})`} stroke="var(--md-sc-lowest)" stroke-width="2" />
+          </svg>
+          <span class="panel__peak" style={`left: ${((d.px / RW) * 100).toFixed(2)}%; top: ${(((d.py - 34) / 320) * 100).toFixed(2)}%; transform: translateX(${d.anchor}); font-size: 13px`}>
+            {d.peak[1]} km {L('um', 'at')} {hm(d.peak[0])} · ≈ {num(d.waitH, d.waitH % 1 ? 1 : 0)} h {L('Wartezeit', 'wait')}
+          </span>
+        </div></div>
+      </div>
+    ))}
+    <p class="section__note">{L(
+      'Meldungen kommen nur, wenn sich ein Stau ändert; dazwischen gilt der letzte Wert (Treppenlinie). Einzelmeldungen anderer Abschnitte sind ausgeblendet.',
+      'Reports only arrive when a queue changes; in between the last value holds (step line). Isolated reports from other road sections are hidden.',
+    )}</p>
+  </section>
+
+  <div class="grid-auto" style="grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr))">
+    <!-- Butterfly -->
+    <section class="section" aria-labelledby="bf-title">
+      <div class="section__titles">
+        <h2 class="section__title" id="bf-title">{L('Hinreise und Rückreise', 'Outbound and return')}</h2>
+        <p class="section__sub">{L('Stau-Volumen pro Wochentag (km × Stunden, Durchschnitt)', 'Queue volume per weekday (km × hours, average)')}</p>
+      </div>
+      <div class="butterfly" role="table" aria-label={L('Stau-Volumen pro Wochentag', 'Queue volume per weekday')}>
+        <div class="butterfly__row butterfly__row--head" role="row">
+          <span class="butterfly__l" role="columnheader"><span class="dir-ink--north"><Icon name="arrow_down" size={18} /></span>{t(lang, 'dir.south')}</span>
+          <span role="columnheader"><span class="visually-hidden">{L('Tag', 'Day')}</span></span>
+          <span class="butterfly__r" role="columnheader"><span class="dir-ink--south"><Icon name="arrow_up" size={18} /></span>{t(lang, 'dir.north')}</span>
+        </div>
+        {load.map((l) => (
+          <div class="butterfly__row" role="row">
+            <span class="butterfly__l" role="cell"><span>{num(l.n)}</span><i class="butterfly__bar" style={`width: ${((l.n / loadMax) * 100).toFixed(1)}%`}></i></span>
+            <span class="butterfly__day" role="rowheader">{DOW[l.d]}</span>
+            <span class="butterfly__r" role="cell"><i class="butterfly__bar" style={`width: ${((l.s / loadMax) * 100).toFixed(1)}%`}></i><span>{num(l.s)}</span></span>
+          </div>
+        ))}
+      </div>
+      <p class="callout"><Icon name="info" />{L(
+        `${DOW_LONG[worst.d]} hat ${num(worst.n / thu.n, 1)}-mal so viel Stau Richtung Süden wie Donnerstag. Der Sonntag gehört der Rückreise.`,
+        `${DOW_LONG[worst.d]} has ${num(worst.n / thu.n, 1)}× as much southbound congestion as Thursday. Sunday belongs to the return trip.`,
+      )}</p>
+    </section>
+
+    <!-- Easter by year -->
+    <section class="section" aria-labelledby="ea-title">
+      <div class="section__titles">
+        <h2 class="section__title" id="ea-title">{L('Osterstau Jahr für Jahr', 'Easter queues, year by year')}</h2>
+        <p class="section__sub">{L('Längster gemeldeter Stau während der Osterferien', 'Longest reported queue during the Easter holidays')}</p>
+      </div>
+      <div class="legend">
+        <span class="legend__item"><span class="swatch" style="background: var(--c-north)"></span>{t(lang, 'dir.south')}</span>
+        <span class="legend__item"><span class="swatch" style="background: var(--c-south)"></span>{t(lang, 'dir.north')}</span>
+      </div>
+      <div class="chart-wrap chart-scroll">
+        <svg viewBox="0 0 560 280" style="min-width: 440px" role="img" aria-label={L(`Längster Osterstau pro Jahr; Rekord ${eRecord.v?.n} km im Jahr ${eRecord.year}`, `Longest Easter queue per year; record ${eRecord.v?.n} km in ${eRecord.year}`)}>
+          {[0, eMax / 2, eMax].map((v) => (
+            <>
+              <line x1={EL} x2={ER} y1={eY(v)} y2={eY(v)} stroke={v === 0 ? 'var(--md-outline)' : 'var(--md-outline-variant)'} stroke-width="1" />
+              <text x={EL - 8} y={eY(v) + 4} text-anchor="end" font-size="12" fill="var(--md-on-surface-variant)">{v} km</text>
+            </>
+          ))}
+          {easter.map((e, i) => {
+            const cx = EL + slot * i + slot / 2;
+            return (
+              <>
+                {e.v && <path d={barPath(cx - bw - 1, bw, e.v.n)} fill="var(--c-north)"><title>{`${e.year} · ${t(lang, 'dir.south')}: ${e.v.n} km`}</title></path>}
+                {e.v && <path d={barPath(cx + 1, bw, e.v.s)} fill="var(--c-south)"><title>{`${e.year} · ${t(lang, 'dir.north')}: ${e.v.s} km`}</title></path>}
+                {!e.v && <text x={cx} y={EB - 8} text-anchor="middle" font-size="11" fill="var(--md-on-surface-variant)">{L('k. A.', 'n/a')}</text>}
+                <text x={cx} y="270" text-anchor="middle" font-size="12" fill="var(--md-on-surface-variant)">{i === 0 || i === easter.length - 1 ? e.year : `'${String(e.year).slice(2)}`}</text>
+              </>
+            );
+          })}
+          <text x={EL + slot * eRecordIdx + slot / 2 - bw / 2 - 1} y={eY(eRecord.v?.n ?? 0) - 8} text-anchor="middle" font-size="13" font-weight="600" fill="var(--md-on-surface)">{eRecord.v?.n} km</text>
+        </svg>
+      </div>
+      <p class="section__note">{L('k. A. = keine Meldungen in diesem Jahr (2020: Reisebeschränkungen).', 'n/a = no reports that year (2020: travel restrictions).')}</p>
+    </section>
+  </div>
+
+  <!-- Data basis -->
+  <section class="section" aria-labelledby="db-title">
+    <div class="section__titles">
+      <h2 class="section__title" id="db-title">{L('Datengrundlage', 'Data basis')}</h2>
+      <p class="section__sub">{L('Wie viele Tage mit Meldungen hinter jedem Wochentag stehen. Weniger Tage = unsicherere Prognose.', 'How many days with reports stand behind each weekday. Fewer days = a less certain forecast.')}</p>
+    </div>
+    <div style="overflow-x: auto">
+      <table class="data-table" style="min-width: 480px">
+        <thead><tr><th scope="col">{L('Wochentag', 'Weekday')}</th><th scope="col" class="num">{L('Tage', 'Days')}</th><th scope="col" style="width: 60%">{L('Abdeckung', 'Coverage')}</th></tr></thead>
+        <tbody>
+          {ORDER.map((d) => (
+            <tr><td>{DOW_LONG[d]}</td><td class="num">{sampleDays[d]}</td><td><div class="coverage" aria-hidden="true"><i style={`width: ${((sampleDays[d] / sampleMax) * 100).toFixed(1)}%`}></i></div></td></tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</main>
+<script>
+  // Day chips for the replay chart: show one day at a time.
+  const chips = document.getElementById('rp-chips');
+  chips?.addEventListener('click', (e) => {
+    const btn = (e.target as HTMLElement).closest('button[data-target]') as HTMLButtonElement | null;
+    if (!btn) return;
+    chips.querySelectorAll('button').forEach((b) => {
+      const on = b === btn;
+      b.setAttribute('aria-pressed', String(on));
+      const panel = document.getElementById(b.dataset.target ?? '');
+      if (panel) panel.hidden = !on;
+    });
+  });
+</script>

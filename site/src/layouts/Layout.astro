@@ -48,6 +48,11 @@ const canonical = lang === DEFAULT_LANG ? deHref : enHref;
     <link rel="alternate" hreflang="en" href={enHref} />
     <link rel="alternate" hreflang="x-default" href={deHref} />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <meta name="theme-color" content="#eceef4" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#1d2024" media="(prefers-color-scheme: dark)" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto+Flex:opsz,wght@8..144,300..700&display=swap" />
     <link rel="sitemap" type="application/xml" href="/sitemap-index.xml" />
 
     <!-- Open Graph -->
@@ -100,7 +105,7 @@ const canonical = lang === DEFAULT_LANG ? deHref : enHref;
     })} />
   </head>
   <body>
-    <a class="skip-link" href="#main">Skip to content</a>
+    <a class="skip-link" href="#main">{lang === 'de' ? 'Zum Inhalt springen' : 'Skip to content'}</a>
     <slot />
     <!-- Theme toggle: flips data-theme and persists the choice. Lives here so it
          works on every page that uses the shared Header, without a bundled module. -->

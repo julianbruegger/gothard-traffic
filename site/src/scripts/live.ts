@@ -1,8 +1,9 @@
 import { isLang, DEFAULT_LANG, t } from '../lib/i18n';
-import { formatKm, formatMinutes, formatUpdated, formatTrendDelta, TREND_ARROW, statusLabel, passStatusLabel, buildSummary, closureTitle, closureDetail } from '../lib/format';
+import { formatKm, formatMinutes, formatUpdated, formatTrendDelta, statusLabel, passStatusLabel, buildSummary, closureTitle, closureDetail } from '../lib/format';
 import { axesSvg, buildSparkline, type SparklineResult } from '../lib/chart';
 import { computeQueueTrend } from '../lib/trend';
-import { generateForecast, generateDayCurve, swissDayInfo, type ForecastDay, type ForecastPoint, type TrafficLevel } from '../lib/forecast';
+import { generateForecast, generateDayCurve, swissDayInfo, idxToWaitMinutes, type ForecastPoint, type TrafficLevel } from '../lib/forecast';
+import { iconSvg } from '../lib/icons';
 import { buildForecastChart, type ActualPoint, type Direction, type ForecastChartResult } from '../lib/forecast-chart';
 import { historicDatesForWeekday, historicDaySeries, historicMeta } from '../lib/historic-days';
 import { suggestDiversions } from '../lib/diversion';
@@ -38,7 +39,7 @@ function renderPlannedClosures(closures: ClosureWindow[] | undefined) {
   el.innerHTML = items
     .map(
       (c) => `<div class="closure-banner__item" role="alert">
-      <span class="closure-banner__icon" aria-hidden="true">⚠</span>
+      <span class="closure-banner__icon">${iconSvg('warning', 24)}</span>
       <div class="closure-banner__text">
         <strong class="closure-banner__title">${escapeHtml(closureTitle(c, lang))}</strong>
         <span class="closure-banner__detail">${escapeHtml(closureDetail(c, lang))}</span>
@@ -66,19 +67,28 @@ function renderData(data: GotthardData) {
   setText('hero-updated', formatUpdated(data.updated, lang));
   if (data.updated) setAttr('hero-updated', 'datetime', data.updated);
 
-  setText('north-queue', formatKm(data.tunnel.north.queueKm, lang));
-  setText('north-wait', formatMinutes(data.tunnel.north.waitMinutes, lang));
-  if (data.tunnel.north.cause) setText('north-cause', data.tunnel.north.cause);
-  renderClosures('north', data.tunnel.north.closures);
-
-  setText('south-queue', formatKm(data.tunnel.south.queueKm, lang));
-  setText('south-wait', formatMinutes(data.tunnel.south.waitMinutes, lang));
-  if (data.tunnel.south.cause) setText('south-cause', data.tunnel.south.cause);
-  renderClosures('south', data.tunnel.south.closures);
+  for (const side of ['north', 'south'] as const) {
+    const portal = data.tunnel[side];
+    setText(`${side}-queue`, formatKm(portal.queueKm, lang));
+    setText(`${side}-wait`, formatMinutes(portal.waitMinutes, lang));
+    setText(`${side}-cause`, portal.cause ?? '');
+    document.getElementById(`${side}-cause-row`)?.toggleAttribute('hidden', !portal.cause);
+    // Queue meter: 0–15 km track (longer queues pin the bar full).
+    const meter = document.getElementById(`${side}-meter`);
+    if (meter) meter.style.width = `${Math.min(100, Math.max(0, ((portal.queueKm ?? 0) / 15) * 100)).toFixed(1)}%`;
+    const free = data.tunnel.status !== 'closed' && (!portal.queueKm || portal.queueKm <= 0);
+    document.getElementById(`${side}-free`)?.toggleAttribute('hidden', !free);
+    renderClosures(side, portal.closures);
+  }
 
   setAttr('pass-badge', 'data-status', data.pass.status);
   setText('pass-status-label', passStatusLabel(data.pass.status, lang));
-  if (data.pass.note) setText('pass-note', data.pass.note);
+  setText('pass-note', data.pass.note ?? '');
+  document.getElementById('pass-note-row')?.toggleAttribute('hidden', !data.pass.note);
+
+  // Restart the 60 s refresh bar so it tracks the real poll cycle.
+  const fill = document.getElementById('refresh-fill');
+  if (fill) { fill.style.animation = 'none'; void fill.offsetWidth; fill.style.animation = ''; }
 
   renderPlannedClosures(data.tunnel.plannedClosures);
 
@@ -97,7 +107,7 @@ function renderTrend(history: HistoryPoint[]) {
     }
     el.removeAttribute('hidden');
     el.setAttribute('data-direction', trend.direction);
-    el.textContent = `${TREND_ARROW[trend.direction]} ${formatTrendDelta(trend.deltaKm, lang)}`;
+    setText(`${side}-trend-text`, formatTrendDelta(trend.deltaKm, lang));
   }
 }
 
@@ -151,15 +161,15 @@ function bindTrendChartHover(svg: SVGSVGElement) {
       `<circle cx="${p.x}" cy="${cy}" r="4" fill="${color}" stroke="var(--color-surface)" stroke-width="1.5" />`;
     g.innerHTML =
       `<line x1="${p.x}" y1="8" x2="${p.x}" y2="${chart.height - 24}" stroke="var(--color-text-muted)" stroke-width="1" stroke-dasharray="3 3" opacity="0.6" />` +
-      (p.north !== null ? dot(p.yNorth, 'var(--color-accent)') : '') +
-      (p.south !== null ? dot(p.ySouth, 'var(--color-unknown)') : '');
+      (p.north !== null ? dot(p.yNorth, 'var(--c-north)') : '') +
+      (p.south !== null ? dot(p.ySouth, 'var(--c-south)') : '');
 
     const timeLabel = trendTimeFormatter.format(new Date(p.t));
     tip.innerHTML =
       `<div class="trend__tt-time">${timeLabel}</div>` +
-      `<div class="trend__tt-row"><span class="trend__tt-key"><span class="trend__tt-dot" style="background:var(--color-accent)"></span>${t(lang, 'trend.northLegend')}</span>` +
+      `<div class="trend__tt-row"><span class="trend__tt-key"><span class="trend__tt-dot" style="background:var(--c-north)"></span>${t(lang, 'dir.south')}</span>` +
         `<span class="trend__tt-val">${formatKm(p.north, lang)}</span></div>` +
-      `<div class="trend__tt-row"><span class="trend__tt-key"><span class="trend__tt-dot" style="background:var(--color-unknown)"></span>${t(lang, 'trend.southLegend')}</span>` +
+      `<div class="trend__tt-row"><span class="trend__tt-key"><span class="trend__tt-dot" style="background:var(--c-south)"></span>${t(lang, 'dir.north')}</span>` +
         `<span class="trend__tt-val">${formatKm(p.south, lang)}</span></div>`;
     tip.removeAttribute('hidden');
 
@@ -178,36 +188,48 @@ function bindTrendChartHover(svg: SVGSVGElement) {
   svg.style.touchAction = 'pan-y';
 }
 
+function renderSparks(history: HistoryPoint[]) {
+  const spark = buildSparkline(history, 280, 56, { padLeft: 2, padRight: 2, padTop: 4, padBottom: 2, minScaleKm: 5 });
+  for (const side of ['north', 'south'] as const) {
+    setAttr(`${side}-spark-line`, 'd', side === 'north' ? spark.northPath : spark.southPath);
+    setAttr(`${side}-spark-gap`, 'd', side === 'north' ? spark.northGapPath : spark.southGapPath);
+    const g = document.getElementById(`${side}-spark-closed`);
+    if (g) g.innerHTML = spark.closures.map((b) => `<rect x="${b.x1}" y="0" width="${Math.max(b.x2 - b.x1, 1)}" height="56" fill="var(--closed-bg)" />`).join('');
+  }
+}
+
+function chartWidth(svg: Element, fallback: number): number {
+  const w = (svg.parentElement as HTMLElement | null)?.clientWidth ?? 0;
+  return w > 0 ? Math.round(Math.max(300, Math.min(1200, w))) : fallback;
+}
+
 function renderHistory(history: HistoryPoint[]) {
-  const chart = buildSparkline(history);
-  const northPath = document.getElementById('trend-path-north');
-  const southPath = document.getElementById('trend-path-south');
-  if (northPath) northPath.setAttribute('d', chart.northPath);
-  if (southPath) southPath.setAttribute('d', chart.southPath);
-  const axes = document.getElementById('trend-axes');
-  if (axes) axes.innerHTML = axesSvg(chart);
+  const trendSvg = document.getElementById('trend-svg');
+  const chart = buildSparkline(history, trendSvg ? chartWidth(trendSvg, 640) : 640, 220);
+  trendSvg?.setAttribute('viewBox', `0 0 ${chart.width} ${chart.height}`);
+  setAttr('trend-path-north', 'd', chart.northPath);
+  setAttr('trend-path-south', 'd', chart.southPath);
+  setAttr('trend-gap-north', 'd', chart.northGapPath);
+  setAttr('trend-gap-south', 'd', chart.southGapPath);
 
   const closuresGroup = document.getElementById('trend-closures');
   if (closuresGroup) {
     const closedLabel = escapeHtml(t(lang, 'trend.closedLabel'));
     closuresGroup.innerHTML = chart.closures
-      .map(
-        (b) =>
-          `<rect x="${b.x1}" y="8" width="${Math.max(b.x2 - b.x1, 1)}" height="${chart.height - 32}" fill="var(--color-closed-bg)" stroke="var(--color-closed)" stroke-width="1" stroke-dasharray="3 2"><title>${closedLabel}</title></rect>`
-      )
+      .map((b) => `<rect x="${b.x1}" y="8" width="${Math.max(b.x2 - b.x1, 1)}" height="${chart.height - 32}" fill="var(--closed-bg)"><title>${closedLabel}</title></rect>`)
       .join('');
   }
+  const axes = document.getElementById('trend-axes');
+  if (axes) axes.innerHTML = axesSvg(chart);
 
   const tbody = document.getElementById('trend-table-body');
   if (tbody) {
-    const closedCell = `⛔ ${escapeHtml(t(lang, 'status.closed'))}`;
+    const closedCell = escapeHtml(t(lang, 'status.closed'));
     tbody.innerHTML = history
-      .map(
-        (point) => {
-          const isClosed = point.status === 'closed';
-          return `<tr${isClosed ? ' data-closed=""' : ''}><td>${formatUpdated(point.t, lang)}</td><td>${formatKm(point.northQueueKm, lang)}</td><td>${formatKm(point.southQueueKm, lang)}</td><td>${isClosed ? closedCell : '–'}</td></tr>`;
-        }
-      )
+      .map((point) => {
+        const isClosed = point.status === 'closed';
+        return `<tr${isClosed ? ' data-closed=""' : ''}><td>${formatUpdated(point.t, lang)}</td><td class="num">${isClosed ? '–' : formatKm(point.northQueueKm, lang)}</td><td class="num">${isClosed ? '–' : formatKm(point.southQueueKm, lang)}</td><td>${isClosed ? closedCell : '–'}</td></tr>`;
+      })
       .join('');
   }
 
@@ -215,6 +237,7 @@ function renderHistory(history: HistoryPoint[]) {
   const svg = document.getElementById('trend-svg');
   if (svg) bindTrendChartHover(svg as unknown as SVGSVGElement);
 
+  renderSparks(history);
   renderTrend(history);
 }
 
@@ -268,14 +291,16 @@ function renderDayTabs(now: Date) {
   }
 
   nav.innerHTML = items
-    .map(it => `<button type="button" class="fchart__day-tab" data-offset="${it.offset}" data-today="${it.isToday}">${it.label}</button>`)
+    .map(it => `<button type="button" class="filter-chip fchart__day-tab" data-offset="${it.offset}" data-today="${it.isToday}" aria-pressed="false">${iconSvg('check', 18, 'icon seg__check')}${it.isToday ? (lang === 'de' ? 'Heute' : 'Today') : it.label}</button>`)
     .join('');
   updateDayTabsActive();
 }
 
 function updateDayTabsActive() {
   document.querySelectorAll<HTMLButtonElement>('#fchart-daynav .fchart__day-tab').forEach(btn => {
-    btn.setAttribute('data-active', String(Number(btn.dataset.offset) === fchartDayOffset));
+    const active = Number(btn.dataset.offset) === fchartDayOffset;
+    btn.setAttribute('data-active', String(active));
+    btn.setAttribute('aria-pressed', String(active));
   });
 }
 
@@ -290,8 +315,12 @@ function bindDayNav() {
 }
 
 function updatePortalToggle() {
-  document.getElementById('fchart-portal-north')?.setAttribute('data-active', String(fchartDirection === 'north'));
-  document.getElementById('fchart-portal-south')?.setAttribute('data-active', String(fchartDirection === 'south'));
+  for (const dir of ['north', 'south'] as const) {
+    const btn = document.getElementById(`fchart-portal-${dir}`);
+    btn?.setAttribute('data-active', String(fchartDirection === dir));
+    btn?.setAttribute('aria-pressed', String(fchartDirection === dir));
+  }
+  document.getElementById('fchart-section')?.setAttribute('data-direction', fchartDirection);
 }
 
 function bindPortalToggle() {
@@ -324,7 +353,7 @@ function renderForecastChart(history: HistoryPoint[]) {
     for (const p of history) {
       const info = swissDayInfo(new Date(p.t));
       if (info.isoDate !== curve.isoDate) continue;
-      actual.push({ minuteOfDay: info.minuteOfDay, north: p.northWaitMinutes, south: p.southWaitMinutes });
+      actual.push({ minuteOfDay: info.minuteOfDay, north: p.northWaitMinutes, south: p.southWaitMinutes, closed: p.status === 'closed' });
     }
   }
 
@@ -337,53 +366,64 @@ function renderForecastChart(history: HistoryPoint[]) {
     .map(iso => historicDaySeries(iso, dirKey, gridMinutes))
     .filter((h): h is NonNullable<typeof h> => h !== null);
 
-  const chart = buildForecastChart(curve.points, actual, nowMin, fchartDirection, historic);
+  // Draw at the container's real width so labels keep their size on a phone.
+  const w = chartWidth(svg, 640);
+  const chart = buildForecastChart(curve.points, actual, nowMin, fchartDirection, historic, w, w < 520 ? 240 : 270);
   svg.setAttribute('viewBox', `0 0 ${chart.width} ${chart.height}`);
 
-  const dash = (label: string) => label === '0' ? '' : 'stroke-dasharray="4 3"';
   const grid = chart.yTicks
-    .map(tk => `<line x1="${chart.plot.left}" y1="${tk.y}" x2="${chart.plot.right}" y2="${tk.y}" stroke="var(--color-border)" stroke-width="1" ${dash(tk.label)} />`)
+    .map(tk => `<line x1="${chart.plot.left}" y1="${tk.y}" x2="${chart.plot.right}" y2="${tk.y}" stroke="${tk.label === '0' ? 'var(--md-outline)' : 'var(--md-outline-variant)'}" stroke-width="1" />`)
     .join('');
+  const unit = lang === 'de' ? 'Min' : 'min';
   const yLabels = chart.yTicks
-    .map(tk => `<text x="${chart.plot.left - 6}" y="${(tk.y as number) + 3}" text-anchor="end" font-size="10" fill="var(--color-text-muted)" font-family="var(--font-sans)">${tk.label}</text>`)
+    .map((tk, i) => `<text x="${chart.plot.left - 6}" y="${(tk.y as number) + 3}" text-anchor="end" font-size="10" fill="var(--md-on-surface-variant)">${tk.label}${i === chart.yTicks.length - 1 ? ` ${unit}` : ''}</text>`)
     .join('');
   const xLabels = chart.xTicks
-    .map(tk => `<text x="${tk.x}" y="${chart.plot.bottom + 14}" text-anchor="middle" font-size="10" fill="var(--color-text-muted)" font-family="var(--font-sans)">${tk.label}</text>`)
+    .map(tk => `<text x="${tk.x}" y="${chart.plot.bottom + 14}" text-anchor="middle" font-size="10" fill="var(--md-on-surface-variant)">${tk.label}</text>`)
+    .join('');
+  const closedBands = chart.closedBands
+    .map(b => `<rect x="${b.x1}" y="${chart.plot.top}" width="${Math.max(b.x2 - b.x1, 1)}" height="${chart.plot.bottom - chart.plot.top}" fill="var(--closed-bg)" />`)
     .join('');
 
   const nowLabel = lang === 'de' ? 'jetzt' : 'now';
   const nowMarker = chart.nowX === null ? '' :
-    `<line x1="${chart.nowX}" y1="${chart.plot.top}" x2="${chart.nowX}" y2="${chart.plot.bottom}" stroke="var(--color-accent)" stroke-width="1" stroke-dasharray="2 2" opacity="0.6" />
-     <text x="${chart.nowX}" y="${chart.plot.top + 8}" text-anchor="middle" font-size="9" fill="var(--color-accent)" font-family="var(--font-sans)">${nowLabel}</text>`;
+    `<line x1="${chart.nowX}" y1="${chart.plot.top}" x2="${chart.nowX}" y2="${chart.plot.bottom}" stroke="var(--md-on-surface)" stroke-width="1" />
+     <text x="${chart.nowX}" y="${chart.plot.top - 1}" text-anchor="middle" font-size="10" font-weight="600" fill="var(--md-on-surface)">${nowLabel}</text>`;
 
   // Shaded typical→busy-day forecast range, with a faint dashed upper edge.
   const fcBand = chart.forecastBandPath
-    ? `<path d="${chart.forecastBandPath}" fill="var(--color-accent)" opacity="0.12" stroke="none" />`
+    ? `<path d="${chart.forecastBandPath}" fill="var(--series-tint)" stroke="none" />`
     : '';
   const fcHigh = chart.forecastHighPath
-    ? `<path d="${chart.forecastHighPath}" fill="none" stroke="var(--color-accent)" stroke-width="1" stroke-dasharray="2 3" opacity="0.45" stroke-linejoin="round" />`
+    ? `<path d="${chart.forecastHighPath}" fill="none" stroke="var(--series)" stroke-width="1" stroke-dasharray="2 3" opacity="0.45" stroke-linejoin="round" />`
     : '';
   const historicPaths = chart.historic
     .map(h => `<path d="${h.path}" fill="none" stroke="${h.color}" stroke-width="1.5" stroke-linejoin="round" />`)
     .join('');
 
   const paths =
-    `<path d="${chart.forecastPath}" fill="none" stroke="var(--color-accent)" stroke-width="1.75" stroke-dasharray="5 4" opacity="0.8" stroke-linejoin="round" />
-     <path d="${chart.actualPath}" fill="none" stroke="var(--color-accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" />`;
+    `<path d="${chart.forecastPath}" fill="none" stroke="var(--series)" stroke-width="2" stroke-dasharray="5 4" stroke-linejoin="round" />
+     <path d="${chart.actualPath}" fill="none" stroke="var(--series)" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" />
+     <path d="${chart.actualGapPath}" fill="none" stroke="var(--series)" stroke-width="3" stroke-linecap="round" stroke-dasharray="0.1 7" />`;
 
-  svg.innerHTML = `<desc id="fchart-desc">${t(lang, 'fchart.title')}</desc>${fcBand}${grid}${yLabels}${xLabels}${historicPaths}${nowMarker}${fcHigh}${paths}<g id="fchart-hover" style="pointer-events:none"></g>`;
+  svg.innerHTML = `<desc id="fchart-desc">${t(lang, 'fchart.title')}</desc>${closedBands}${fcBand}${grid}${yLabels}${xLabels}${historicPaths}${nowMarker}${fcHigh}${paths}<g id="fchart-hover" style="pointer-events:none"></g>`;
 
   fchartState = { chart, points: curve.points, actual, nowMin, direction: fchartDirection };
+  renderLeaveStrip();
   bindForecastChartHover(svg as unknown as SVGSVGElement);
 
   // Legend: the solid "measured" line only exists for today.
   const legendActual = document.getElementById('fchart-legend-actual');
   if (legendActual) legendActual.hidden = !(isToday && chart.actualPath !== '');
+  const legendClosed = document.getElementById('fchart-legend-closed');
+  if (legendClosed) legendClosed.hidden = chart.closedBands.length === 0;
+  const legendGap = document.getElementById('fchart-legend-gap');
+  if (legendGap) legendGap.hidden = chart.actualGapPath === '';
 
   const legendHistoric = document.getElementById('fchart-legend-historic');
   if (legendHistoric) {
     legendHistoric.innerHTML = chart.historic
-      .map(h => `<span class="fchart__legend-item"><span class="fchart__legend-swatch" style="background:${h.color}"></span>${isoDateLabel(h.isoDate)}</span>`)
+      .map(h => `<span class="legend__item" style="color:${h.color}"><span class="swatch--line" style="border-top-width:2px"></span><span style="color:var(--md-on-surface-variant)">${isoDateLabel(h.isoDate)}</span></span>`)
       .join('');
   }
 
@@ -416,6 +456,42 @@ function renderForecastChart(history: HistoryPoint[]) {
       : (lang === 'de'
           ? `${curve.fullDayLabel}, ${curve.dateLabel}${ctx} · Kaum Stau erwartet`
           : `${curve.fullDayLabel}, ${curve.dateLabel}${ctx} · Little congestion expected`);
+  }
+}
+
+// ─── "When to leave?" strip ───────────────────────────────────────────────────
+
+function renderLeaveStrip() {
+  const cells = document.getElementById('leave-cells');
+  const win = document.getElementById('leave-window');
+  const wrap = document.getElementById('leave');
+  if (!cells || !win || !wrap) return;
+  const now = new Date();
+  const from = new Date(now.getTime() + fchartDayOffset * 86_400_000);
+  const day = generateForecast(from, lang, 1)[0];
+  if (!day) return;
+  const nowHour = fchartDayOffset === 0 ? Math.floor(swissDayInfo(now).minuteOfDay / 60) : -1;
+  const levelKey = fchartDirection === 'north' ? 'northLevel' : 'southLevel';
+  wrap.setAttribute('data-dir', fchartDirection);
+  document.querySelectorAll('#leave [data-level-dir]').forEach((el) => el.setAttribute('data-level-dir', fchartDirection));
+  cells.innerHTML = day.hours
+    .map((h) => {
+      const label = `${pad2(h.localHour)}:00 · ${LEVEL_LABEL[h[levelKey]][lang]}`;
+      return `<div class="leave__cell" data-level="${h[levelKey]}"${h.localHour === nowHour ? ' data-now=""' : ''} title="${label}" aria-label="${label}" role="img"></div>`;
+    })
+    .join('');
+
+  // Quiet window: before the first and after the last hour that isn't "low".
+  const busy = day.hours.filter((h) => h[levelKey] !== 'low').map((h) => h.localHour);
+  if (busy.length === 0) {
+    win.textContent = lang === 'de' ? 'den ganzen Tag' : 'all day';
+  } else {
+    const first = busy[0];
+    const last = busy[busy.length - 1] + 1;
+    const parts: string[] = [];
+    if (first > 0) parts.push(`${lang === 'de' ? 'vor' : 'before'} ${pad2(first)}:00`);
+    if (last < 24) parts.push(`${lang === 'de' ? 'ab' : 'from'} ${pad2(last)}:00`);
+    win.textContent = parts.length ? parts.join(lang === 'de' ? ' oder ' : ' or ') : (lang === 'de' ? 'kaum ruhige Stunden' : 'hardly any quiet hours');
   }
 }
 
@@ -487,13 +563,13 @@ function bindForecastChartHover(svg: SVGSVGElement) {
     const dot = (yMin: number, color: string, filled: boolean) =>
       `<circle cx="${px.toFixed(1)}" cy="${fchartYOf(yMin, chart).toFixed(1)}" r="3.5" fill="${filled ? color : 'var(--color-surface)'}" stroke="${color}" stroke-width="1.5" />`;
     g.innerHTML =
-      `<line x1="${px.toFixed(1)}" y1="${chart.plot.top}" x2="${px.toFixed(1)}" y2="${chart.plot.bottom}" stroke="var(--color-text-muted)" stroke-width="1" stroke-dasharray="3 3" opacity="0.6" />` +
-      dot(predicted, 'var(--color-accent)', false) +
-      (meas !== null ? dot(meas, 'var(--color-accent)', true) : '') +
+      `<line x1="${px.toFixed(1)}" y1="${chart.plot.top}" x2="${px.toFixed(1)}" y2="${chart.plot.bottom}" stroke="var(--md-outline)" stroke-width="1" stroke-dasharray="3 3" />` +
+      dot(predicted, 'var(--series)', false) +
+      (meas !== null ? dot(meas, 'var(--series)', true) : '') +
       chart.historic.map(h => dot(h.values[idx], h.color, true)).join('');
 
     // Tooltip: predicted always, measured (today) and historic values (if any) below.
-    const dirLabel = direction === 'north' ? t(lang, 'forecast.north') : t(lang, 'forecast.south');
+    const dirLabel = direction === 'north' ? t(lang, 'dir.south') : t(lang, 'dir.north');
     const predWord = lang === 'de' ? 'Prognose' : 'Forecast';
     const measWord = lang === 'de' ? 'Gemessen' : 'Measured';
     const unit = lang === 'de' ? 'Min' : 'min';
@@ -507,9 +583,11 @@ function bindForecastChartHover(svg: SVGSVGElement) {
     const rangeText = predictedHigh > predicted + 1
       ? `${Math.round(predicted)}–${Math.round(predictedHigh)}`
       : `${Math.round(predicted)}`;
+    const closedNow = actual.some(a => a.closed && Math.abs(a.minuteOfDay - fp.minuteOfDay) <= 7);
+    if (closedNow) sub += `<div class="fchart__tt-sub">${lang === 'de' ? 'Tunnel gesperrt: keine Messung, Stau wächst weiter' : 'Tunnel closed: no reading, queue keeps growing'}</div>`;
     tip.innerHTML =
       `<div class="fchart__tt-time">${minuteToHHMM(fp.minuteOfDay)}</div>` +
-      `<div class="fchart__tt-row"><span class="fchart__tt-key"><span class="fchart__tt-dot" style="background:var(--color-accent)"></span>${dirLabel}</span>` +
+      `<div class="fchart__tt-row"><span class="fchart__tt-key"><span class="fchart__tt-dot" style="background:var(--series)"></span>${dirLabel}</span>` +
         `<span class="fchart__tt-val">${predWord}: ${rangeText} ${unit}</span></div>` +
       sub;
 
@@ -555,19 +633,21 @@ function renderDiversions(data: GotthardData) {
         : `Currently about ${res.worstWait} min wait (${res.directionLabel}). Possible alternative routes:`);
 
   const recLabel = lang === 'de' ? 'Schneller als warten' : 'Faster than waiting';
-  const detour = (min: number) => lang === 'de' ? `+${min} Min Umweg` : `+${min} min detour`;
-
-  list.innerHTML = res.routes.map(r => {
-    const cls = `diversion__item${r.recommended ? ' diversion__item--rec' : ''}${!r.available ? ' diversion__item--off' : ''}`;
-    const badge = r.recommended ? `<span class="diversion__badge">${recLabel}</span>` : '';
-    const note = r.note ? ` <em class="diversion__note">${r.note}</em>` : '';
-    return `<li class="${cls}">
-      <div class="diversion__item-head">
-        <span class="diversion__item-name">${r.name}${badge}</span>
-        <span class="diversion__item-time">${detour(r.extraMinutes)}</span>
-      </div>
-      <p class="diversion__item-desc">${r.description}${note}</p>
+  const unit = lang === 'de' ? 'Min' : 'min';
+  const scale = Math.max(120, res.worstWait, ...res.routes.map(r => r.extraMinutes));
+  const bar = (cls: string, name: string, value: string, minutes: number, extra = '') => `<li class="diversion__row ${cls}">
+      <div class="diversion__row-head"><span class="diversion__row-name">${name}</span><span>${value}</span></div>
+      <div class="diversion__track" aria-hidden="true"><div class="diversion__fill" style="width:${((minutes / scale) * 100).toFixed(1)}%"></div></div>${extra}
     </li>`;
+
+  const tunnelRow = res.closed
+    ? bar('diversion__row--off', t(lang, 'diversion.tunnel'), t(lang, 'status.closed'), 0)
+    : bar('diversion__row--tunnel', t(lang, 'diversion.tunnel'), `${res.worstWait} ${unit}`, res.worstWait);
+  list.innerHTML = tunnelRow + res.routes.map(r => {
+    const cls = `${r.recommended ? 'diversion__row--rec' : ''}${!r.available ? ' diversion__row--off' : ''}`;
+    const badge = r.recommended ? `<span class="diversion__badge">${recLabel}</span>` : '';
+    const note = r.note ? `<em class="diversion__note">${r.note}</em>` : `<em class="diversion__note">${r.description}</em>`;
+    return bar(cls, `${r.name}${badge}`, `+${r.extraMinutes} ${unit}`, r.extraMinutes, note);
   }).join('');
 }
 
@@ -580,72 +660,53 @@ const LEVEL_LABEL: Record<TrafficLevel, Record<'de' | 'en', string>> = {
   extreme:  { de: 'Starker Stau',   en: 'Heavy jam' },
 };
 
-// Hours to show in the heatmap (05:00–21:00)
-const SHOWN_HOURS = Array.from({ length: 17 }, (_, i) => i + 5);
+// 7-day outlook: expected peak wait per direction, as grouped bars.
+const LEVEL_ORDER: TrafficLevel[] = ['low', 'moderate', 'high', 'extreme'];
+const LEVEL_ICON = { low: 'check_circle', moderate: 'error', high: 'warning', extreme: 'block' } as const;
 
-function forecastCellTitle(h: number, northLevel: TrafficLevel, southLevel: TrafficLevel): string {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  const nLabel = LEVEL_LABEL[northLevel][lang];
-  const sLabel = LEVEL_LABEL[southLevel][lang];
-  return `${pad(h)}:00 – Nord: ${nLabel} · Süd: ${sLabel}`;
-}
-
-function buildDayCard(day: ForecastDay, isToday: boolean): string {
-  const todayBadge = isToday
-    ? `<span class="forecast__today-badge">${lang === 'de' ? 'Heute' : 'Today'}</span>`
-    : '';
-  const ctxBadge = day.context
-    ? `<span class="forecast__ctx-badge">${day.context}</span>`
-    : '';
-  const peakWarn = day.isPeak
-    ? `<span class="forecast__peak-badge">${lang === 'de' ? 'Stau möglich' : 'Delays possible'}</span>`
-    : '';
-
-  const hourHeaders = SHOWN_HOURS.map(h => `<span class="forecast__hour-label">${h}</span>`).join('');
-
-  const makeRow = (dirLabel: string, levelKey: 'northLevel' | 'southLevel', _idxKey: 'northIdx' | 'southIdx') => {
-    const cells = SHOWN_HOURS.map(h => {
-      const hr = day.hours[h];
-      const level = hr[levelKey];
-      const title = forecastCellTitle(h, hr.northLevel, hr.southLevel);
-      return `<div class="forecast__cell" data-level="${level}" title="${title}" aria-label="${title}"></div>`;
-    }).join('');
-    return `<div class="forecast__row">
-      <span class="forecast__row-label">${dirLabel}</span>
-      <div class="forecast__cells">${cells}</div>
-    </div>`;
-  };
-
-  const northLabel = lang === 'de' ? 'Nord →IT' : 'North →IT';
-  const southLabel = lang === 'de' ? 'Süd →CH'  : 'South →CH';
-
-  return `<div class="forecast__day${day.isPeak ? ' forecast__day--peak' : ''}">
-    <div class="forecast__day-header">
-      <div class="forecast__day-name">${day.fullDayLabel}<span class="forecast__day-date">${day.dateLabel}</span></div>
-      <div class="forecast__day-badges">${todayBadge}${ctxBadge}${peakWarn}</div>
-    </div>
-    <div class="forecast__grid">
-      <div class="forecast__row forecast__row--labels">
-        <span class="forecast__row-label"></span>
-        <div class="forecast__cells">${hourHeaders}</div>
-      </div>
-      ${makeRow(northLabel, 'northLevel', 'northIdx')}
-      ${makeRow(southLabel, 'southLevel', 'southIdx')}
-    </div>
-  </div>`;
-}
-
-function renderForecast() {
-  const container = document.getElementById('forecast-days');
+function renderWeek() {
+  const container = document.getElementById('week-days');
   if (!container) return;
-
-  const now = new Date();
-  const forecast = generateForecast(now, lang, 4);
-  const todayIso = forecast[0]?.isoDate;
-
-  container.innerHTML = forecast
-    .map((day: ForecastDay) => buildDayCard(day, day.isoDate === todayIso))
+  const days = generateForecast(new Date(), lang, 7);
+  const prefix = lang === 'de' ? '' : '/en';
+  const peaks = days.map((d) => ({
+    n: Math.max(...d.hours.map((h) => h.northIdx)),
+    s: Math.max(...d.hours.map((h) => h.southIdx)),
+    lv: LEVEL_ORDER[Math.max(...d.hours.map((h) => Math.max(LEVEL_ORDER.indexOf(h.northLevel), LEVEL_ORDER.indexOf(h.southLevel))))],
+  }));
+  const maxWait = Math.max(30, ...peaks.map((p) => idxToWaitMinutes(Math.max(p.n, p.s))));
+  const bar = (dir: 'north' | 'south', idx: number) => {
+    const min = idxToWaitMinutes(idx);
+    const h = Math.max(2, Math.round((min / maxWait) * 96));
+    return `<div class="week__bar week__bar--${dir}"><span>${min}</span><i style="height:${h}px"></i></div>`;
+  };
+  container.innerHTML = days
+    .map((d, i) => {
+      const p = peaks[i];
+      const name = i === 0 ? (lang === 'de' ? 'Heute' : 'Today') : d.dayLabel;
+      const unit = lang === 'de' ? 'Min' : 'min';
+      const aria = `${d.fullDayLabel} ${d.dateLabel}: ${t(lang, 'dir.south')} ${idxToWaitMinutes(p.n)} ${unit}, ${t(lang, 'dir.north')} ${idxToWaitMinutes(p.s)} ${unit} · ${LEVEL_LABEL[p.lv][lang]}`;
+      return `<a class="week__day" href="${prefix}/forecasts" aria-label="${escapeHtml(aria)}"${i === 0 ? ' data-today=""' : ''}>
+        <span class="week__name">${name}</span>
+        <span class="week__date">${d.dateLabel}</span>
+        <div class="week__bars" aria-hidden="true">${bar('north', p.n)}${bar('south', p.s)}</div>
+        <span class="week__level">${iconSvg(LEVEL_ICON[p.lv], 16, `icon lvl-icon--${p.lv}`)}${LEVEL_LABEL[p.lv][lang]}</span>
+        ${d.context ? `<span class="week__ctx">${escapeHtml(d.context)}</span>` : ''}
+      </a>`;
+    })
     .join('');
+}
+
+function renderHeroContext() {
+  const today = generateForecast(new Date(), lang, 1)[0];
+  const chip = document.getElementById('hero-context');
+  if (!chip) return;
+  if (today?.context) {
+    setText('hero-context-label', today.context);
+    chip.removeAttribute('hidden');
+  } else {
+    chip.setAttribute('hidden', '');
+  }
 }
 
 // ─── Network helpers ──────────────────────────────────────────────────────────
@@ -681,16 +742,31 @@ async function tick() {
   }
   if (history) renderHistory(history);
   lastHistory = history ?? [];
+  lastHistoryLoaded = history !== null;
   renderForecastChart(lastHistory);
 }
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 
+let lastHistoryLoaded = false;
+let resizeTimer: number | undefined;
+let lastWidth = window.innerWidth;
+window.addEventListener('resize', () => {
+  if (window.innerWidth === lastWidth) return; // ignore mobile URL-bar height changes
+  lastWidth = window.innerWidth;
+  window.clearTimeout(resizeTimer);
+  resizeTimer = window.setTimeout(() => {
+    if (lastHistoryLoaded) renderHistory(lastHistory);
+    renderForecastChart(lastHistory);
+  }, 150);
+});
+
 tick();
 setInterval(tick, POLL_INTERVAL_MS);
 
-// Forecast heatmap is purely calendar-based — render once on load, no polling needed
-renderForecast();
+// Week outlook + holiday context are calendar-based — render once on load
+renderWeek();
+renderHeroContext();
 // Day tabs + portal toggle are calendar-based too — set up once, no polling needed
 renderDayTabs(new Date());
 bindDayNav();

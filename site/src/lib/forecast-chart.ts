@@ -8,6 +8,8 @@ export interface ActualPoint {
   minuteOfDay: number;
   north: number | null;
   south: number | null;
+  /** Tunnel fully closed at this sample: no queue reading, but the queue keeps growing. */
+  closed?: boolean;
 }
 
 export interface AxisTick {
@@ -42,6 +44,8 @@ export interface ForecastChartResult {
   forecastHighPath: string; // faint upper edge — busy-day prediction
   forecastBandPath: string; // shaded typical→busy range for the selected direction
   actualPath: string;      // solid — measured so far today, selected direction
+  actualGapPath: string;   // dotted — bridges a closure, where no reading exists
+  closedBands: Array<{ x1: number; x2: number }>; // periods the tunnel was closed (today)
   bandPath: string | null; // shaded min/max envelope across the historic lines
   historic: HistoricLine[];
 }
@@ -51,8 +55,9 @@ const PADDING_RIGHT = 10;
 const PADDING_TOP = 10;
 const PADDING_BOTTOM = 22; // room for hour labels
 
-// Muted violet palette for historic weeks, most recent first — fades with age.
-const HISTORIC_COLORS = ['rgba(139, 92, 246, 0.85)', 'rgba(99, 102, 241, 0.6)', 'rgba(14, 165, 233, 0.45)'];
+// Neutral greys for historic same-weekday days, most recent darkest — kept out of
+// the blue/orange direction hues so they never read as a second direction.
+const HISTORIC_COLORS = ['var(--hist-1)', 'var(--hist-2)', 'var(--hist-3)'];
 
 /**
  * Build the SVG geometry for the wait-time prediction chart: a dashed forecast
@@ -108,12 +113,37 @@ export function buildForecastChart(
     return `M${hi.join(' L')} L${lo.join(' L')} Z`;
   })();
 
-  // Measured line only runs up to "now" (today) and skips gaps where the value is null.
-  const actualPath = linePath(
-    actual
-      .filter((p) => (nowMin === null || p.minuteOfDay <= nowMin) && p[actualKey] !== null)
-      .map((p) => ({ x: xOf(p.minuteOfDay), y: yOf(p[actualKey] as number) })),
-  );
+  // Measured line only runs up to "now" (today). A closed tunnel has no queue
+  // reading, but the queue does not vanish: the solid line stops at the last
+  // reading before the closure and a dotted segment bridges to the first one after.
+  const past = actual.filter((p) => nowMin === null || p.minuteOfDay <= nowMin);
+  const solid: string[] = [];
+  const gap: string[] = [];
+  let prev: { x: number; y: number } | null = null;
+  let crossedClosure = false;
+  for (const p of past) {
+    const v = p[actualKey];
+    if (p.closed) { crossedClosure = true; continue; }
+    if (v === null) continue;
+    const pt = { x: +xOf(p.minuteOfDay).toFixed(1), y: +yOf(v).toFixed(1) };
+    if (prev && crossedClosure) gap.push(`M${prev.x},${prev.y} L${pt.x},${pt.y}`);
+    solid.push(`${!prev || crossedClosure ? 'M' : 'L'}${pt.x},${pt.y}`);
+    prev = pt;
+    crossedClosure = false;
+  }
+  const actualPath = solid.join(' ');
+  const actualGapPath = gap.join(' ');
+
+  // Closure bands: each closed sample covers ±7 min, merged when they touch.
+  const closedBands: Array<{ x1: number; x2: number }> = [];
+  for (const p of past) {
+    if (!p.closed) continue;
+    const x1 = +xOf(Math.max(0, p.minuteOfDay - 7)).toFixed(1);
+    const x2 = +xOf(Math.min(1440, p.minuteOfDay + 7)).toFixed(1);
+    const last = closedBands[closedBands.length - 1];
+    if (last && x1 <= last.x2 + 0.5) last.x2 = x2;
+    else closedBands.push({ x1, x2 });
+  }
 
   const historicLines: HistoricLine[] = historic.map((h, i) => ({
     isoDate: h.isoDate,
@@ -172,6 +202,8 @@ export function buildForecastChart(
     forecastHighPath,
     forecastBandPath,
     actualPath,
+    actualGapPath,
+    closedBands,
     bandPath,
     historic: historicLines,
   };

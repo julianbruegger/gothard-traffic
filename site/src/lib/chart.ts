@@ -30,6 +30,9 @@ export interface ClosureBand {
 export interface SparklineResult {
   northPath: string;
   southPath: string;
+  /** Dotted connectors across tunnel closures (no reading, queue still there). */
+  northGapPath: string;
+  southGapPath: string;
   width: number;
   height: number;
   maxKm: number;
@@ -41,10 +44,20 @@ export interface SparklineResult {
   closures: ClosureBand[];
 }
 
-const PADDING_LEFT = 48; // space for the km labels ("2.5 km")
+const DEFAULT_PADDING_LEFT = 48; // space for the km labels ("2.5 km")
 const PADDING_RIGHT = 8;
 const PADDING_TOP = 8;
-const PADDING_BOTTOM = 24; // space for time labels
+const DEFAULT_PADDING_BOTTOM = 24; // space for time labels
+
+/** Overrides for compact uses (the direction-card sparklines). */
+export interface SparklineOptions {
+  padLeft?: number;
+  padRight?: number;
+  padTop?: number;
+  padBottom?: number;
+  /** Lower bound for the top of the km scale. */
+  minScaleKm?: number;
+}
 
 // The km axis never shrinks below this, so a 1–2 km queue reads as the small
 // queue it is instead of filling the whole chart height.
@@ -77,9 +90,13 @@ interface Bucket {
   closed: boolean;
 }
 
-export function buildSparkline(history: HistoryPoint[], width = 640, height = 220): SparklineResult {
+export function buildSparkline(history: HistoryPoint[], width = 640, height = 220, opts: SparklineOptions = {}): SparklineResult {
+  const PADDING_LEFT = opts.padLeft ?? DEFAULT_PADDING_LEFT;
+  const PAD_RIGHT = opts.padRight ?? PADDING_RIGHT;
+  const PAD_TOP = opts.padTop ?? PADDING_TOP;
+  const PADDING_BOTTOM = opts.padBottom ?? DEFAULT_PADDING_BOTTOM;
   const empty: SparklineResult = {
-    northPath: '', southPath: '', width, height, maxKm: 0, ticks: [], yTicks: [], points: [], closures: [],
+    northPath: '', southPath: '', northGapPath: '', southGapPath: '', width, height, maxKm: 0, ticks: [], yTicks: [], points: [], closures: [],
     plotLeft: PADDING_LEFT, plotBottom: height - PADDING_BOTTOM,
   };
   if (history.length === 0) return empty;
@@ -91,8 +108,8 @@ export function buildSparkline(history: HistoryPoint[], width = 640, height = 22
   const start = end - WINDOW_MS;
   const tSpan = WINDOW_MS;
 
-  const innerW = width - PADDING_LEFT - PADDING_RIGHT;
-  const innerH = height - PADDING_TOP - PADDING_BOTTOM;
+  const innerW = width - PADDING_LEFT - PAD_RIGHT;
+  const innerH = height - PAD_TOP - PADDING_BOTTOM;
   const xOf = (t: number) => PADDING_LEFT + (innerW * (t - start)) / tSpan;
 
   // ── Resample the window into fixed buckets, averaging each side's readings ──
@@ -105,12 +122,14 @@ export function buildSparkline(history: HistoryPoint[], width = 640, height = 22
     if (t < start || t > end) return;
     const bi = Math.min(bucketCount - 1, Math.floor((t - start) / BUCKET_MS));
     const b = acc[bi];
-    if (p.status === 'closed') b.closed = true;
+    // While closed the feed reports 0 km (or nothing), but the queue keeps
+    // building behind the barrier: the queue is unknown, so every reading taken
+    // during a closure stays out of the average and the line bridges the gap.
+    if (p.status === 'closed') { b.closed = true; return; }
     // The feed reports no queue as null. On an open tunnel that is a real
     // reading of 0 km. Skipping it made the line start out of nowhere at the
-    // first queue instead of rising from the zero line. While closed, the
-    // queue is genuinely unknown, so those readings stay out of the average.
-    const km = (v: number | null | undefined) => (v ?? (p.status === 'closed' ? null : 0));
+    // first queue instead of rising from the zero line.
+    const km = (v: number | null | undefined) => v ?? 0;
     const n = km(p.northQueueKm);
     const s = km(p.southQueueKm);
     if (n !== null) { b.nSum += n; b.nCount++; }
@@ -125,23 +144,39 @@ export function buildSparkline(history: HistoryPoint[], width = 640, height = 22
   }));
 
   const maxKm = niceMaxKm(Math.max(
-    MIN_SCALE_KM,
+    opts.minScaleKm ?? MIN_SCALE_KM,
     ...buckets.map((b) => Math.max(b.north ?? 0, b.south ?? 0)),
   ));
-  const yOf = (km: number) => PADDING_TOP + innerH - (km / maxKm) * innerH;
+  const yOf = (km: number) => PAD_TOP + innerH - (km / maxKm) * innerH;
 
-  const toPath = (key: 'north' | 'south') => {
-    const seg: string[] = [];
-    let prevCenter = -Infinity;
+  // Solid line through the readings. Readings while closed are unknown (the
+  // queue keeps building behind the barrier), so a closure breaks the solid
+  // line and a dotted connector bridges it instead of dropping to 0 km.
+  const toPaths = (key: 'north' | 'south') => {
+    const solid: string[] = [];
+    const gap: string[] = [];
+    let prev: { x: string; y: string; center: number } | null = null;
+    let crossedClosure = false;
     for (const b of buckets) {
+      if (b.closed) crossedClosure = true;
       const v = b[key];
       if (v === null) continue;
-      const cmd = b.center - prevCenter > MAX_BRIDGE_MS ? 'M' : 'L';
-      seg.push(`${cmd}${xOf(b.center).toFixed(1)},${yOf(v).toFixed(1)}`);
-      prevCenter = b.center;
+      const x = xOf(b.center).toFixed(1);
+      const y = yOf(v).toFixed(1);
+      if (prev && crossedClosure) {
+        gap.push(`M${prev.x},${prev.y} L${x},${y}`);
+        solid.push(`M${x},${y}`);
+      } else {
+        const cmd = !prev || b.center - prev.center > MAX_BRIDGE_MS ? 'M' : 'L';
+        solid.push(`${cmd}${x},${y}`);
+      }
+      prev = { x, y, center: b.center };
+      crossedClosure = false;
     }
-    return seg.join(' ');
+    return { solid: solid.join(' '), gap: gap.join(' ') };
   };
+  const northPaths = toPaths('north');
+  const southPaths = toPaths('south');
 
   // ── Time axis ticks — adaptive interval so there are always a few ticks ──
   // Placed on full Swiss-local hours (the old fixed +2 h was an hour off in winter).
@@ -188,15 +223,17 @@ export function buildSparkline(history: HistoryPoint[], width = 640, height = 22
     }));
 
   return {
-    northPath: toPath('north'),
-    southPath: toPath('south'),
+    northPath: northPaths.solid,
+    southPath: southPaths.solid,
+    northGapPath: northPaths.gap,
+    southGapPath: southPaths.gap,
     width,
     height,
     maxKm,
     ticks,
     yTicks,
     plotLeft: PADDING_LEFT,
-    plotBottom: PADDING_TOP + innerH,
+    plotBottom: PAD_TOP + innerH,
     points,
     closures,
   };
@@ -209,17 +246,17 @@ export function buildSparkline(history: HistoryPoint[], width = 640, height = 22
  */
 export function axesSvg(chart: SparklineResult): string {
   const right = chart.width - PADDING_RIGHT;
-  const muted = 'var(--color-text-muted)';
+  const muted = 'var(--md-on-surface-variant)';
   const font = 'font-size="11" font-family="var(--font-sans)"';
   const yAxis = chart.yTicks
     .map((tk) =>
-      `<line x1="${chart.plotLeft}" y1="${tk.y}" x2="${right}" y2="${tk.y}" stroke="var(--color-border)" stroke-width="1"${tk.y < chart.plotBottom ? ' stroke-dasharray="4 3"' : ''} />` +
+      `<line x1="${chart.plotLeft}" y1="${tk.y}" x2="${right}" y2="${tk.y}" stroke="var(--md-outline-variant)" stroke-width="1"${tk.y < chart.plotBottom ? ' stroke-dasharray="4 3"' : ''} />` +
       `<text x="${chart.plotLeft - 4}" y="${tk.y + 4}" text-anchor="end" ${font} fill="${muted}">${tk.label}</text>`,
     )
     .join('');
   const xAxis = chart.ticks
     .map((tk) =>
-      `<line x1="${tk.x}" y1="${PADDING_TOP}" x2="${tk.x}" y2="${chart.plotBottom}" stroke="var(--color-border)" stroke-width="1" stroke-dasharray="4 3" />` +
+      `<line x1="${tk.x}" y1="${PADDING_TOP}" x2="${tk.x}" y2="${chart.plotBottom}" stroke="var(--md-outline-variant)" stroke-width="1" stroke-dasharray="4 3" />` +
       `<text x="${tk.x}" y="${chart.height - 6}" text-anchor="middle" ${font} fill="${muted}">${tk.label}</text>`,
     )
     .join('');

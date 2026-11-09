@@ -1,0 +1,182 @@
+---
+import type { Lang } from '../lib/i18n';
+import { t } from '../lib/i18n';
+import Icon from './Icon.astro';
+import profiles from '../data/empirical-profiles.json';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const L = (de: string, en: string) => (lang === 'de' ? de : en);
+const num = (v: number, digits = 1) => v.toLocaleString(lang === 'de' ? 'de-CH' : 'en-CH', { minimumFractionDigits: digits, maximumFractionDigits: digits });
+
+// ── Typical week heatmaps: empirical weekday × hour profile (index ≈ km) ──
+// Profile rows are indexed 0 = Sunday; show Monday first.
+const ORDER = [1, 2, 3, 4, 5, 6, 0];
+const DOW = lang === 'de' ? ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'] : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+const bin = (v: number) => (v < 0.25 ? 0 : v < 0.75 ? 1 : v < 1.5 ? 2 : v < 2.5 ? 3 : v < 3.5 ? 4 : v < 4.5 ? 5 : 6);
+const hh = (h: number) => `${String(h).padStart(2, '0')}:00`;
+
+const heatmaps = (['N', 'S'] as const).map((key) => {
+  const rows = (profiles.weekdayHour as Record<'N' | 'S', number[][]>)[key];
+  let peak = { d: 0, h: 0, v: -1 };
+  ORDER.forEach((d) => rows[d].forEach((v, h) => { if (v > peak.v) peak = { d, h, v }; }));
+  return {
+    dir: key === 'N' ? 'north' : 'south',
+    title: t(lang, key === 'N' ? 'dir.south' : 'dir.north'),
+    icon: (key === 'N' ? 'arrow_down' : 'arrow_up') as 'arrow_down' | 'arrow_up',
+    peak: `${DOW[peak.d]} ${hh(peak.h)} · ${num(peak.v)} km`,
+    rows: ORDER.map((d) => ({
+      day: DOW[d],
+      cells: rows[d].map((v, h) => ({
+        cls: `heatmap__cell heat--${key === 'N' ? 'north' : 'south'} h${bin(v)}`,
+        title: `${DOW[d]} ${hh(h)} · ${num(v)} km`,
+        peak: d === peak.d && h === peak.h,
+      })),
+    })),
+  };
+});
+
+const holiday = profiles.holiday as Record<string, { multN: number; multS: number; days: number; peakN: number; peakS: number }>;
+const easter = holiday.easter;
+const labour = holiday.labourday;
+---
+
+<main id="main" class="container page">
+  <div class="page-head">
+    <h1>{L('Wann ist am Gotthard Stau?', 'When is the Gotthard congested?')}</h1>
+    <p>{L(
+      `Prognosen aus Wochentag, Saison und Ferienkalender, kalibriert auf ${profiles.meta.usedReports.toLocaleString('de-CH')} TCS-Staumeldungen (${profiles.meta.dateStart.slice(0, 4)}–${profiles.meta.dateEnd.slice(0, 4)}). Wartezeit ≈ 9 Minuten pro km Stau.`,
+      `Forecasts from weekday, season and holiday calendar, calibrated on ${profiles.meta.usedReports.toLocaleString('en-CH')} TCS jam reports (${profiles.meta.dateStart.slice(0, 4)}–${profiles.meta.dateEnd.slice(0, 4)}). Waiting time ≈ 9 minutes per km of queue.`,
+    )}</p>
+  </div>
+
+  <!-- Day profile: both directions as small multiples on one scale -->
+  <section class="section" aria-labelledby="dp-title">
+    <div class="section__titles">
+      <h2 class="section__title" id="dp-title">{L('Tagesverlauf', 'Through the day')}</h2>
+      <p class="section__sub">{L('Erwartete Wartezeit, beide Richtungen auf derselben Skala', 'Expected waiting time, both directions on the same scale')}</p>
+    </div>
+    <div class="filter-chips" id="dp-days" role="group" aria-label={t(lang, 'fchart.dayNav')}></div>
+    <div class="readout" id="dp-readout" aria-live="polite">
+      <span class="readout__time" id="dp-time">–</span>
+      <span class="legend__item"><span class="swatch" style="background: var(--c-north)"></span>{t(lang, 'dir.south')} <strong id="dp-north-val">–</strong></span>
+      <span class="legend__item"><span class="swatch" style="background: var(--c-south)"></span>{t(lang, 'dir.north')} <strong id="dp-south-val">–</strong></span>
+      <span class="readout__ctx" id="dp-ctx"></span>
+    </div>
+    <div class="panels">
+      {(['north', 'south'] as const).map((dir) => (
+        <figure class="panel">
+          <figcaption class="panel__cap">
+            <span class={`dir-ink--${dir}`}><Icon name={dir === 'north' ? 'arrow_down' : 'arrow_up'} /></span>
+            {t(lang, dir === 'north' ? 'dir.south' : 'dir.north')}
+            <small id={`dp-${dir}-sub`}></small>
+          </figcaption>
+          <div class="chart-wrap" id={`dp-${dir}-wrap`}>
+            <svg id={`dp-${dir}`} viewBox="0 0 560 250" role="img" aria-label={t(lang, dir === 'north' ? 'dir.south' : 'dir.north')}></svg>
+            <span class="panel__peak" id={`dp-${dir}-peak`}></span>
+          </div>
+        </figure>
+      ))}
+    </div>
+    <div class="legend">
+      <span class="legend__item"><span class="swatch--line" style="color: var(--md-on-surface-variant)"></span>{t(lang, 'fchart.predicted')}</span>
+      <span class="legend__item"><span class="swatch swatch--wide" style="background: var(--md-sc-highest)"></span>{t(lang, 'fchart.range')}</span>
+    </div>
+    <noscript><p>{t(lang, 'fchart.noscript')}</p></noscript>
+  </section>
+
+  <!-- Typical week -->
+  <section class="section" aria-labelledby="wk-title">
+    <div class="section__titles">
+      <h2 class="section__title" id="wk-title">{L('Die typische Woche', 'A typical week')}</h2>
+      <p class="section__sub">{L('Durchschnittlicher Stau nach Wochentag und Stunde, aus allen TCS-Meldungen (ganzjährig). Dunkler = mehr Stau.', 'Average queue by weekday and hour, from all TCS reports (year-round). Darker = more congestion.')}</p>
+    </div>
+    <div class="heatmaps">
+      {heatmaps.map((hm) => (
+        <figure class="panel">
+          <figcaption class="panel__cap">
+            <span class={`dir-ink--${hm.dir}`}><Icon name={hm.icon} /></span>{hm.title}
+            <small>{L('Spitze', 'Peak')} {hm.peak}</small>
+          </figcaption>
+          <div class="heatmap" role="img" aria-label={`${hm.title}: ${L('Spitze', 'peak')} ${hm.peak}`}>
+            {hm.rows.map((r) => (
+              <>
+                <span class="heatmap__day" aria-hidden="true">{r.day}</span>
+                {r.cells.map((c) => <div class={c.cls} title={c.title} data-peak={c.peak ? '' : undefined}></div>)}
+              </>
+            ))}
+          </div>
+          <div class="heatmap__hours" aria-hidden="true"><span></span><span>00</span><span>03</span><span>06</span><span>09</span><span>12</span><span>15</span><span>18</span><span>21</span></div>
+          <div class="heat-legend" aria-hidden="true">
+            <span>{L('frei', 'clear')}</span>
+            {[0, 1, 2, 3, 4, 5, 6].map((i) => <i class={`heat--${hm.dir} h${i}`}></i>)}
+            <span>≥ {num(4.5)} km</span>
+          </div>
+        </figure>
+      ))}
+    </div>
+    <p class="callout"><Icon name="info" />{L(
+      'Hinreise am Samstag ab dem frühen Morgen Richtung Süden, Rückreise am Sonntagnachmittag Richtung Norden. Unter der Woche staut es sich fast nur zwischen 10 und 14 Uhr.',
+      'Outbound on Saturday from early morning heading south, return on Sunday afternoon heading north. On weekdays queues form almost only between 10:00 and 14:00.',
+    )}</p>
+  </section>
+
+  <!-- Calendar -->
+  <section class="section" aria-labelledby="cal-title" id="calendar" data-dir="north">
+    <div class="section__head">
+      <div class="section__titles">
+        <h2 class="section__title" id="cal-title">{L('Kalender', 'Calendar')}</h2>
+        <p class="section__sub" id="cal-sub">{L('Erwartete Spitze pro Tag', 'Expected peak per day')}</p>
+      </div>
+      <div class="seg" role="group" aria-label={L('Fahrtrichtung', 'Direction')}>
+        <button type="button" class="seg__btn" id="cal-north" aria-pressed="true"><Icon name="arrow_down" size={18} />{t(lang, 'dir.south')}</button>
+        <button type="button" class="seg__btn" id="cal-south" aria-pressed="false"><Icon name="arrow_up" size={18} />{t(lang, 'dir.north')}</button>
+      </div>
+    </div>
+    <div class="cal-nav">
+      <button type="button" class="icon-btn" id="cal-prev" aria-label={L('Frühere Monate', 'Earlier months')}><Icon name="chevron_left" /></button>
+      <button type="button" class="icon-btn" id="cal-next" aria-label={L('Spätere Monate', 'Later months')}><Icon name="chevron_right" /></button>
+      <span class="section__sub" id="cal-range"></span>
+    </div>
+    <div class="cal-months" id="cal-months" aria-live="polite"></div>
+    <div class="legend">
+      {(['low', 'moderate', 'high', 'extreme'] as const).map((lv) => (
+        <span class="legend__item"><span class="swatch" data-level-dir="north" data-level={lv}></span>{t(lang, `forecast.${lv}` as 'forecast.low')}</span>
+      ))}
+      <span class="legend__item"><span style="width: 14px; height: 3px; border-radius: 1px; background: var(--md-on-surface-variant)"></span>{L('Schulferien', 'School holidays')}</span>
+      <span class="legend__item"><span class="swatch--ring"></span>{L('Heute', 'Today')}</span>
+    </div>
+    <p class="section__note">{t(lang, 'forecast.disclaimer')}</p>
+  </section>
+
+  <!-- Holidays -->
+  <section aria-labelledby="hol-title" style="display: flex; flex-direction: column; gap: 16px">
+    <h2 class="section__title" id="hol-title">{L('Ferien und Feiertage', 'Holidays')}</h2>
+    <div class="tiles">
+      <div class="tile">
+        <span class="tile__label">{L('Osterferien', 'Easter holidays')}</span>
+        <span class="tile__value">×{num(easter.multN, 2)}</span>
+        <span class="tile__note">{L(
+          `mehr Stau Richtung Süden als an normalen Tagen (Richtung Norden ×${num(easter.multS, 2)}). Gemessen an ${easter.days} Ostertagen.`,
+          `more congestion southbound than on normal days (northbound ×${num(easter.multS, 2)}). Measured over ${easter.days} Easter days.`,
+        )}</span>
+      </div>
+      <div class="tile">
+        <span class="tile__label">{L('1. Mai', '1 May')}</span>
+        <span class="tile__value">×{num(labour.multS, 2)}</span>
+        <span class="tile__note">{L(
+          `Richtung Norden: Rückreise nach dem Feiertag. Richtung Süden ×${num(labour.multN, 2)}.`,
+          `Northbound: return trips after the holiday. Southbound ×${num(labour.multN, 2)}.`,
+        )}</span>
+      </div>
+      <div class="tile">
+        <span class="tile__label">{L('Längster Osterstau', 'Longest Easter queue')}</span>
+        <span class="tile__value">{easter.peakN} km</span>
+        <span class="tile__note">{L('Richtung Süden, seit 2016 in den TCS-Meldungen.', 'Southbound, in TCS reports since 2016.')}</span>
+      </div>
+    </div>
+  </section>
+</main>
+<script src="../scripts/forecasts.ts"></script>

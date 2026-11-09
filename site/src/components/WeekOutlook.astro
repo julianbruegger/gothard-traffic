@@ -1,0 +1,28 @@
+---
+import { t, type Lang } from '../lib/i18n';
+import Icon from './Icon.astro';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const prefix = lang === 'de' ? '' : '/en';
+---
+
+<section class="section" id="forecast-section" aria-labelledby="week-title">
+  <div class="section__head">
+    <div class="section__titles">
+      <h2 class="section__title" id="week-title">{t(lang, 'week.title')}</h2>
+      <p class="section__sub">{t(lang, 'week.subtitle')}</p>
+    </div>
+    <div class="legend">
+      <span class="legend__item"><span class="swatch" style="background: var(--c-north)"></span>{t(lang, 'dir.south')}</span>
+      <span class="legend__item"><span class="swatch" style="background: var(--c-south)"></span>{t(lang, 'dir.north')}</span>
+    </div>
+  </div>
+  <div class="week" id="week-days" aria-live="polite"></div>
+  <div class="section__head" style="align-items: center">
+    <p class="section__note">{t(lang, 'forecast.disclaimer')}</p>
+    <a class="btn btn--text" href={`${prefix}/forecasts`}>{t(lang, 'week.more')}<Icon name="chevron_right" /></a>
+  </div>
+</section>

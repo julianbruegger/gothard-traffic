@@ -2,6 +2,7 @@
 import { t, type Lang } from '../lib/i18n';
 import { statusLabel, formatUpdated, buildSummary } from '../lib/format';
 import type { GotthardData } from '../lib/types';
+import Icon from './Icon.astro';
 
 interface Props {
   lang: Lang;
@@ -11,25 +12,38 @@ const { lang, data } = Astro.props;
 const summary = buildSummary(data, lang);
 const label = statusLabel(data.tunnel.status, lang);
 const updatedHuman = formatUpdated(data.updated, lang);
+const prefix = lang === 'de' ? '' : '/en';
 ---
 
-<section class="hero container" aria-labelledby="hero-heading">
-  <h1 id="hero-heading" class="visually-hidden">{t(lang, 'site.h1')}</h1>
-
-  <div class="status-badge" id="status-badge" data-status={data.tunnel.status}>
-    <span class="status-badge__dot" aria-hidden="true"></span>
-    <span id="status-label"><!--SSR:status-label-->{label}<!--/SSR--></span>
+<section class="hero" aria-labelledby="hero-heading">
+  <div class="hero__main">
+    <h1 id="hero-heading" class="visually-hidden">{t(lang, 'site.h1')}</h1>
+    <div class="hero__chips">
+      <span class="chip status-chip" id="status-badge" data-status={data.tunnel.status}>
+        <Icon name="check_circle" class="icon status-icon--open" />
+        <Icon name="warning" class="icon status-icon--congested" />
+        <Icon name="error" class="icon status-icon--restricted" />
+        <Icon name="block" class="icon status-icon--closed" />
+        <Icon name="help" class="icon status-icon--unknown" />
+        <span id="status-label"><!--SSR:status-label-->{label}<!--/SSR--></span>
+      </span>
+      <span class="chip chip--outline" id="hero-context" hidden><Icon name="event" size={18} /><span id="hero-context-label"></span></span>
+    </div>
+    <p class="hero__headline" id="summary"><!--SSR:summary-->{summary}<!--/SSR--></p>
   </div>
-
-  <p class="hero__tagline" id="summary"><!--SSR:summary-->{summary}<!--/SSR--></p>
-
-  <p class="hero__meta">
-    <span class="pulse" aria-hidden="true"></span>
-    <span>{t(lang, 'hero.autoRefresh')}</span>
-    <span aria-hidden="true">·</span>
-    <span>
-      {t(lang, 'hero.lastUpdated')}:
-      <time id="hero-updated" datetime={data.updated ?? ''}><!--SSR:updated-human-->{updatedHuman}<!--/SSR--></time>
-    </span>
-  </p>
+  <div class="hero__side">
+    <p class="hero__meta">
+      <Icon name="schedule" size={18} />
+      <span>
+        {t(lang, 'hero.lastUpdated')}:
+        <time id="hero-updated" datetime={data.updated ?? ''}><!--SSR:updated-human-->{updatedHuman}<!--/SSR--></time>
+      </span>
+    </p>
+    <div class="refresh-bar" role="presentation" title={t(lang, 'hero.autoRefresh')}><div class="refresh-bar__fill" id="refresh-fill"></div></div>
+    <p>{t(lang, 'hero.autoRefresh')}</p>
+    <div class="hero__actions">
+      <a class="btn" href="#fchart-title"><Icon name="schedule" />{t(lang, 'leave.title')}</a>
+      <a class="btn" href={`${prefix}/forecasts`}><Icon name="calendar" />{t(lang, 'nav.forecast')}</a>
+    </div>
+  </div>
 </section>

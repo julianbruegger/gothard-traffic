@@ -89,13 +89,13 @@ function renderAsymmetry(rows: Stats['asymmetry']) {
     const cx = L + slot * i + slot / 2;
     const n = r.north ?? 0;
     const s = r.south ?? 0;
-    svg += `<rect x="${cx - bw}" y="${y(n)}" width="${bw}" height="${y(0) - y(n)}" fill="var(--color-congested)"><title>${esc(t(lang, 'nerd.north'))}: ${num(r.north)}</title></rect>`;
-    svg += `<rect x="${cx}" y="${y(s)}" width="${bw}" height="${y(0) - y(s)}" fill="var(--color-accent)"><title>${esc(t(lang, 'nerd.south'))}: ${num(r.south)}</title></rect>`;
+    svg += `<rect x="${cx - bw}" y="${y(n)}" width="${bw}" height="${y(0) - y(n)}" fill="var(--c-north)"><title>${esc(t(lang, 'nerd.north'))}: ${num(r.north)}</title></rect>`;
+    svg += `<rect x="${cx}" y="${y(s)}" width="${bw}" height="${y(0) - y(s)}" fill="var(--c-south)"><title>${esc(t(lang, 'nerd.south'))}: ${num(r.south)}</title></rect>`;
     svg += `<text x="${cx}" y="${H - 6}" text-anchor="middle" class="nerd-svg__t">${esc(r.month.slice(2))}</text>`;
   });
   $('nerd-asym').innerHTML =
-    svg + '</svg><p class="nerd-legend"><span style="--c:var(--color-congested)">' + esc(t(lang, 'nerd.north')) +
-    '</span><span style="--c:var(--color-accent)">' + esc(t(lang, 'nerd.south')) + '</span></p>';
+    svg + '</svg><p class="nerd-legend"><span style="--c:var(--c-north)">' + esc(t(lang, 'nerd.north')) +
+    '</span><span style="--c:var(--c-south)">' + esc(t(lang, 'nerd.south')) + '</span></p>';
 }
 
 function renderClosures(rows: Stats['closures']) {
@@ -161,7 +161,7 @@ function renderForecastVsReality(last7d: Stats['last7d']) {
     `<line x1="${L}" y1="${y(0)}" x2="${W}" y2="${y(0)}" stroke="var(--color-border)"/>` +
     `<text x="${L - 4}" y="${T + 8}" text-anchor="end" class="nerd-svg__t">${num(max, 0)}</text>` +
     `<path d="${path((p) => p.f?.s)}" fill="none" stroke="var(--color-text-muted)" stroke-width="2" stroke-dasharray="6 4"/>` +
-    `<path d="${path((p) => p.real.south)}" fill="none" stroke="var(--color-accent)" stroke-width="2.5" stroke-linejoin="round"/>` +
+    `<path d="${path((p) => p.real.south)}" fill="none" stroke="var(--c-south)" stroke-width="2.5" stroke-linejoin="round"/>` +
     '</svg>';
   $('nerd-mae').innerHTML =
     row(`${t(lang, 'nerd.north')} – ${t(lang, 'nerd.fvr.mae')}`, num(mean(err.north))) +

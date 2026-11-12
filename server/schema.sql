@@ -15,6 +15,7 @@ CREATE TABLE IF NOT EXISTS gotthard_snapshots (
     south_cause    VARCHAR(200)      DEFAULT NULL,
     pass_status    VARCHAR(20)       NOT NULL DEFAULT 'unknown',
     pass_note      TEXT              DEFAULT NULL,
+    pass_source    VARCHAR(30)       DEFAULT NULL COMMENT 'datex or alpen-paesse.ch',
     planned_closures TEXT            DEFAULT NULL COMMENT 'JSON array of upcoming tunnel closures [{from,to,cause}]',
     PRIMARY KEY (id),
     INDEX idx_fetched_at (fetched_at)
@@ -37,6 +38,10 @@ CREATE TABLE IF NOT EXISTS gotthard_weather (
 
 -- Migration for installs created before planned_closures existed (safe, nullable):
 -- ALTER TABLE gotthard_snapshots ADD COLUMN planned_closures TEXT DEFAULT NULL AFTER pass_note;
+
+-- Migration for installs created before pass_source existed (safe, nullable).
+-- Which source set the pass status: 'datex' (ASTRA) or 'alpen-paesse.ch'.
+-- ALTER TABLE gotthard_snapshots ADD COLUMN pass_source VARCHAR(30) DEFAULT NULL AFTER pass_note;
 
 -- Migration for installs created before closure_reason existed (safe, nullable):
 -- ALTER TABLE gotthard_snapshots ADD COLUMN closure_reason VARCHAR(200) DEFAULT NULL AFTER tunnel_status;

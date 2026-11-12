@@ -32,16 +32,37 @@ return [
 
     // ── Secondary pass-status source (alpen-paesse.ch) ────────────────────────
     // Cross-checks / fills the Gotthard PASS status when the DATEX feed carries
-    // no pass record (typically summer). DATEX stays authoritative. Set
-    // Weather history (Open-Meteo, no key): once per hour the collector stores
-    // temperature / rain / snow for both portals in gotthard_weather.
-    // Requires the gotthard_weather table from schema.sql.
-    // 'weather_enabled' => false to disable it.
-    'weather_enabled' => true,
-
-    // 'pass_source_enabled' => false to disable the extra HTTP request.
+    // no pass record (typically summer). DATEX stays authoritative.
+    // Set 'pass_source_enabled' => false to disable the extra HTTP request.
     'pass_source_enabled' => true,
     'pass_source_url'     => 'https://www.alpen-paesse.ch/de/alpenpaesse/gotthardpass/',
+
+    // ── Weather history (Open-Meteo, no key) ──────────────────────────────────
+    // Once per hour the collector stores temperature / rain / snow for both
+    // portals in gotthard_weather (requires that table from schema.sql).
+    // Set 'weather_enabled' => false to disable it.
+    'weather_enabled' => true,
+
+    // ── Robustness ────────────────────────────────────────────────────────────
+    // A feed with fewer situation records than this (or a SOAP fault) is
+    // rejected instead of being stored as "free traffic". The Swiss feed
+    // normally carries hundreds of records.
+    'min_feed_records' => 20,
+
+    // Optional failure alert: one mail after this many consecutive failed runs
+    // (5 runs is about 15 min) and one when the collector recovers.
+    // 'alert_email'          => 'you@example.com',
+    // 'alert_from'           => 'collector@example.com',
+    // 'alert_after_failures' => 5,
+
+    // State file read by api/health.php (default: server/data/collector-state.json)
+    // and the max age in minutes before health.php reports not-ok (HTTP 503).
+    // 'state_file'             => __DIR__ . '/../data/collector-state.json',
+    // 'health_max_age_minutes' => 15,
+
+    // Retention (opt-in, nothing is deleted by default): once a night at 03:00
+    // UTC, snapshots older than this many days are thinned to one per hour.
+    // 'retention_days' => 400,
 
     // ── Database (MySQL / MariaDB) ────────────────────────────────────────────
     // Run server/schema.sql once to create the required table.

@@ -54,8 +54,9 @@ final class DatexClient
             CURLOPT_HTTPHEADER => $headers,
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_CONNECTTIMEOUT => 5,
             CURLOPT_TIMEOUT => 20,
-            CURLOPT_USERAGENT => 'gotthard-traffic-scraper/1.0 (+https://github.com/)',
+            CURLOPT_USERAGENT => 'gotthard-traffic-scraper/1.0 (+https://github.com/julianbruegger/gothard-traffic)',
         ]);
 
         $body = curl_exec($ch);

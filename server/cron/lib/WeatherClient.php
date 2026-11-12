@@ -121,6 +121,7 @@ final class WeatherClient
         $ch = curl_init($url);
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_CONNECTTIMEOUT => 5,
             CURLOPT_TIMEOUT        => 10,
             CURLOPT_USERAGENT      => 'gotthard-traffic-collector/1.0',
         ]);

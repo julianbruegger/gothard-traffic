@@ -55,7 +55,7 @@ final class TrafficParser
     }
 
     /**
-     * @return array{tunnel: array, pass: array, debug: array}
+     * @return array{tunnel: array, pass: array, debug: array, recordCount: int}
      */
     public function parse(string $xml): array
     {
@@ -69,12 +69,26 @@ final class TrafficParser
         }
 
         $xpath = new DOMXPath($doc);
+
+        // A SOAP fault can arrive with HTTP 200; never treat it as "no traffic".
+        $fault = $xpath->query("//*[local-name()='Fault']");
+        if ($fault !== false && $fault->length > 0) {
+            $text = self::nodeValue($xpath, $fault->item(0), 'faultstring');
+            if ($text === '') {
+                $text = self::nodeValue($xpath, $fault->item(0), 'Text');
+            }
+            throw new TrafficParseException('SOAP fault in feed' . ($text !== '' ? ': ' . mb_substr($text, 0, 200) : '.'));
+        }
+
         $records = $xpath->query("//*[local-name()='situationRecord']");
         if ($records === false || $records->length === 0) {
             $records = $xpath->query("//*[local-name()='situation']");
         }
 
+        $recordCount = ($records !== false) ? $records->length : 0;
+
         $now = new DateTimeImmutable('now', new DateTimeZone('UTC'));
+        $queueSeen = false;
 
         $north = ['queueKm' => null, 'waitMinutes' => null, 'cause' => null];
         $south = ['queueKm' => null, 'waitMinutes' => null, 'cause' => null];
@@ -217,6 +231,7 @@ final class TrafficParser
                     continue;
                 }
 
+                $queueSeen = true;
                 $debugMatches[] = $doc->saveXML($record);
                 if ($side === 'south') {
                     $south = self::keepWorst($south, $queueKm, $waitMin, $cause);
@@ -236,6 +251,7 @@ final class TrafficParser
             $status = 'closed';
         } elseif (($north['queueKm'] ?? 0) > 0 || ($south['queueKm'] ?? 0) > 0
             || ($north['waitMinutes'] ?? 0) > 0 || ($south['waitMinutes'] ?? 0) > 0
+            || $queueSeen // queue reported without km/min: length unknown, still congested
         ) {
             $status = 'congested';
         }
@@ -250,7 +266,23 @@ final class TrafficParser
             ],
             'pass' => $pass,
             'debug' => $debugMatches,
+            'recordCount' => $recordCount,
         ];
+    }
+
+    /**
+     * Feed sanity gate: refuse a feed that carries (almost) no situation
+     * records, instead of storing it as "free traffic".
+     *
+     * @throws TrafficParseException
+     */
+    public static function assertFeedSane(array $result, array $config): void
+    {
+        $min = (int) ($config['min_feed_records'] ?? 20);
+        $count = (int) ($result['recordCount'] ?? 0);
+        if ($count < $min) {
+            throw new TrafficParseException("Feed looks empty or malformed: {$count} situation record(s), expected at least {$min}.");
+        }
     }
 
     /**
@@ -721,9 +753,11 @@ final class TrafficParser
      */
     private static function keepWorst(array $current, ?float $queueKm, ?int $waitMinutes, ?string $cause): array
     {
-        if ($queueKm === null && $waitMinutes === null
-            && ($current['queueKm'] !== null || $current['waitMinutes'] !== null)
-        ) {
+        if ($queueKm === null && $waitMinutes === null) {
+            // No figures: never displaces a real reading; just keep a cause.
+            if ($current['cause'] === null) {
+                $current['cause'] = $cause;
+            }
             return $current;
         }
 

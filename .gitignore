@@ -12,3 +12,6 @@ deploy-staging/
 # Raw phpMyAdmin export of gotthard_snapshots (large; condensed into site/src/data/observed-days.json)
 gotthard_snapshots*.csv
 gotthard_snapshots*.csv.gz
+
+# Scraped TCS tweet history (third-party content): keep locally, pass the path to the build scripts
+tcs_gotthard_tweets.json

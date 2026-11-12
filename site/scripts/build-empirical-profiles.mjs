@@ -6,7 +6,7 @@
 // Output: site/src/data/empirical-profiles.json — consumed by
 // site/src/lib/forecast-empirical.ts to make the forecast data-driven.
 //
-// Usage: node site/scripts/build-empirical-profiles.mjs
+// Usage: node site/scripts/build-empirical-profiles.mjs <path/to/tcs_gotthard_tweets.json>
 //
 // Direction mapping (from the tweet prefix "#A2 - X -> Y -"):
 //   "Luzern  -> Gotthard"  = queue at Nordportal Göschenen  (southbound, CH/DE → IT)  => N  (northIdx)
@@ -15,13 +15,24 @@
 // Index units match forecast.ts: 0 = free flow, 10 ≈ 10 km / 90 min jam. TCS reports
 // ~10 min delay per km, so we use km directly as the congestion index (capped display).
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '..', '..');
-const SRC = resolve(REPO_ROOT, 'tcs_gotthard_tweets.json');
+// The scraped TCS tweet history is not part of the repository (third-party
+// content). Pass its path as the first argument or via TCS_TWEETS_FILE.
+const SRC_ARG = process.argv[2] ?? process.env.TCS_TWEETS_FILE;
+if (!SRC_ARG) {
+  console.error('Usage: node scripts/build-empirical-profiles.mjs <path/to/tcs_gotthard_tweets.json>  (or set TCS_TWEETS_FILE)');
+  process.exit(1);
+}
+const SRC = resolve(process.cwd(), SRC_ARG);
+if (!existsSync(SRC)) {
+  console.error(`Input file not found: ${SRC}`);
+  process.exit(1);
+}
 const OUT = resolve(__dirname, '..', 'src', 'data', 'empirical-profiles.json');
 
 // SEASON weights from forecast.ts (Jan..Dec). Used to express the empirical

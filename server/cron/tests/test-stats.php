@@ -22,20 +22,24 @@ $rows = [
     row('2026-08-03 10:40:00', 'open', null, null, null, null, null),
 ];
 
-$s = (new StatsCalculator())->compute($rows, new DateTimeImmutable('2026-08-04 00:00:00', new DateTimeZone('UTC')));
+$now0 = new DateTimeImmutable('2026-08-04 00:00:00', new DateTimeZone('UTC'));
+$s = (new StatsCalculator())->compute($rows, $now0);
 
 $checks = [
-    'heatmap Mon 12h north avg = (20+40+10+0+0)/5 = 14' => $s['heatmap']['north'][0][12] === 14.0,
+    'heatmap Mon 12h north avg = (20+40+0)/3 = 20 (closed excluded)' => $s['heatmap']['north'][0][12] === 20.0,
     'heatmap has 7x24 grid'                       => count($s['heatmap']['south']) === 7 && count($s['heatmap']['south'][3]) === 24,
-    'longest queue 4 km north'                    => $s['records']['longestQueue']['km'] === 4.0 && $s['records']['longestQueue']['portal'] === 'north',
-    'longest wait 40'                             => $s['records']['longestWait']['minutes'] === 40,
-    'worst day 2026-08-03 sum 80'                 => $s['records']['worstDay'] === ['date' => '2026-08-03', 'waitSum' => 80],
+    'longest queue ignores the single-snapshot 4 km spike -> 2 km north' => $s['records']['longestQueue']['km'] === 2.0 && $s['records']['longestQueue']['portal'] === 'north',
+    'longest wait ignores the single-snapshot spike -> 20' => $s['records']['longestWait']['minutes'] === 20,
+    'worst day = queue hours (0.5 h), ISO date'   => $s['records']['worstDay'] === ['date' => '2026-08-03', 'queueHours' => 0.5],
     'jam-free streak 10:30..10:40 = 0.2 h'        => $s['records']['longestJamFree']['hours'] === 0.2,
-    'asymmetry month north avg 11.7'              => $s['asymmetry'][0]['month'] === '2026-08' && $s['asymmetry'][0]['north'] === 11.7,
+    'asymmetry month north avg 15 (closed excluded)' => $s['asymmetry'][0]['month'] === '2026-08' && $s['asymmetry'][0]['north'] === 15.0,
     'minutes per km north = 10'                   => $s['minutesPerKm']['north'] === 10.0,
-    'closures Baustelle 1 event, 0.2 h'           => $s['closures'][0] === ['reason' => 'Baustelle', 'count' => 1, 'hours' => 0.2],
-    'build-up > 0'                                => $s['jamDynamics']['buildUpKmPerHour'] > 0,
-    'dissolve > 0'                                => $s['jamDynamics']['dissolveKmPerHour'] > 0,
+    'closures Baustelle 1 event, 0.2 h'           => $s['closures'][0] === ['reason' => 'Baustelle', 'key' => 'roadworks', 'count' => 1, 'hours' => 0.2],
+    'reason keys'                                 => StatsCalculator::reasonKey('Ausnahmetransport') === 'special_transport'
+        && StatsCalculator::reasonKey('Pannenfahrzeug Bergungsarbeiten') === 'breakdown'
+        && StatsCalculator::reasonKey(null) === 'unknown' && StatsCalculator::reasonKey('xyz') === 'unknown',
+    'build-up per episode = 12 km/h'              => $s['jamDynamics']['buildUpKmPerHour'] === 12.0,
+    'dissolve per episode = 12 km/h'              => $s['jamDynamics']['dissolveKmPerHour'] === 12.0,
     'data quality: 6 snapshots, 1 gap'            => $s['dataQuality']['snapshots'] === 6 && $s['dataQuality']['gaps'] === 1,
     'last7d has 2 hourly buckets'                 => count($s['last7d']) === 2,
     'hourly30d has 2 hourly buckets'              => count($s['hourly30d']) === 2,
@@ -64,6 +68,67 @@ $checks['corr: precipitation r positive (north)'] = ($c['weather'][0]['r']['prec
 $checks['corr: no south weather -> r null']      = $c['weather'][1]['r']['temperature'] === null;
 $checks['corr: weekend ratio computed']          = $c['weekend']['north']['ratio'] !== null;
 $checks['corr: no closures -> 0 events']         = $c['afterClosure']['events'] === 0;
+
+// Jam episodes: slow 1 km steps over an hour are ~ a few km/h, not 20 km/h per step.
+$rows4 = [];
+$b4 = new DateTimeImmutable('2026-08-03 08:00:00', new DateTimeZone('UTC'));
+foreach ([0, 1, 1, 1, 2, 2, 3, 3, 2, 1, 1, 0] as $i => $km) {
+    $rows4[] = row($b4->modify('+' . ($i * 10) . ' minutes')->format('Y-m-d H:i:s'), 'congested', null, (float) $km, $km * 10, null, null);
+}
+$s4 = (new StatsCalculator())->compute($rows4, $now0);
+// start 1 km @10 min, peak 3 km @60 min: 2 km / (50/60 h) = 2.4; peak -> 0 km @110 min: 3 / (50/60) = 3.6
+$checks['jam dynamics: episode build-up 2.4 km/h'] = $s4['jamDynamics']['buildUpKmPerHour'] === 2.4;
+$checks['jam dynamics: episode dissolve 3.6 km/h'] = $s4['jamDynamics']['dissolveKmPerHour'] === 3.6;
+$checks['records: sustained 3 km counts']         = $s4['records']['longestQueue']['km'] === 3.0;
+
+// Closure episode with a mid-closure reason change counts once, under the last reason.
+$rows5 = [
+    row('2026-08-03 22:00:00', 'open', null, null, null, null, null),
+    row('2026-08-03 22:10:00', 'closed', 'Unfall', null, null, null, null),
+    row('2026-08-03 22:20:00', 'closed', null, null, null, null, null),
+    row('2026-08-03 22:30:00', 'closed', 'Pannenfahrzeug Bergungsarbeiten', null, null, null, null),
+    row('2026-08-03 22:40:00', 'open', null, null, null, null, null),
+];
+$s5 = (new StatsCalculator())->compute($rows5, $now0);
+$checks['closure episode: one entry, last reason, full hours'] = count($s5['closures']) === 1
+    && $s5['closures'][0]['key'] === 'breakdown' && $s5['closures'][0]['count'] === 1 && $s5['closures'][0]['hours'] === 0.3;
+
+// Accumulator API gives the same result as compute() on the same rows.
+$acc = new StatsCalculator();
+foreach ($rows as $r) {
+    $acc->add($r);
+}
+$now0 = new DateTimeImmutable('2026-08-04 00:00:00', new DateTimeZone('UTC'));
+$checks['accumulator == compute()'] = $acc->finish($now0) === $s;
+
+// Closed snapshots are excluded from averages: nightly closure must not dilute.
+$rows3 = [];
+$b3 = new DateTimeImmutable('2026-08-03 08:00:00', new DateTimeZone('UTC'));
+for ($i = 0; $i < 10; $i++) {
+    $rows3[] = row($b3->modify("+{$i} minutes")->format('Y-m-d H:i:s'), $i < 5 ? 'closed' : 'congested', $i < 5 ? 'Baustelle' : null, null, null, 2.0, 30);
+}
+$s3 = (new StatsCalculator())->compute($rows3, $now0);
+$checks['closed excluded: weekend/overall avg south = 30'] = $s3['correlations']['afterClosure']['south']['overallAvg'] === 30.0;
+$checks['closed excluded: heatmap closed-only cell is null'] = (new StatsCalculator())->compute(array_slice($rows3, 0, 5), $now0)['heatmap']['south'][0][10] === null;
+
+// Memory: 200k synthetic rows streamed through add() must stay small.
+$gen = static function (int $n): Generator {
+    $t = (new DateTimeImmutable('2026-01-01 00:00:00', new DateTimeZone('UTC')))->getTimestamp();
+    for ($i = 0; $i < $n; $i++) {
+        $closed = ($i % 480) < 40;
+        yield row(gmdate('Y-m-d H:i:s', $t + $i * 180), $closed ? 'closed' : 'open', $closed ? 'Baustelle' : null,
+            $closed ? null : ($i % 7) * 0.5, $closed ? null : ($i % 7) * 5, $closed ? null : ($i % 5) * 0.5, $closed ? null : ($i % 5) * 4);
+    }
+};
+$memBase = memory_get_usage();
+$big = new StatsCalculator();
+foreach ($gen(200000) as $r) {
+    $big->add($r);
+}
+$bs = $big->finish($now0);
+$peak = memory_get_peak_usage();
+$checks['200k rows: all counted'] = $bs['dataQuality']['snapshots'] === 200000;
+$checks['200k rows: peak memory < 64 MB (' . round($peak / 1048576, 1) . ' MB)'] = $peak < 64 * 1048576;
 
 $failures = 0;
 foreach ($checks as $label => $ok) {

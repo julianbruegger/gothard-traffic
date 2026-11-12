@@ -6,13 +6,13 @@ interface Stats {
   records: {
     longestQueue: { km: number; portal: string; at: string } | null;
     longestWait: { minutes: number; portal: string; at: string } | null;
-    worstDay: { date: string; waitSum: number } | null;
+    worstDay: { date: string; queueHours: number } | null;
     longestJamFree: { hours: number; from: string; to: string } | null;
   };
   asymmetry: { month: string; north: number | null; south: number | null }[];
   minutesPerKm: { north: number | null; south: number | null };
-  closures: { reason: string; count: number; hours: number }[];
-  jamDynamics: { buildUpKmPerHour: number | null; dissolveKmPerHour: number | null };
+  closures: { reason: string; key?: string; count: number; hours: number }[];
+  jamDynamics: { buildUpKmPerHour: number | null; dissolveKmPerHour: number | null; episodes?: number };
   dataQuality: { snapshots: number; first: string | null; last: string | null; gaps: number };
   last7d: { t: string; north: number | null; south: number | null }[];
   correlations?: {
@@ -21,6 +21,7 @@ interface Stats {
     weekend: Record<string, { weekday: number | null; weekend: number | null; ratio: number | null }>;
     afterClosure: { events: number } & Record<string, unknown>;
   };
+  weatherNow?: Partial<Record<'north' | 'south', { observedAt: string; temperature: number | null; precipitation: number | null; snowfall: number | null }>>;
   hourly30d?: { t: string; north: number | null; south: number | null }[];
 }
 
@@ -37,6 +38,8 @@ const num = (v: number | null | undefined, digits = 1) =>
   v === null || v === undefined ? '–' : v.toLocaleString(locale, { maximumFractionDigits: digits });
 const dt = (iso: string) =>
   new Date(iso).toLocaleString(locale, { timeZone: 'Europe/Zurich', dateStyle: 'medium', timeStyle: 'short' });
+const dayFmt = (iso: string) =>
+  new Date(`${iso}T12:00:00Z`).toLocaleDateString(locale, { timeZone: 'UTC', dateStyle: 'medium' });
 const portalName = (p: string) => t(lang, p === 'north' ? 'nerd.north' : 'nerd.south');
 const row = (label: string, value: string) => `<div><dt>${esc(label)}</dt><dd>${value}</dd></div>`;
 
@@ -56,11 +59,11 @@ async function fetchJson<T>(url: string): Promise<T | null> {
 function renderHeatmap(id: string, grid: (number | null)[][]) {
   const days = t(lang, 'nerd.days').split(',');
   const max = Math.max(1, ...grid.flat().map((v) => v ?? 0));
-  let html = '<table class="nerd-heat"><thead><tr><th></th>';
-  for (let h = 0; h < 24; h++) html += `<th>${h}</th>`;
+  let html = `<table class="nerd-heat"><thead><tr><th scope="col"><span class="sr-only">${esc(t(lang, 'nerd.heatmap.corner'))}</span></th>`;
+  for (let h = 0; h < 24; h++) html += `<th scope="col">${h}</th>`;
   html += '</tr></thead><tbody>';
   grid.forEach((hours, d) => {
-    html += `<tr><th>${esc(days[d] ?? '')}</th>`;
+    html += `<tr><th scope="row">${esc(days[d] ?? '')}</th>`;
     hours.forEach((v, h) => {
       const a = v === null ? 0 : Math.min(1, v / max);
       html += `<td style="--a:${a.toFixed(2)}" title="${esc(days[d] ?? '')} ${h}:00 – ${num(v)} ${t(lang, 'nerd.min')}"></td>`;
@@ -77,7 +80,7 @@ function renderRecords(r: Stats['records']) {
   if (r.longestWait)
     parts.push(row(t(lang, 'nerd.records.wait'), `${num(r.longestWait.minutes, 0)} ${t(lang, 'nerd.min')} · ${esc(portalName(r.longestWait.portal))}<br><small>${esc(dt(r.longestWait.at))}</small>`));
   if (r.worstDay)
-    parts.push(row(t(lang, 'nerd.records.worstDay'), `${esc(r.worstDay.date)} · ${num(r.worstDay.waitSum, 0)}`));
+    parts.push(row(t(lang, 'nerd.records.worstDay'), `${esc(dayFmt(r.worstDay.date))} · ${num(r.worstDay.queueHours)} ${esc(t(lang, 'nerd.records.queueHours'))}`));
   if (r.longestJamFree)
     parts.push(row(t(lang, 'nerd.records.jamFree'), `${num(r.longestJamFree.hours)} h<br><small>${esc(dt(r.longestJamFree.from))}</small>`));
   $('nerd-records').innerHTML = parts.join('');
@@ -105,6 +108,20 @@ function renderAsymmetry(rows: Stats['asymmetry']) {
     '</span><span style="--c:var(--c-south)">' + esc(t(lang, 'nerd.south')) + '</span></p>';
 }
 
+const REASON_LABELS: Record<string, { de: string; en: string }> = {
+  roadworks: { de: 'Bauarbeiten', en: 'Roadworks' },
+  special_transport: { de: 'Sondertransport', en: 'Special transport' },
+  breakdown: { de: 'Pannenfahrzeug', en: 'Broken-down vehicle' },
+  accident: { de: 'Unfall', en: 'Accident' },
+  fire: { de: 'Brand', en: 'Fire' },
+  unknown: { de: 'Unbekannt', en: 'Unknown' },
+};
+
+function reasonLabel(r: { reason: string; key?: string }): string {
+  const hit = r.key ? REASON_LABELS[r.key] : undefined;
+  return hit ? hit[lang] : r.reason;
+}
+
 function renderClosures(rows: Stats['closures']) {
   if (rows.length === 0) {
     $('nerd-closures').innerHTML = `<p class="nerd-card__sub">${esc(t(lang, 'nerd.closures.none'))}</p>`;
@@ -112,11 +129,13 @@ function renderClosures(rows: Stats['closures']) {
   }
   $('nerd-closures').innerHTML =
     `<table class="nerd-table"><thead><tr><th>${esc(t(lang, 'nerd.closures.reason'))}</th><th>${esc(t(lang, 'nerd.closures.count'))}</th><th>${esc(t(lang, 'nerd.closures.hours'))}</th></tr></thead><tbody>` +
-    rows.map((r) => `<tr><td>${esc(r.reason)}</td><td>${r.count}</td><td>${num(r.hours)}</td></tr>`).join('') +
+    rows.map((r) => `<tr><td>${esc(reasonLabel(r))}</td><td>${r.count}</td><td>${num(r.hours)}</td></tr>`).join('') +
     '</tbody></table>';
 }
 
-/** Forecast vs reality (south portal chart, MAE for both portals). */
+/** Forecast vs reality: one portal at a time (toggle), minutes on y, day ticks on x. */
+let fvrPortal: 'north' | 'south' = 'south';
+
 function renderForecastVsReality(last7d: Stats['last7d']) {
   const host = $('nerd-fvr');
   if (last7d.length === 0) {
@@ -146,11 +165,17 @@ function renderForecastVsReality(last7d: Stats['last7d']) {
   }
   const mean = (a: number[]) => (a.length ? a.reduce((x, y) => x + y, 0) / a.length : null);
 
-  const W = 720, H = 200, L = 34, B = 20, T = 8;
+  const portal = fvrPortal;
+  const real = (p: (typeof pts)[number]) => p.real[portal];
+  const fore = (p: (typeof pts)[number]) => (portal === 'north' ? p.f?.n : p.f?.s);
+
+  const W = 720, H = 240, L = 40, B = 28, T = 10;
   const t0 = pts[0].ms;
   const t1 = pts[pts.length - 1].ms;
-  const max = Math.max(10, ...pts.map((p) => Math.max(p.real.south ?? 0, p.f?.s ?? 0)));
-  const x = (ms: number) => L + ((W - L - 4) * (ms - t0)) / Math.max(1, t1 - t0);
+  const rawMax = Math.max(10, ...pts.map((p) => Math.max(real(p) ?? 0, fore(p) ?? 0)));
+  const step = rawMax <= 30 ? 10 : rawMax <= 60 ? 15 : 30;
+  const max = Math.ceil(rawMax / step) * step;
+  const x = (ms: number) => L + ((W - L - 6) * (ms - t0)) / Math.max(1, t1 - t0);
   const y = (v: number) => T + (H - T - B) * (1 - v / max);
   const path = (get: (p: (typeof pts)[number]) => number | null | undefined) => {
     let d = '';
@@ -163,13 +188,40 @@ function renderForecastVsReality(last7d: Stats['last7d']) {
     }
     return d;
   };
+
+  let axes = '';
+  for (let v = 0; v <= max; v += step) {
+    axes += `<line x1="${L}" y1="${y(v)}" x2="${W}" y2="${y(v)}" stroke="var(--color-border)"/>`;
+    axes += `<text x="${L - 5}" y="${y(v) + 4}" text-anchor="end" class="nerd-svg__t">${v}</text>`;
+  }
+  axes += `<text x="4" y="${T + 2}" class="nerd-svg__t">${esc(t(lang, 'nerd.min'))}</text>`;
+  // Day ticks at Swiss-local midnights.
+  const dayFmtShort = new Intl.DateTimeFormat(locale, { timeZone: 'Europe/Zurich', weekday: 'short', day: 'numeric' });
+  const dayKey = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Zurich' });
+  let lastDay = '';
+  for (const p of pts) {
+    const dk = dayKey.format(p.ms);
+    if (dk === lastDay) continue;
+    lastDay = dk;
+    axes += `<line x1="${x(p.ms)}" y1="${T}" x2="${x(p.ms)}" y2="${y(0)}" stroke="var(--color-border)" stroke-dasharray="2 3"/>`;
+    axes += `<text x="${x(p.ms) + 3}" y="${H - 8}" class="nerd-svg__t">${esc(dayFmtShort.format(p.ms))}</text>`;
+  }
+
+  const btn = (k: 'north' | 'south') =>
+    `<button type="button" class="nerd__btn nerd__btn--toggle" data-fvr="${k}" aria-pressed="${k === portal}">${esc(portalName(k))}</button>`;
   host.innerHTML =
-    `<svg viewBox="0 0 ${W} ${H}" class="nerd-svg" role="img" aria-label="${esc(t(lang, 'nerd.fvr.title'))}">` +
-    `<line x1="${L}" y1="${y(0)}" x2="${W}" y2="${y(0)}" stroke="var(--color-border)"/>` +
-    `<text x="${L - 4}" y="${T + 8}" text-anchor="end" class="nerd-svg__t">${num(max, 0)}</text>` +
-    `<path d="${path((p) => p.f?.s)}" fill="none" stroke="var(--color-text-muted)" stroke-width="2" stroke-dasharray="6 4"/>` +
-    `<path d="${path((p) => p.real.south)}" fill="none" stroke="var(--c-south)" stroke-width="2.5" stroke-linejoin="round"/>` +
+    `<div class="nerd-toggle" role="group" aria-label="${esc(t(lang, 'nerd.fvr.toggle'))}">${btn('north')}${btn('south')}</div>` +
+    `<svg viewBox="0 0 ${W} ${H}" class="nerd-svg" role="img" aria-label="${esc(t(lang, 'nerd.fvr.title'))} – ${esc(portalName(portal))}">` +
+    axes +
+    `<path d="${path(fore)}" fill="none" stroke="var(--color-text-muted)" stroke-width="2" stroke-dasharray="6 4"/>` +
+    `<path d="${path(real)}" fill="none" stroke="var(--c-${portal})" stroke-width="2.5" stroke-linejoin="round"/>` +
     '</svg>';
+  host.querySelectorAll<HTMLButtonElement>('button[data-fvr]').forEach((b) =>
+    b.addEventListener('click', () => {
+      fvrPortal = b.dataset.fvr === 'north' ? 'north' : 'south';
+      renderForecastVsReality(last7d);
+    })
+  );
   $('nerd-mae').innerHTML =
     row(`${t(lang, 'nerd.north')} – ${t(lang, 'nerd.fvr.mae')}`, num(mean(err.north))) +
     row(`${t(lang, 'nerd.south')} – ${t(lang, 'nerd.fvr.mae')}`, num(mean(err.south)));
@@ -190,18 +242,16 @@ function downloadCsv(s: Stats) {
   URL.revokeObjectURL(a.href);
 }
 
-// ─── Fun API: next train Göschenen → Airolo (transport.opendata.ch, no key) ──
+// ─── Fun API: next train Göschenen → Airolo (via our cached /api/train.php) ──
 
 async function renderTrain() {
   try {
-    const res = await fetch('https://transport.opendata.ch/v1/connections?from=G%C3%B6schenen&to=Airolo&limit=1');
-    if (!res.ok) return;
-    const c = (await res.json()).connections?.[0];
-    if (!c?.from?.departure) return;
+    const c = await fetchJson<{ departure?: string; duration?: string }>('/api/train.php');
+    if (!c?.departure) return;
     const live = await fetchJson<{ tunnel?: { north?: { waitMinutes: number | null } } }>('/api/gotthard.php');
     const wait = live?.tunnel?.north?.waitMinutes ?? null;
     const dur = String(c.duration ?? '').replace(/^\d+d/, '').split(':');
-    const time = new Date(c.from.departure).toLocaleTimeString(locale, { timeZone: 'Europe/Zurich', hour: '2-digit', minute: '2-digit' });
+    const time = new Date(c.departure).toLocaleTimeString(locale, { timeZone: 'Europe/Zurich', hour: '2-digit', minute: '2-digit' });
     $('nerd-train-body').innerHTML =
       row(t(lang, 'nerd.train.departs'), esc(time)) +
       row(t(lang, 'nerd.train.duration'), dur.length >= 2 ? `${Number(dur[0]) * 60 + Number(dur[1])} ${t(lang, 'nerd.min')}` : '–') +
@@ -213,53 +263,7 @@ async function renderTrain() {
 }
 
 
-// ─── Fun API: weather (Open-Meteo, no key) ───────────────────────────────────
-
 type Hourly = Stats['last7d'];
-interface WeatherHour { temp: number | null; precip: number | null; snow: number | null }
-
-const PORTALS = {
-  north: { lat: 46.668, lon: 8.589 }, // Göschenen
-  south: { lat: 46.529, lon: 8.608 }, // Airolo
-} as const;
-
-/** Hourly weather keyed by "YYYY-MM-DDTHH" (UTC), plus the current conditions. */
-async function fetchWeather(portal: 'north' | 'south') {
-  const { lat, lon } = PORTALS[portal];
-  const url =
-    `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}` +
-    '&current=temperature_2m,precipitation,snowfall&hourly=temperature_2m,precipitation,snowfall' +
-    '&past_days=30&forecast_days=1&timezone=UTC';
-  const res = await fetch(url);
-  if (!res.ok) throw new Error('weather');
-  const j = await res.json();
-  const hours = new Map<string, WeatherHour>();
-  (j.hourly.time as string[]).forEach((tm, i) =>
-    hours.set(tm.slice(0, 13), { temp: j.hourly.temperature_2m[i], precip: j.hourly.precipitation[i], snow: j.hourly.snowfall[i] })
-  );
-  return { now: j.current as { temperature_2m: number; precipitation: number; snowfall: number }, hours };
-}
-
-/** Pearson r after removing each UTC hour-of-day's mean from both series. */
-function deseasonedCorrelation(pairs: { h: number; x: number; y: number }[]): number | null {
-  if (pairs.length < 24) return null;
-  const mean = (a: number[]) => a.reduce((p, c) => p + c, 0) / a.length;
-  const byHour = new Map<number, { x: number[]; y: number[] }>();
-  for (const p of pairs) {
-    const e = byHour.get(p.h) ?? { x: [], y: [] };
-    e.x.push(p.x);
-    e.y.push(p.y);
-    byHour.set(p.h, e);
-  }
-  const means = new Map<number, [number, number]>();
-  byHour.forEach((e, h) => means.set(h, [mean(e.x), mean(e.y)]));
-  const dx = pairs.map((p) => p.x - means.get(p.h)![0]);
-  const dy = pairs.map((p) => p.y - means.get(p.h)![1]);
-  const sxy = dx.reduce((a, v, i) => a + v * dy[i], 0);
-  const sxx = dx.reduce((a, v) => a + v * v, 0);
-  const syy = dy.reduce((a, v) => a + v * v, 0);
-  return sxx > 0 && syy > 0 ? sxy / Math.sqrt(sxx * syy) : null;
-}
 
 function describeR(r: number | null): string {
   if (r === null) return '–';
@@ -269,57 +273,21 @@ function describeR(r: number | null): string {
   return strength === 'none' ? label : `${label} (${r > 0 ? t(lang, 'nerd.weather.pos') : t(lang, 'nerd.weather.neg')})`;
 }
 
-async function renderWeather(hourly: Hourly) {
-  try {
-    const [north, south] = await Promise.all([fetchWeather('north'), fetchWeather('south')]);
-    const nowText = (w: typeof north) =>
-      `${num(w.now.temperature_2m)} °C · ${t(lang, 'nerd.weather.rain')} ${num(w.now.precipitation)} mm · ${t(lang, 'nerd.weather.snow')} ${num(w.now.snowfall)} cm`;
-    $('nerd-weather-now').className = 'nerd-dl';
-    $('nerd-weather-now').innerHTML =
-      row(`${t(lang, 'nerd.north')} – ${t(lang, 'nerd.weather.now')}`, esc(nowText(north))) +
-      row(`${t(lang, 'nerd.south')} – ${t(lang, 'nerd.weather.now')}`, esc(nowText(south)));
-
-    let body = '';
-    if (hourly.length >= 24) {
-      const vars: { label: string; get: (w: WeatherHour) => number | null }[] = [
-        { label: t(lang, 'nerd.weather.temp'), get: (w) => w.temp },
-        { label: t(lang, 'nerd.weather.rain'), get: (w) => w.precip },
-        { label: t(lang, 'nerd.weather.snow'), get: (w) => w.snow },
-      ];
-      let rows = '';
-      for (const [portal, w] of [['north', north], ['south', south]] as const) {
-        for (const v of vars) {
-          const pairs: { h: number; x: number; y: number }[] = [];
-          for (const p of hourly) {
-            const wait = p[portal];
-            const wh = w.hours.get(p.t.slice(0, 13));
-            const x = wh ? v.get(wh) : null;
-            if (wait !== null && x !== null && x !== undefined) pairs.push({ h: new Date(p.t).getUTCHours(), x, y: wait });
-          }
-          const r = deseasonedCorrelation(pairs);
-          rows += `<tr><td>${esc(portalName(portal))}</td><td>${esc(v.label)}</td><td>${r === null ? '–' : num(r, 2)}</td><td>${esc(describeR(r))}</td><td>${pairs.length}</td></tr>`;
-        }
-        let wet = 0, wetN = 0, dry = 0, dryN = 0;
-        for (const p of hourly) {
-          const wait = p[portal];
-          const wh = w.hours.get(p.t.slice(0, 13));
-          if (wait === null || !wh || wh.precip === null) continue;
-          if (wh.precip > 0.1) { wet += wait; wetN++; } else { dry += wait; dryN++; }
-        }
-        rows += `<tr><td>${esc(portalName(portal))}</td><td colspan="2">${esc(t(lang, 'nerd.weather.wetVsDry'))}</td><td colspan="2">${wetN ? num(wet / wetN) : '–'} ${t(lang, 'nerd.min')} (${wetN}) vs ${dryN ? num(dry / dryN) : '–'} ${t(lang, 'nerd.min')} (${dryN})</td></tr>`;
-      }
-      body = `<div class="nerd-scroll"><table class="nerd-table"><thead><tr><th></th><th></th><th>r</th><th>${esc(t(lang, 'nerd.weather.corr'))}</th><th>${esc(t(lang, 'nerd.weather.samples'))}</th></tr></thead><tbody>${rows}</tbody></table></div>`;
-    } else {
-      body = `<p class="nerd-card__sub">${esc(t(lang, 'nerd.weather.insufficient'))}</p>`;
-    }
-    $('nerd-weather-corr').innerHTML = body;
-    $('nerd-weather').hidden = false;
-  } catch {
-    /* hide the card silently */
-  }
+/** Current weather per portal, from the latest stored database row (no browser-side weather call). */
+function renderWeatherNow(w: NonNullable<Stats['weatherNow']>) {
+  const entries = (['north', 'south'] as const).filter((p) => w[p]);
+  if (entries.length === 0) return;
+  $('nerd-weather-now').innerHTML = entries
+    .map((p) => {
+      const o = w[p]!;
+      const text = `${num(o.temperature)} °C · ${t(lang, 'nerd.weather.rain')} ${num(o.precipitation)} mm · ${t(lang, 'nerd.weather.snow')} ${num(o.snowfall)} cm`;
+      return row(`${t(lang, 'nerd.weather.now')} – ${t(lang, p === 'north' ? 'nerd.north' : 'nerd.south')}`, esc(text));
+    })
+    .join('');
+  $('nerd-weather').hidden = false;
 }
 
-// ─── Fun API: school holidays (OpenHolidays, no key) ─────────────────────────
+// ─── School holidays (via our cached /api/holidays.php) ──────────────────────
 
 const HOLIDAY_COUNTRIES = [
   { code: 'CH', color: '#e53935' },
@@ -346,13 +314,9 @@ async function renderHolidays(hourly: Hourly) {
     const from = days[0];
     const to = days[days.length - 1];
 
-    const lists = await Promise.all(
-      HOLIDAY_COUNTRIES.map(async (c) => {
-        const res = await fetch(`https://openholidaysapi.org/SchoolHolidays?countryIsoCode=${c.code}&languageIsoCode=EN&validFrom=${from}&validTo=${to}`);
-        if (!res.ok) throw new Error('holidays');
-        return (await res.json()) as { startDate: string; endDate: string }[];
-      })
-    );
+    const byCountry = await fetchJson<Record<string, { startDate: string; endDate: string }[]>>(`/api/holidays.php?from=${from}&to=${to}`);
+    if (!byCountry) return;
+    const lists = HOLIDAY_COUNTRIES.map((c) => byCountry[c.code] ?? []);
 
     const W = 720, T = 20, barH = 90, bandH = 10, gap = 4, L = 4;
     const H = T + barH + 16 + HOLIDAY_COUNTRIES.length * (bandH + gap) + 14;
@@ -472,7 +436,7 @@ async function main() {
   $('nerd-body').hidden = false;
   if (s.correlations) renderCorrelations(s.correlations);
   void renderTrain();
-  void renderWeather(s.hourly30d ?? []);
+  if (s.weatherNow) renderWeatherNow(s.weatherNow);
   void renderHolidays(s.hourly30d ?? []);
 }
 

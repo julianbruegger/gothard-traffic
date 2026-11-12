@@ -46,6 +46,11 @@ return [
     'db_pass' => 'YOUR_DATABASE_PASSWORD',
     // 'db_port' => 3306,  // uncomment if your host uses a non-standard port
 
+    // ── Public site URL ───────────────────────────────────────────────────────
+    // Fixed base used for canonical / og:url in the server-rendered pages. Never
+    // derived from the Host header. Optional; defaults to the value below.
+    // 'site_url' => 'https://gotthard.jubr.app',
+
     // ── Error log ─────────────────────────────────────────────────────────────
     // Absolute path where fetch errors are written.
     'error_log' => __DIR__ . '/../data/fetch-error.log',

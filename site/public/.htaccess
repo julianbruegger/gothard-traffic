@@ -7,8 +7,30 @@
 # was throwing an error. Map an extensionless request to its `.html` file when
 # one exists; real files (api/*.php, _astro/*), directories, and the `/` root
 # (served by index.php via DirectoryIndex) are left untouched.
+#
+# SSR: "/" and "/en" must be answered by index.php (live server-side render of
+# the built index.html / en.html templates). Without an explicit DirectoryIndex
+# this host prefers the static index.html, which serves a stale build snapshot.
+DirectoryIndex index.php index.html
+Options -Indexes
+# "/en" is also a directory (en/ holds /en/forecasts). With DirectorySlash on,
+# Apache 301s /en -> /en/ before any rewrite runs, so the canonical /en URL would
+# always be a redirect. Turn it off and route /en ourselves below.
+DirectorySlash Off
+
 <IfModule mod_rewrite.c>
   RewriteEngine On
+
+  # Optional: collapse the template / script URLs onto "/" (only for direct
+  # client requests, never for our own internal rewrite to index.php).
+  RewriteCond %{THE_REQUEST} \s/index\.(?:html|php)(?:\?\S*)?\s [NC]
+  RewriteCond %{QUERY_STRING} ^$
+  RewriteRule ^index\.(?:html|php)$ / [R=301,L]
+
+  # Home pages are rendered live by index.php (de = index.html template,
+  # en = en.html template).
+  RewriteRule ^$ index.php [L]
+  RewriteRule ^en/?$ index.php?lang=en [L]
 
   # Language home like /en is emitted as the flat file en.html, but a same-named
   # directory (en/) also exists to hold its sub-pages (/en/forecasts). Without

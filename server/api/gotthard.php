@@ -16,6 +16,7 @@ $config = require $configPath;
 
 require_once __DIR__ . '/../lib/Db.php';
 require_once __DIR__ . '/../lib/SnapshotStore.php';
+require_once __DIR__ . '/../lib/SnapshotMapper.php';
 
 try {
     $pdo   = Db::connect($config);
@@ -33,34 +34,6 @@ if ($row === null) {
     exit;
 }
 
-$updatedAt = (new DateTimeImmutable($row['fetched_at'], new DateTimeZone('UTC')))->format(DateTimeInterface::ATOM);
-
-$data = [
-    'updated' => $updatedAt,
-    'source'  => 'opentransportdata.swiss (ASTRA Traffic Situations)',
-    'tunnel'  => [
-        'status' => $row['tunnel_status'],
-        'closureReason' => $row['closure_reason'] ?? null,
-        'north'  => [
-            'queueKm'     => $row['north_queue_km'] !== null ? (float) $row['north_queue_km'] : null,
-            'waitMinutes' => $row['north_wait_min'] !== null ? (int)   $row['north_wait_min'] : null,
-            'cause'       => $row['north_cause'],
-            'closures'    => [],
-        ],
-        'south'  => [
-            'queueKm'     => $row['south_queue_km'] !== null ? (float) $row['south_queue_km'] : null,
-            'waitMinutes' => $row['south_wait_min'] !== null ? (int)   $row['south_wait_min'] : null,
-            'cause'       => $row['south_cause'],
-            'closures'    => [],
-        ],
-        'plannedClosures' => isset($row['planned_closures']) && $row['planned_closures'] !== null
-            ? (json_decode($row['planned_closures'], true) ?: [])
-            : [],
-    ],
-    'pass' => [
-        'status' => $row['pass_status'],
-        'note'   => $row['pass_note'],
-    ],
-];
+$data = SnapshotMapper::fromRow($row);
 
 echo json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);

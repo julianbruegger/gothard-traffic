@@ -19,6 +19,7 @@ require_once __DIR__ . '/lib/Format.php';
 require_once __DIR__ . '/lib/Ssr.php';
 require_once __DIR__ . '/lib/Db.php';
 require_once __DIR__ . '/lib/SnapshotStore.php';
+require_once __DIR__ . '/lib/SnapshotMapper.php';
 
 function ssr_default_data(): array
 {
@@ -35,79 +36,42 @@ function ssr_default_data(): array
     ];
 }
 
-function row_to_data(array $row): array
-{
-    $updatedAt = (new DateTimeImmutable($row['fetched_at'], new DateTimeZone('UTC')))->format(DateTimeInterface::ATOM);
-    return [
-        'updated' => $updatedAt,
-        'source'  => 'opentransportdata.swiss (ASTRA Traffic Situations)',
-        'tunnel'  => [
-            'status' => $row['tunnel_status'],
-            'closureReason' => $row['closure_reason'] ?? null,
-            'north'  => [
-                'queueKm'     => $row['north_queue_km'] !== null ? (float) $row['north_queue_km'] : null,
-                'waitMinutes' => $row['north_wait_min'] !== null ? (int)   $row['north_wait_min'] : null,
-                'cause'       => $row['north_cause'],
-                'closures'    => [],
-            ],
-            'south'  => [
-                'queueKm'     => $row['south_queue_km'] !== null ? (float) $row['south_queue_km'] : null,
-                'waitMinutes' => $row['south_wait_min'] !== null ? (int)   $row['south_wait_min'] : null,
-                'cause'       => $row['south_cause'],
-                'closures'    => [],
-            ],
-        ],
-        'pass' => [
-            'status' => $row['pass_status'],
-            'note'   => $row['pass_note'],
-        ],
-    ];
-}
-
-$templatePath = __DIR__ . '/index.html';
-if (!is_file($templatePath)) {
-    http_response_code(503);
-    header('Content-Type: text/plain; charset=utf-8');
-    echo "Site not deployed yet: index.html is missing (deploy the Astro build output alongside this file).";
-    exit;
-}
-
 $lang = $_GET['lang'] ?? $_GET['lan'] ?? 'de';
-if (!I18n::isSupported($lang)) {
+if (!is_string($lang) || !I18n::isSupported($lang)) {
     $lang = 'de';
 }
 
-// English now lives at its own real URL (/en). Permanently redirect the old
-// ?lang=en query-parameter form there so search engines consolidate on one
-// canonical English page instead of indexing duplicate content at "/".
-if ($lang === 'en') {
-    header('Location: /en', true, 301);
+// German is the Astro "index" page, English the flat en.html (served at /en).
+$templatePath = __DIR__ . '/' . ($lang === 'en' ? 'en.html' : 'index.html');
+if (!is_file($templatePath)) {
+    http_response_code(503);
+    header('Content-Type: text/plain; charset=utf-8');
+    echo "Site not deployed yet: " . basename($templatePath) . " is missing (deploy the Astro build output alongside this file).";
     exit;
 }
 
 $data = ssr_default_data();
+$siteUrl = 'https://gotthard.jubr.app';
 
 $configPath = __DIR__ . '/cron/config.php';
 if (is_file($configPath)) {
     try {
         $config = require $configPath;
+        $siteUrl = is_array($config) ? ($config['site_url'] ?? $siteUrl) : $siteUrl;
         $pdo    = Db::connect($config);
         $store  = new SnapshotStore($pdo);
         $row    = $store->latest();
         if ($row !== null) {
-            $data = row_to_data($row);
+            $data = SnapshotMapper::fromRow($row);
         }
     } catch (Throwable) {
         // Fall through to default data — DB unavailable or not yet configured.
     }
 }
 
-$scheme = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') ? 'https' : 'http';
-$host   = $_SERVER['HTTP_HOST'] ?? 'localhost';
-$path   = strtok($_SERVER['REQUEST_URI'] ?? '/', '?');
-$base   = "{$scheme}://{$host}" . rtrim((string) $path, '/');
-// Only German is served here (English is redirected to /en above).
-$canonicalUrl = $base === '' ? "{$scheme}://{$host}/" : $base . '/';
+// Canonical comes from a fixed base (never HTTP_HOST / REQUEST_URI): "<base>/" for de, "<base>/en" for en.
+$siteUrl      = rtrim((string) $siteUrl, '/');
+$canonicalUrl = $lang === 'en' ? $siteUrl . '/en' : $siteUrl . '/';
 
 $template = (string) file_get_contents($templatePath);
 $html     = Ssr::render($template, $data, $lang, $canonicalUrl);

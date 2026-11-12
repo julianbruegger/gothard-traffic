@@ -1,5 +1,9 @@
 ---
 import '../styles/global.css';
+// Self-hosted Roboto Flex (SIL OFL 1.1, @fontsource-variable): opsz + wght axes,
+// latin and latin-ext subsets selected by unicode-range. No request to Google.
+import '@fontsource-variable/roboto-flex/opsz.css';
+import latinFont from '@fontsource-variable/roboto-flex/files/roboto-flex-latin-opsz-normal.woff2?url';
 import { DEFAULT_LANG, t, type Lang } from '../lib/i18n';
 
 interface Props {
@@ -87,9 +91,7 @@ const webPageLd = {
     <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#eceef4" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#1d2024" media="(prefers-color-scheme: dark)" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto+Flex:opsz,wght@8..144,300..700&display=swap" />
+    <link rel="preload" href={latinFont} as="font" type="font/woff2" crossorigin />
     <link rel="sitemap" type="application/xml" href="/sitemap-index.xml" />
 
     <!-- Open Graph -->

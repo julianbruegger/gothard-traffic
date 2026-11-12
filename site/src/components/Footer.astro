@@ -14,6 +14,7 @@ const { lang, dataSource } = Astro.props;
     <div>
       <p>{t(lang, 'footer.dataSource')}: <span id="footer-source">{dataSource}</span></p>
       <nav class="site-footer__links" aria-label="Footer">
+        <a href={lang === 'de' ? '/privacy' : '/en/privacy'}>{t(lang, 'footer.privacy')}</a>
         <a href="https://github.com/julianbruegger/gothard-traffic" rel="noopener">{t(lang, 'footer.viewSource')}</a>
         <a href="https://opentransportdata.swiss/en/road-traffic/" rel="noopener">ASTRA / opentransportdata.swiss</a>
       </nav>

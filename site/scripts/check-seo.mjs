@@ -48,6 +48,28 @@ for (const url of new Set(llms.match(/https:\/\/gotthard\.jubr\.app[^\s)]*/g) ??
   if (!candidates.some((c) => existsSync(c) && statSync(c).isFile())) errors.push(`llms.txt: ${url} not found`);
 }
 
+// Privacy notice pages must exist in both languages, be in the sitemap, be
+// linked from every page footer, and no built page/stylesheet may reference a
+// third-party font host (privacy: visitors' browsers must not contact Google).
+for (const p of ['/privacy', '/en/privacy']) {
+  if (!existsSync(join(dist, p + '.html'))) errors.push(`${p}: page missing in dist`);
+  if (!llms.includes(origin + p)) errors.push(`llms.txt: ${p} not listed`);
+}
+const sitemap = readdirSync(dist)
+  .filter((f) => /^sitemap.*\.xml$/.test(f))
+  .map((f) => readFileSync(join(dist, f), 'utf8'))
+  .join('\n');
+for (const p of ['/privacy', '/en/privacy']) {
+  if (!sitemap.includes(`${origin}${p}</loc>`)) errors.push(`sitemap: ${p} missing`);
+}
+for (const file of walk(dist).filter((f) => /\.(html|css|js)$/.test(f))) {
+  const body = readFileSync(file, 'utf8');
+  if (/fonts\.(googleapis|gstatic)\.com/.test(body)) errors.push(`${file.slice(dist.length)}: references Google Fonts`);
+  if (file.endsWith('.html') && !file.endsWith('privacy.html') && !/href="(\/en)?\/privacy"/.test(body)) {
+    errors.push(`${file.slice(dist.length)}: no footer link to the privacy page`);
+  }
+}
+
 if (errors.length) {
   console.error(errors.join('\n'));
   process.exit(1);

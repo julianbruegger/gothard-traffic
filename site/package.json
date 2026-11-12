@@ -5,8 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "astro dev",
-    "build": "astro check && astro build",
-    "build:fast": "astro build",
+    "build": "astro check && astro build && node scripts/csp-hashes.mjs",
+    "build:fast": "astro build && node scripts/csp-hashes.mjs",
     "preview": "astro preview",
     "astro": "astro",
     "check:seo": "node scripts/check-seo.mjs",
@@ -19,6 +19,7 @@
   },
   "dependencies": {
     "@astrojs/sitemap": "^3.7.3",
+    "@fontsource-variable/roboto-flex": "^5.3.0",
     "astro": "^7.0.6"
   },
   "devDependencies": {

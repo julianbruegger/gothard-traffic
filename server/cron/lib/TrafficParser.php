@@ -106,12 +106,18 @@ final class TrafficParser
                 // (e.g. a special transport 23:00–01:00 tonight) is still
                 // surfaced as a planned event rather than silently dropped.
                 if (self::isGotthardTunnelClosure($c)) {
+                    // A suspended record is not in effect, neither now nor later.
+                    if (mb_strtolower(self::firstValue($xpath, $record, 'validityStatus')) === 'suspended') {
+                        continue;
+                    }
+                    $german = self::germanPart($comment);
                     [$from, $to] = self::extractWindow($xpath, $record, $comment);
+                    $windows = [];
                     $activeNow = self::isClosureActiveNow($xpath, $record, $from, $to, $now);
                     if ($activeNow) {
                         $tunnelClosed = true;
                         if ($closureReason === null) {
-                            $reason = self::cleanClosureCause(self::extractCause($comment));
+                            $reason = self::cleanClosureCause(self::extractCause($german));
                             // Drop the bare "Tunnel gesperrt" (that's the status,
                             // not a cause) — keep only a real Ursache.
                             if ($reason !== null) {
@@ -123,19 +129,29 @@ final class TrafficParser
                         // Upcoming one-off window, or — for a recurring nightly
                         // campaign currently outside its window — tonight's window.
                         if ($from !== null && $from > $now) {
-                            [$pFrom, $pTo] = [$from, $to];
+                            $windows = [[$from, $to]];
                         } else {
-                            [$pFrom, $pTo] = self::nextDailyWindow($xpath, $record, $now) ?? [null, null];
+                            $next = self::nextDailyWindow($xpath, $record, $now);
+                            $windows = $next !== null ? [$next] : [];
                         }
-                        if ($pFrom !== null) {
-                            $key = $pFrom->format(DateTimeInterface::ATOM) . '|' . ($pTo?->format(DateTimeInterface::ATOM) ?? '');
-                            $plannedClosures[$key] = [
-                                'from'  => $pFrom->format(DateTimeInterface::ATOM),
-                                'to'    => $pTo?->format(DateTimeInterface::ATOM),
-                                'cause' => self::cleanClosureCause(self::extractCause($comment)),
-                            ];
-                            $debugMatches[] = $doc->saveXML($record);
-                        }
+                    }
+                    // Every explicit one-off period that still lies ahead (a
+                    // record may list several, with the first already past).
+                    foreach (self::futureOneOffPeriods($xpath, $record, $now) as $w) {
+                        $windows[] = $w;
+                    }
+                    $added = false;
+                    foreach ($windows as [$pFrom, $pTo]) {
+                        $key = $pFrom->format(DateTimeInterface::ATOM) . '|' . ($pTo?->format(DateTimeInterface::ATOM) ?? '');
+                        $plannedClosures[$key] = [
+                            'from'  => $pFrom->format(DateTimeInterface::ATOM),
+                            'to'    => $pTo?->format(DateTimeInterface::ATOM),
+                            'cause' => self::cleanClosureCause(self::extractCause($german)),
+                        ];
+                        $added = true;
+                    }
+                    if ($added) {
+                        $debugMatches[] = $doc->saveXML($record);
                     }
                     // Expired closure (window fully in the past) → drop silently.
                     continue;
@@ -157,7 +173,7 @@ final class TrafficParser
                     } elseif ($pass['status'] === 'unknown') {
                         $pass['status'] = 'open';
                     }
-                    $pass['note'] = mb_substr($comment, 0, 200);
+                    $pass['note'] = self::passNote($comment);
                     $debugMatches[] = $doc->saveXML($record);
                     continue;
                 }
@@ -192,7 +208,7 @@ final class TrafficParser
 
                 $queueKm = self::extractQueueKm($xpath, $record, $c);
                 $waitMin = self::extractWaitMinutes($xpath, $record, $c);
-                $cause   = self::extractCause($comment);
+                $cause   = self::extractCause(self::germanPart($comment));
 
                 // ASTRA often leaves a minor (<= 1 km) jam message published
                 // for many hours after it cleared. Its record version time
@@ -210,6 +226,11 @@ final class TrafficParser
             }
         }
 
+        // Announce only the next few windows, soonest first.
+        $plannedClosures = array_values($plannedClosures);
+        usort($plannedClosures, static fn (array $a, array $b): int => strcmp($a['from'], $b['from']));
+        $plannedClosures = array_slice($plannedClosures, 0, self::MAX_PLANNED_CLOSURES);
+
         $status = 'open';
         if ($tunnelClosed) {
             $status = 'closed';
@@ -225,7 +246,7 @@ final class TrafficParser
                 'closureReason' => $tunnelClosed ? $closureReason : null,
                 'north' => $north,
                 'south' => $south,
-                'plannedClosures' => array_values($plannedClosures),
+                'plannedClosures' => $plannedClosures,
             ],
             'pass' => $pass,
             'debug' => $debugMatches,
@@ -597,6 +618,81 @@ final class TrafficParser
     // separator ("… PannenfahrzeugLibéré: …"), so a cause capture must stop at
     // these second-language markers or it swallows the whole multilingual blob.
     private const LANG_BOUNDARY = 'Libéré|Révoqué|Approvato|Revocato';
+
+    private const MAX_PLANNED_CLOSURES = 3;
+    private const PASS_NOTE_MAX = 160;
+
+    /**
+     * The German portion of a multilingual comment: everything before the first
+     * second-language marker (Libéré / Révoqué / Approvato / Revocato).
+     */
+    public static function germanPart(string $comment): string
+    {
+        if (preg_match('/(?:' . self::LANG_BOUNDARY . ')/u', $comment, $m, PREG_OFFSET_CAPTURE) === 1) {
+            $comment = substr($comment, 0, $m[0][1]);
+        }
+        return trim($comment);
+    }
+
+    /**
+     * Short human pass note from the German part, e.g.
+     * "Strecke gesperrt – Wintersperre". Uses Sachlage plus Ursache /
+     * Verkehrsführung when present; truncated at a word boundary.
+     */
+    public static function passNote(string $comment): ?string
+    {
+        $de = self::germanPart($comment);
+        $stop = '(?=\s+(?:Sachlage|Ursache|Länge|Zusatz|Dauer|Verkehrsführung)\s*\d*:|\s+(?:Länge|Zusatz|Dauer)\b|$)';
+        $parts = [];
+        foreach (['Sachlage', 'Ursache', 'Verkehrsführung'] as $label) {
+            if (preg_match('/' . $label . ':\s*(.+?)' . $stop . '/u', $de, $m) === 1) {
+                $v = trim($m[1], " \t,;:.");
+                if ($v !== '') {
+                    $parts[] = $v;
+                }
+            }
+        }
+        $note = $parts ? implode(' – ', $parts) : trim(preg_replace('/^Freigegeben:\s*/u', '', $de) ?? $de);
+        if ($note === '') {
+            return null;
+        }
+        if (mb_strlen($note) > self::PASS_NOTE_MAX) {
+            $cut = mb_substr($note, 0, self::PASS_NOTE_MAX - 1);
+            $sp = mb_strrpos($cut, ' ');
+            if ($sp !== false && $sp > 40) {
+                $cut = mb_substr($cut, 0, $sp);
+            }
+            $note = rtrim($cut, " ,;:.–-") . '…';
+        }
+        return $note;
+    }
+
+    /**
+     * Explicit one-off <validPeriod>s (no recurring daily window) that start
+     * after $now, as [from, to] pairs.
+     *
+     * @return list<array{0: DateTimeImmutable, 1: ?DateTimeImmutable}>
+     */
+    private static function futureOneOffPeriods(DOMXPath $xpath, DOMElement $record, DateTimeImmutable $now): array
+    {
+        $out = [];
+        $periods = $xpath->query(".//*[local-name()='validPeriod']", $record);
+        if ($periods === false) {
+            return $out;
+        }
+        foreach ($periods as $period) {
+            $daily = $xpath->query(".//*[local-name()='recurringTimePeriodOfDay']", $period);
+            if ($daily !== false && $daily->length > 0) {
+                continue;
+            }
+            $start = self::parseDate(self::nodeValue($xpath, $period, 'startOfPeriod'));
+            if ($start === null || $start <= $now) {
+                continue;
+            }
+            $out[] = [$start, self::parseDate(self::nodeValue($xpath, $period, 'endOfPeriod'))];
+        }
+        return $out;
+    }
 
     /** Short cause phrase from the comment: prefers "Ursache: …", then "Sachlage: …". */
     private static function extractCause(string $comment): ?string

@@ -50,7 +50,6 @@ jobs:
           cp  server/index.php  deploy-staging/index.php
           cp -r server/lib      deploy-staging/lib
           cp -r server/api      deploy-staging/api
-          cp  server/schema.sql deploy-staging/schema.sql
 
           # translations.json kept in sync with the Astro project
           cp site/src/data/translations.json deploy-staging/translations.json
@@ -60,6 +59,14 @@ jobs:
           cp -r server/cron/. deploy-staging/cron/
           rm -rf deploy-staging/cron/tests
           rm -f  deploy-staging/cron/config.php
+
+          # Schema reference lives next to the cron scripts (cron/ is denied over HTTP)
+          cp server/schema.sql deploy-staging/cron/schema.sql
+
+          # data/ is written by cron at runtime; only its .htaccess is synced
+          # (see the rsync filters below), so it is never publicly readable.
+          mkdir -p deploy-staging/data
+          cp server/data/.htaccess deploy-staging/data/.htaccess
 
           echo "Deploy tree:" && find deploy-staging -maxdepth 2 -type d
 
@@ -115,9 +122,13 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
 
-          # --delete keeps the remote clean; data/ is preserved (cron writes there).
+          # --delete keeps the remote clean. data/ is cron-written: only
+          # data/.htaccess is synced; everything else there is excluded, so
+          # it is neither overwritten nor deleted.
           rsync -az --delete \
-            --exclude 'data/' \
+            --include 'data/' \
+            --include 'data/.htaccess' \
+            --exclude 'data/*' \
             --exclude '.well-known/' \
             -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
             deploy-staging/ \

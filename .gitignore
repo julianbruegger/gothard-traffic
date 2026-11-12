@@ -3,7 +3,8 @@ site/dist/
 site/.astro/
 server/cron/config.php
 site/.env
-server/data/
+server/data/*
+!server/data/.htaccess
 deploy-staging/
 *.log
 .DS_Store

@@ -1,5 +1,7 @@
 -- Gotthard Traffic Live – database schema
--- Run once to initialise: mysql -u USER -p DATABASE < schema.sql
+-- Readable reference. The deploy ships this file to cron/schema.sql (denied over
+-- HTTP), never to the public web root. To initialise by hand:
+--   mysql -u USER -p DATABASE < cron/schema.sql
 -- Compatible with MySQL 5.7+ and MariaDB 10.3+.
 
 CREATE TABLE IF NOT EXISTS gotthard_snapshots (

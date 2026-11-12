@@ -1,0 +1,3 @@
+# Shared PHP includes. index.php and api/*.php include them via the
+# filesystem, so nothing here needs to be reachable over HTTP.
+Require all denied

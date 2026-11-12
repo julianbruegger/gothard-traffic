@@ -53,34 +53,102 @@ final class Ssr
 
         $html = self::replaceJsonLd($html, $data, $lang, $canonicalUrl, $description);
 
-        $html = self::replaceMarker($html, 'status-label', Format::statusLabel($data['tunnel']['status'], $lang));
+        $tunnel = $data['tunnel'] ?? [];
+        $html = self::replaceMarker($html, 'status-label', Format::statusLabel((string) ($tunnel['status'] ?? 'unknown'), $lang));
         $html = self::replaceMarker($html, 'summary', Format::summary($data, $lang));
         $html = self::replaceMarker($html, 'updated-human', Format::updated($data['updated'] ?? null, $lang));
 
-        $html = self::replaceMarker($html, 'north-queue', Format::km($data['tunnel']['north']['queueKm'] ?? null, $lang));
-        $html = self::replaceMarker($html, 'north-wait', Format::minutes($data['tunnel']['north']['waitMinutes'] ?? null, $lang));
-        if (!empty($data['tunnel']['north']['cause'])) {
-            $html = self::replaceMarker($html, 'north-cause', (string) $data['tunnel']['north']['cause']);
+        // Every marker is ALWAYS replaced (empty string when null) so a value baked
+        // into the static build can never survive as a stale "current" value.
+        foreach (['north', 'south'] as $side) {
+            $portal = $tunnel[$side] ?? [];
+            $queue = $portal['queueKm'] ?? null;
+            $queue = $queue !== null ? (float) $queue : null;
+            $wait = $portal['waitMinutes'] ?? null;
+            $wait = $wait !== null ? (int) $wait : null;
+            $cause = trim((string) ($portal['cause'] ?? ''));
+
+            $html = self::replaceMarker($html, "{$side}-queue", Format::km($queue, $lang));
+            $html = self::replaceMarker($html, "{$side}-wait", Format::minutes($wait, $lang));
+            // The static build bakes no trend (no history); never leave one behind.
+            $html = self::replaceMarker($html, "{$side}-trend", '');
+            $html = self::setHidden($html, "{$side}-trend", true);
+            $html = self::replaceMarker($html, "{$side}-cause", $cause);
+            $html = self::setHidden($html, "{$side}-cause-row", $cause === '');
+            $free = $queue !== null && $queue <= 0;
+            $html = self::setHidden($html, "{$side}-free", !$free);
+            $html = self::setStyleWidth($html, "{$side}-meter", self::meterPercent($queue));
         }
 
-        $html = self::replaceMarker($html, 'south-queue', Format::km($data['tunnel']['south']['queueKm'] ?? null, $lang));
-        $html = self::replaceMarker($html, 'south-wait', Format::minutes($data['tunnel']['south']['waitMinutes'] ?? null, $lang));
-        if (!empty($data['tunnel']['south']['cause'])) {
-            $html = self::replaceMarker($html, 'south-cause', (string) $data['tunnel']['south']['cause']);
-        }
+        $pass = $data['pass'] ?? [];
+        $html = self::replaceMarker($html, 'pass-status-label', Format::passStatusLabel((string) ($pass['status'] ?? 'unknown'), $lang));
+        $note = trim((string) ($pass['note'] ?? ''));
+        $html = self::replaceMarker($html, 'pass-note', $note);
+        $html = self::setHidden($html, 'pass-note-row', $note === '');
 
-        $html = self::replaceMarker($html, 'pass-status-label', Format::passStatusLabel($data['pass']['status'] ?? 'unknown', $lang));
-        if (!empty($data['pass']['note'])) {
-            $html = self::replaceMarker($html, 'pass-note', (string) $data['pass']['note']);
-        }
+        $html = self::replaceAttr($html, 'status-badge', 'data-status', (string) ($tunnel['status'] ?? 'unknown'));
+        $html = self::replaceAttr($html, 'pass-badge', 'data-status', (string) ($pass['status'] ?? 'unknown'));
+        $html = self::replaceAttr($html, 'hero-updated', 'datetime', (string) ($data['updated'] ?? ''));
 
-        $html = self::replaceAttr($html, 'status-badge', 'data-status', (string) ($data['tunnel']['status'] ?? 'unknown'));
-        $html = self::replaceAttr($html, 'pass-badge', 'data-status', (string) ($data['pass']['status'] ?? 'unknown'));
-        if (!empty($data['updated'])) {
-            $html = self::replaceAttr($html, 'hero-updated', 'datetime', (string) $data['updated']);
-        }
+        $html = self::renderPlannedClosures($html, $tunnel['plannedClosures'] ?? [], $lang);
 
         return $html;
+    }
+
+    /** Same 0-15 km scale as the client-side meter. */
+    private static function meterPercent(?float $km): float
+    {
+        if ($km === null || $km <= 0) {
+            return 0.0;
+        }
+        return round(min($km, 15.0) / 15.0 * 100, 1);
+    }
+
+    /** Adds or removes the boolean `hidden` attribute on the element with the given id (no-op if absent). */
+    private static function setHidden(string $html, string $id, bool $hidden): string
+    {
+        $pattern = '/<[a-zA-Z0-9]+\s+[^>]*\bid="' . preg_quote($id, '/') . '"[^>]*>/s';
+        return preg_replace_callback($pattern, static function (array $m) use ($hidden): string {
+            $tag = preg_replace('/\s+hidden(?:=""|="hidden")?(?=[\s>\/])/', '', $m[0]) ?? $m[0];
+            if ($hidden) {
+                $tag = preg_replace('/(\s*\/?>)$/', ' hidden$1', $tag, 1) ?? $tag;
+            }
+            return $tag;
+        }, $html, 1) ?? $html;
+    }
+
+    private static function setStyleWidth(string $html, string $id, float $percent): string
+    {
+        $pattern = '/<[a-zA-Z0-9]+\s+[^>]*\bid="' . preg_quote($id, '/') . '"[^>]*>/s';
+        $style = 'width:' . rtrim(rtrim(number_format($percent, 1, '.', ''), '0'), '.') . '%';
+        $style = $style === 'width:%' ? 'width:0%' : $style;
+        return preg_replace_callback($pattern, static function (array $m) use ($style): string {
+            $tag = $m[0];
+            if (preg_match('/\sstyle="[^"]*"/', $tag)) {
+                return preg_replace('/\sstyle="[^"]*"/', ' style="' . $style . '"', $tag, 1) ?? $tag;
+            }
+            return preg_replace('/(\s*\/?>)$/', ' style="' . $style . '"$1', $tag, 1) ?? $tag;
+        }, $html, 1) ?? $html;
+    }
+
+    /** Fills the planned-closures banner (escaped) and toggles its `hidden` attribute. */
+    private static function renderPlannedClosures(string $html, array $closures, string $lang): string
+    {
+        $items = '';
+        foreach ($closures as $c) {
+            if (!is_array($c)) {
+                continue;
+            }
+            $items .= '<div class="closure-banner__item" role="alert">'
+                . '<span class="closure-banner__icon" aria-hidden="true">⚠</span>'
+                . '<div class="closure-banner__text">'
+                . '<strong class="closure-banner__title">' . htmlspecialchars(Format::closureTitle($c, $lang), ENT_QUOTES) . '</strong>'
+                . '<span class="closure-banner__detail">' . htmlspecialchars(Format::closureDetail($c, $lang), ENT_QUOTES) . '</span>'
+                . '</div></div>';
+        }
+        $pattern = '/(<section\b[^>]*\bid="planned-closures"[^>]*>)(.*?)(<\/section>)/s';
+        $html = preg_replace_callback($pattern, static fn (array $m): string => $m[1] . $items . $m[3], $html, 1) ?? $html;
+        return self::setHidden($html, 'planned-closures', $items === '');
     }
 
     private static function replaceMarker(string $html, string $key, string $value): string

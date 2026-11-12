@@ -11,7 +11,7 @@ interface Stats {
   };
   asymmetry: { month: string; north: number | null; south: number | null }[];
   minutesPerKm: { north: number | null; south: number | null };
-  closures: { reason: string; count: number; hours: number }[];
+  closures: { reason: string; key?: string; count: number; hours: number }[];
   jamDynamics: { buildUpKmPerHour: number | null; dissolveKmPerHour: number | null };
   dataQuality: { snapshots: number; first: string | null; last: string | null; gaps: number };
   last7d: { t: string; north: number | null; south: number | null }[];
@@ -105,6 +105,20 @@ function renderAsymmetry(rows: Stats['asymmetry']) {
     '</span><span style="--c:var(--c-south)">' + esc(t(lang, 'nerd.south')) + '</span></p>';
 }
 
+const REASON_LABELS: Record<string, { de: string; en: string }> = {
+  roadworks: { de: 'Bauarbeiten', en: 'Roadworks' },
+  special_transport: { de: 'Sondertransport', en: 'Special transport' },
+  breakdown: { de: 'Pannenfahrzeug', en: 'Broken-down vehicle' },
+  accident: { de: 'Unfall', en: 'Accident' },
+  fire: { de: 'Brand', en: 'Fire' },
+  unknown: { de: 'Unbekannt', en: 'Unknown' },
+};
+
+function reasonLabel(r: { reason: string; key?: string }): string {
+  const hit = r.key ? REASON_LABELS[r.key] : undefined;
+  return hit ? hit[lang] : r.reason;
+}
+
 function renderClosures(rows: Stats['closures']) {
   if (rows.length === 0) {
     $('nerd-closures').innerHTML = `<p class="nerd-card__sub">${esc(t(lang, 'nerd.closures.none'))}</p>`;
@@ -112,7 +126,7 @@ function renderClosures(rows: Stats['closures']) {
   }
   $('nerd-closures').innerHTML =
     `<table class="nerd-table"><thead><tr><th>${esc(t(lang, 'nerd.closures.reason'))}</th><th>${esc(t(lang, 'nerd.closures.count'))}</th><th>${esc(t(lang, 'nerd.closures.hours'))}</th></tr></thead><tbody>` +
-    rows.map((r) => `<tr><td>${esc(r.reason)}</td><td>${r.count}</td><td>${num(r.hours)}</td></tr>`).join('') +
+    rows.map((r) => `<tr><td>${esc(reasonLabel(r))}</td><td>${r.count}</td><td>${num(r.hours)}</td></tr>`).join('') +
     '</tbody></table>';
 }
 

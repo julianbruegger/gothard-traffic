@@ -3,68 +3,142 @@
 declare(strict_types=1);
 
 /**
- * Pure aggregate calculations over snapshot rows (no database access, so it is
+ * Aggregate calculations over snapshot rows (no database access, so it is
  * unit-testable with plain arrays). Rows are oldest-first arrays with keys
  * fetched_at (UTC "Y-m-d H:i:s"), tunnel_status, closure_reason,
  * north_queue_km, north_wait_min, south_queue_km, south_wait_min.
+ *
+ * Streaming use (constant memory apart from hour-level series):
+ *
+ *     $calc = new StatsCalculator();
+ *     foreach ($store->iterateStatsRows(365) as $row) { $calc->add($row); }
+ *     $stats = $calc->finish($now, $weather);
+ *
+ * Snapshots with status "closed" are excluded from every wait-time average
+ * (the tunnel is shut, so "0 min" would dilute the figures); they still count
+ * for closures, data quality and queue records.
  */
 final class StatsCalculator
 {
     /** Gaps longer than this (seconds) are "data gaps", not continuous coverage. */
     public const GAP_SECONDS = 1800;
 
+    private const AFTER_CLOSURE_WINDOW = 3 * 3600;
+
     private DateTimeZone $utc;
-    private DateTimeZone $zurich;
+    private DateTime $local;
+
+    // ─── Running state ───────────────────────────────────────────────────────
+
+    private int $count = 0;
+    private ?string $firstIso = null;
+    private ?string $lastIso = null;
+    private int $gaps = 0;
+
+    /** @var array{ts: int, status: string, reason: ?string, nKm: float, sKm: float}|null */
+    private ?array $prev = null;
+
+    /** @var array<string, array<int, array<int, array{0: float, 1: int}>>> portal => dow => hour => [sum, n] */
+    private array $heat = [];
+    /** @var array<string, array{0: float, 1: float, 2: int}> month => [northSum, southSum, n] */
+    private array $months = [];
+    /** @var array<string, array{0: float, 1: int}> */
+    private array $perKm = [];
+    /** @var array<string, array{0: float, 1: int}> */
+    private array $weekday = [];
+    /** @var array<string, array{0: float, 1: int}> */
+    private array $weekend = [];
+    /** @var array<string, array{0: float, 1: int}> */
+    private array $overall = [];
+    /** @var array<string, array{0: float, 1: int}> */
+    private array $afterWin = [];
+    private int $closureEnds = 0;
+    private ?int $lastClosureEnd = null;
+
+    /** @var array<int, array{0: float, 1: int, 2: float, 3: int}> UTC hour start => [nSum, nN, sSum, sN] (open snapshots only) */
+    private array $hours = [];
+
+    private ?array $maxQueue = null;
+    private ?array $maxWait = null;
+    /** @var array<string, float> */
+    private array $perDay = [];
+    private ?int $runStart = null;
+    private ?int $runEnd = null;
+    private ?array $bestRun = null;
+
+    /** @var array<string, array{count: int, seconds: int}> */
+    private array $closures = [];
+
+    private array $up = [0.0, 0];
+    private array $down = [0.0, 0];
 
     public function __construct()
     {
-        $this->utc    = new DateTimeZone('UTC');
-        $this->zurich = new DateTimeZone('Europe/Zurich');
+        $this->utc   = new DateTimeZone('UTC');
+        $this->local = new DateTime('@0');
+        $this->local->setTimezone(new DateTimeZone('Europe/Zurich'));
+        $this->reset();
     }
 
+    private function reset(): void
+    {
+        $this->count = 0;
+        $this->firstIso = $this->lastIso = null;
+        $this->gaps = 0;
+        $this->prev = null;
+        foreach (['north', 'south'] as $portal) {
+            $this->heat[$portal] = array_fill(0, 7, array_fill(0, 24, [0.0, 0]));
+            $this->perKm[$portal] = [0.0, 0];
+            $this->weekday[$portal] = [0.0, 0];
+            $this->weekend[$portal] = [0.0, 0];
+            $this->overall[$portal] = [0.0, 0];
+            $this->afterWin[$portal] = [0.0, 0];
+        }
+        $this->months = [];
+        $this->closureEnds = 0;
+        $this->lastClosureEnd = null;
+        $this->hours = [];
+        $this->maxQueue = $this->maxWait = null;
+        $this->perDay = [];
+        $this->runStart = $this->runEnd = null;
+        $this->bestRun = null;
+        $this->closures = [];
+        $this->up = [0.0, 0];
+        $this->down = [0.0, 0];
+    }
+
+    /** Convenience wrapper over add()/finish() for callers that already hold all rows. */
     public function compute(array $rows, ?DateTimeImmutable $now = null, array $weather = []): array
     {
-        $now ??= new DateTimeImmutable('now', $this->utc);
-        $pts = $this->prepare($rows);
-
-        return [
-            'generatedAt'  => $now->format(DateTimeInterface::ATOM),
-            'heatmap'      => $this->heatmap($pts),
-            'records'      => $this->records($pts),
-            'asymmetry'    => $this->asymmetry($pts),
-            'minutesPerKm' => $this->minutesPerKm($pts),
-            'closures'     => $this->closures($pts),
-            'jamDynamics'  => $this->jamDynamics($pts),
-            'dataQuality'  => $this->dataQuality($pts),
-            'last7d'       => $this->hourly($pts, $now, 7),
-            'hourly30d'    => $this->hourly($pts, $now, 30),
-            'correlations' => $this->correlations($pts, $weather),
-        ];
+        $this->reset();
+        foreach ($rows as $r) {
+            $this->add($r);
+        }
+        return $this->finish($now, $weather);
     }
 
-    /** @return list<array> normalised points with timestamp + local time parts */
-    private function prepare(array $rows): array
+    /** Stable key for a raw DATEX closure reason (language-independent). */
+    public static function reasonKey(?string $reason): string
     {
-        $pts = [];
-        foreach ($rows as $r) {
-            $dt = new DateTimeImmutable($r['fetched_at'], $this->utc);
-            $local = $dt->setTimezone($this->zurich);
-            $pts[] = [
-                'ts'     => $dt->getTimestamp(),
-                'iso'    => $dt->format(DateTimeInterface::ATOM),
-                'dow'    => (int) $local->format('N') - 1, // 0 = Monday
-                'hour'   => (int) $local->format('G'),
-                'day'    => $local->format('Y-m-d'),
-                'month'  => $local->format('Y-m'),
-                'status' => $r['tunnel_status'] ?? 'unknown',
-                'reason' => $r['closure_reason'] ?? null,
-                'nKm'    => (float) ($r['north_queue_km'] ?? 0),
-                'nWait'  => (float) ($r['north_wait_min'] ?? 0),
-                'sKm'    => (float) ($r['south_queue_km'] ?? 0),
-                'sWait'  => (float) ($r['south_wait_min'] ?? 0),
-            ];
+        $r = strtolower(trim((string) $reason));
+        if ($r === '') {
+            return 'unknown';
         }
-        return $pts;
+        $map = [
+            'roadworks'         => ['baustelle', 'bauarbeiten', 'unterhalt', 'roadworks', 'maintenance'],
+            'special_transport' => ['ausnahmetransport', 'sondertransport', 'special transport', 'abnormal'],
+            'breakdown'         => ['panne', 'bergung', 'breakdown', 'fahrzeug'],
+            'accident'          => ['unfall', 'accident', 'collision'],
+            'fire'              => ['brand', 'feuer', 'fire'],
+        ];
+        foreach ($map as $key => $needles) {
+            foreach ($needles as $n) {
+                if (str_contains($r, $n)) {
+                    return $key;
+                }
+            }
+        }
+        return 'unknown';
     }
 
     private static function avg(float $sum, int $n): ?float
@@ -72,16 +146,168 @@ final class StatsCalculator
         return $n > 0 ? round($sum / $n, 1) : null;
     }
 
-    /** @return array{north: array, south: array} [portal][weekday 0-6][hour 0-23] => avg wait minutes */
-    private function heatmap(array $pts): array
+    /** Feed one snapshot row (oldest first). */
+    public function add(array $r): void
+    {
+        $dt = new DateTimeImmutable($r['fetched_at'], $this->utc);
+        $ts = $dt->getTimestamp();
+        $this->local->setTimestamp($ts);
+        $dow    = (int) $this->local->format('N') - 1; // 0 = Monday
+        $hour   = (int) $this->local->format('G');
+        $day    = $this->local->format('Y-m-d');
+        $month  = $this->local->format('Y-m');
+        $status = $r['tunnel_status'] ?? 'unknown';
+        $reason = $r['closure_reason'] ?? null;
+        $km     = ['north' => (float) ($r['north_queue_km'] ?? 0), 'south' => (float) ($r['south_queue_km'] ?? 0)];
+        $wait   = ['north' => (float) ($r['north_wait_min'] ?? 0), 'south' => (float) ($r['south_wait_min'] ?? 0)];
+        $iso    = $dt->format(DateTimeInterface::ATOM);
+        $closed = $status === 'closed';
+        $prev   = $this->prev;
+        $wasClosed = $prev !== null && $prev['status'] === 'closed';
+
+        // Data quality.
+        $this->count++;
+        $this->firstIso ??= $iso;
+        $this->lastIso = $iso;
+        if ($prev !== null && $ts - $prev['ts'] > self::GAP_SECONDS) {
+            $this->gaps++;
+        }
+
+        // Records: queue/wait peaks and per-day sums.
+        foreach (['north', 'south'] as $portal) {
+            if ($this->maxQueue === null || $km[$portal] > $this->maxQueue['km']) {
+                $this->maxQueue = ['km' => $km[$portal], 'portal' => $portal, 'at' => $iso];
+            }
+            if ($this->maxWait === null || $wait[$portal] > $this->maxWait['minutes']) {
+                $this->maxWait = ['minutes' => (int) $wait[$portal], 'portal' => $portal, 'at' => $iso];
+            }
+        }
+        $this->perDay[$day] = ($this->perDay[$day] ?? 0.0) + $wait['north'] + $wait['south'];
+
+        // Longest stretch with no queue at either portal.
+        if ($km['north'] <= 0 && $km['south'] <= 0) {
+            $this->runStart ??= $ts;
+            $this->runEnd = $ts;
+        } else {
+            $this->flushRun();
+        }
+
+        // Full closures: count at the start, book hours between consecutive closed snapshots.
+        if ($closed) {
+            $key = (string) ($reason ?? 'unbekannt');
+            $this->closures[$key] ??= ['count' => 0, 'seconds' => 0];
+            if (!$wasClosed) {
+                $this->closures[$key]['count']++;
+            } else {
+                $this->closures[$key]['seconds'] += min($ts - $prev['ts'], self::GAP_SECONDS);
+            }
+        }
+        if ($wasClosed && !$closed) {
+            $this->closureEnds++;
+            $this->lastClosureEnd = $ts;
+        }
+
+        // Jam dynamics (step based).
+        if ($prev !== null) {
+            $dtSec = $ts - $prev['ts'];
+            if ($dtSec > 0 && $dtSec <= self::GAP_SECONDS) {
+                foreach (['north' => 'nKm', 'south' => 'sKm'] as $portal => $k) {
+                    $perHour = ($km[$portal] - $prev[$k]) / ($dtSec / 3600);
+                    if ($perHour > 0) {
+                        $this->up[0] += $perHour;
+                        $this->up[1]++;
+                    } elseif ($perHour < 0) {
+                        $this->down[0] += -$perHour;
+                        $this->down[1]++;
+                    }
+                }
+            }
+        }
+
+        // Everything below is a wait-time average: closed snapshots do not count.
+        if (!$closed) {
+            $inWindow = $this->lastClosureEnd !== null && $ts < $this->lastClosureEnd + self::AFTER_CLOSURE_WINDOW;
+            $isWeekend = $dow >= 5;
+
+            $m = &$this->months[$month];
+            $m ??= [0.0, 0.0, 0];
+            $m[0] += $wait['north'];
+            $m[1] += $wait['south'];
+            $m[2]++;
+            unset($m);
+
+            foreach (['north', 'south'] as $portal) {
+                $this->heat[$portal][$dow][$hour][0] += $wait[$portal];
+                $this->heat[$portal][$dow][$hour][1]++;
+                $this->overall[$portal][0] += $wait[$portal];
+                $this->overall[$portal][1]++;
+                if ($isWeekend) {
+                    $this->weekend[$portal][0] += $wait[$portal];
+                    $this->weekend[$portal][1]++;
+                } else {
+                    $this->weekday[$portal][0] += $wait[$portal];
+                    $this->weekday[$portal][1]++;
+                }
+                if ($inWindow) {
+                    $this->afterWin[$portal][0] += $wait[$portal];
+                    $this->afterWin[$portal][1]++;
+                }
+                if ($km[$portal] > 0) {
+                    $this->perKm[$portal][0] += $wait[$portal] / $km[$portal];
+                    $this->perKm[$portal][1]++;
+                }
+            }
+
+            $h = intdiv($ts, 3600) * 3600;
+            $hr = &$this->hours[$h];
+            $hr ??= [0.0, 0, 0.0, 0];
+            $hr[0] += $wait['north'];
+            $hr[1]++;
+            $hr[2] += $wait['south'];
+            $hr[3]++;
+            unset($hr);
+        }
+
+        $this->prev = ['ts' => $ts, 'status' => $status, 'reason' => $reason, 'nKm' => $km['north'], 'sKm' => $km['south']];
+    }
+
+    private function flushRun(): void
+    {
+        if ($this->runStart !== null && ($this->bestRun === null || $this->runEnd - $this->runStart > $this->bestRun['seconds'])) {
+            $this->bestRun = ['seconds' => $this->runEnd - $this->runStart, 'from' => $this->runStart, 'to' => $this->runEnd];
+        }
+        $this->runStart = null;
+        $this->runEnd = null;
+    }
+
+    public function finish(?DateTimeImmutable $now = null, array $weather = []): array
+    {
+        $now ??= new DateTimeImmutable('now', $this->utc);
+        $this->flushRun();
+        ksort($this->hours);
+
+        return [
+            'generatedAt'  => $now->format(DateTimeInterface::ATOM),
+            'heatmap'      => $this->heatmapOut(),
+            'records'      => $this->recordsOut(),
+            'asymmetry'    => $this->asymmetryOut(),
+            'minutesPerKm' => ['north' => self::avg(...$this->perKm['north']), 'south' => self::avg(...$this->perKm['south'])],
+            'closures'     => $this->closuresOut(),
+            'jamDynamics'  => [
+                'buildUpKmPerHour'  => self::avg(...$this->up),
+                'dissolveKmPerHour' => self::avg(...$this->down),
+            ],
+            'dataQuality'  => ['snapshots' => $this->count, 'first' => $this->firstIso, 'last' => $this->lastIso, 'gaps' => $this->gaps],
+            'last7d'       => $this->hourlyOut($now, 7),
+            'hourly30d'    => $this->hourlyOut($now, 30),
+            'correlations' => $this->correlationsOut($weather),
+        ];
+    }
+
+    private function heatmapOut(): array
     {
         $out = [];
-        foreach (['north' => 'nWait', 'south' => 'sWait'] as $portal => $key) {
-            $grid = array_fill(0, 7, array_fill(0, 24, [0.0, 0]));
-            foreach ($pts as $p) {
-                $grid[$p['dow']][$p['hour']][0] += $p[$key];
-                $grid[$p['dow']][$p['hour']][1]++;
-            }
+        foreach ($this->heat as $portal => $grid) {
             $out[$portal] = array_map(
                 fn (array $day) => array_map(fn (array $c) => self::avg($c[0], $c[1]), $day),
                 $grid
@@ -90,53 +316,18 @@ final class StatsCalculator
         return $out;
     }
 
-    private function records(array $pts): array
+    private function recordsOut(): array
     {
-        $maxQueue = null;
-        $maxWait = null;
-        $perDay = [];
-        foreach ($pts as $p) {
-            foreach ([['north', 'nKm', 'nWait'], ['south', 'sKm', 'sWait']] as [$portal, $km, $wait]) {
-                if ($maxQueue === null || $p[$km] > $maxQueue['km']) {
-                    $maxQueue = ['km' => $p[$km], 'portal' => $portal, 'at' => $p['iso']];
-                }
-                if ($maxWait === null || $p[$wait] > $maxWait['minutes']) {
-                    $maxWait = ['minutes' => (int) $p[$wait], 'portal' => $portal, 'at' => $p['iso']];
-                }
-            }
-            $perDay[$p['day']] = ($perDay[$p['day']] ?? 0.0) + $p['nWait'] + $p['sWait'];
-        }
         $worstDay = null;
-        foreach ($perDay as $day => $sum) {
+        foreach ($this->perDay as $day => $sum) {
             if ($worstDay === null || $sum > $worstDay['waitSum']) {
                 $worstDay = ['date' => (string) $day, 'waitSum' => (int) round($sum)];
             }
         }
-
-        // Longest stretch with no queue at either portal.
-        $best = null;
-        $runStart = null;
-        $runEnd = null;
-        $flush = function () use (&$best, &$runStart, &$runEnd): void {
-            if ($runStart !== null && ($best === null || $runEnd - $runStart > $best['seconds'])) {
-                $best = ['seconds' => $runEnd - $runStart, 'from' => $runStart, 'to' => $runEnd];
-            }
-            $runStart = null;
-            $runEnd = null;
-        };
-        foreach ($pts as $p) {
-            if ($p['nKm'] <= 0 && $p['sKm'] <= 0) {
-                $runStart ??= $p['ts'];
-                $runEnd = $p['ts'];
-            } else {
-                $flush();
-            }
-        }
-        $flush();
-
+        $best = $this->bestRun;
         return [
-            'longestQueue'   => $maxQueue,
-            'longestWait'    => $maxWait,
+            'longestQueue'   => $this->maxQueue,
+            'longestWait'    => $this->maxWait,
             'worstDay'       => $worstDay,
             'longestJamFree' => $best === null ? null : [
                 'hours' => round($best['seconds'] / 3600, 1),
@@ -146,15 +337,9 @@ final class StatsCalculator
         ];
     }
 
-    private function asymmetry(array $pts): array
+    private function asymmetryOut(): array
     {
-        $m = [];
-        foreach ($pts as $p) {
-            $m[$p['month']] ??= [0.0, 0.0, 0];
-            $m[$p['month']][0] += $p['nWait'];
-            $m[$p['month']][1] += $p['sWait'];
-            $m[$p['month']][2]++;
-        }
+        $m = $this->months;
         ksort($m);
         $out = [];
         foreach ($m as $month => [$n, $s, $c]) {
@@ -163,148 +348,71 @@ final class StatsCalculator
         return $out;
     }
 
-    private function minutesPerKm(array $pts): array
+    private function closuresOut(): array
     {
         $out = [];
-        foreach (['north' => ['nKm', 'nWait'], 'south' => ['sKm', 'sWait']] as $portal => [$km, $wait]) {
-            $sum = 0.0;
-            $n = 0;
-            foreach ($pts as $p) {
-                if ($p[$km] > 0) {
-                    $sum += $p[$wait] / $p[$km];
-                    $n++;
-                }
-            }
-            $out[$portal] = self::avg($sum, $n);
-        }
-        return $out;
-    }
-
-    private function closures(array $pts): array
-    {
-        $by = [];
-        $prev = null;
-        foreach ($pts as $p) {
-            $closed = $p['status'] === 'closed';
-            $wasClosed = $prev !== null && $prev['status'] === 'closed';
-            $reason = $p['reason'] ?? 'unbekannt';
-            if ($closed && !$wasClosed) {
-                $by[$reason]['count'] = ($by[$reason]['count'] ?? 0) + 1;
-            }
-            if ($closed && $wasClosed) {
-                $dt = min($p['ts'] - $prev['ts'], self::GAP_SECONDS);
-                $by[$reason]['seconds'] = ($by[$reason]['seconds'] ?? 0) + $dt;
-            }
-            $prev = $p;
-        }
-        $out = [];
-        foreach ($by as $reason => $v) {
+        foreach ($this->closures as $reason => $v) {
             $out[] = [
                 'reason' => (string) $reason,
-                'count'  => $v['count'] ?? 0,
-                'hours'  => round(($v['seconds'] ?? 0) / 3600, 1),
+                'key'    => self::reasonKey((string) $reason),
+                'count'  => $v['count'],
+                'hours'  => round($v['seconds'] / 3600, 1),
             ];
         }
         usort($out, fn ($a, $b) => $b['hours'] <=> $a['hours']);
         return $out;
     }
 
-    private function jamDynamics(array $pts): array
-    {
-        $up = [0.0, 0];
-        $down = [0.0, 0];
-        for ($i = 1; $i < count($pts); $i++) {
-            $dt = $pts[$i]['ts'] - $pts[$i - 1]['ts'];
-            if ($dt <= 0 || $dt > self::GAP_SECONDS) {
-                continue;
-            }
-            foreach (['nKm', 'sKm'] as $k) {
-                $perHour = ($pts[$i][$k] - $pts[$i - 1][$k]) / ($dt / 3600);
-                if ($perHour > 0) {
-                    $up[0] += $perHour;
-                    $up[1]++;
-                } elseif ($perHour < 0) {
-                    $down[0] += -$perHour;
-                    $down[1]++;
-                }
-            }
-        }
-        return [
-            'buildUpKmPerHour'  => self::avg($up[0], $up[1]),
-            'dissolveKmPerHour' => self::avg($down[0], $down[1]),
-        ];
-    }
-
-    private function dataQuality(array $pts): array
-    {
-        $gaps = 0;
-        for ($i = 1; $i < count($pts); $i++) {
-            if ($pts[$i]['ts'] - $pts[$i - 1]['ts'] > self::GAP_SECONDS) {
-                $gaps++;
-            }
-        }
-        return [
-            'snapshots' => count($pts),
-            'first'     => $pts ? $pts[0]['iso'] : null,
-            'last'      => $pts ? $pts[count($pts) - 1]['iso'] : null,
-            'gaps'      => $gaps,
-        ];
-    }
-
-    /** Hourly average wait per portal for the last $days days (forecast vs reality, weather correlation). */
-    private function hourly(array $pts, DateTimeImmutable $now, int $days): array
+    /** Hourly average wait per portal for the last $days days (forecast vs reality). */
+    private function hourlyOut(DateTimeImmutable $now, int $days): array
     {
         $from = $now->getTimestamp() - $days * 86400;
-        $acc = [];
-        foreach ($pts as $p) {
-            if ($p['ts'] < $from) {
+        $out = [];
+        foreach ($this->hours as $h => [$ns, $nn, $ss, $sn]) {
+            if ($h + 3600 <= $from) {
                 continue;
             }
-            $key = gmdate('Y-m-d\TH:00:00\Z', $p['ts']);
-            $acc[$key] ??= [0.0, 0.0, 0];
-            $acc[$key][0] += $p['nWait'];
-            $acc[$key][1] += $p['sWait'];
-            $acc[$key][2]++;
-        }
-        ksort($acc);
-        $out = [];
-        foreach ($acc as $hour => [$n, $s, $c]) {
-            $out[] = ['t' => (string) $hour, 'north' => self::avg($n, $c), 'south' => self::avg($s, $c)];
+            $out[] = ['t' => gmdate('Y-m-d\TH:00:00\Z', $h), 'north' => self::avg($ns, $nn), 'south' => self::avg($ss, $sn)];
         }
         return $out;
     }
 
     // ─── Correlations ────────────────────────────────────────────────────────
 
-    /**
-     * @param list<array> $pts      prepared snapshot points
-     * @param list<array> $weather  rows of gotthard_weather (observed_at, portal,
-     *                              temperature_c, precipitation_mm, snowfall_cm)
-     */
-    private function correlations(array $pts, array $weather): array
+    private function correlationsOut(array $weather): array
     {
-        $north = $this->hourlySeries($pts, 'nWait');
-        $south = $this->hourlySeries($pts, 'sWait');
+        $north = [];
+        $south = [];
+        foreach ($this->hours as $h => [$ns, $nn, $ss, $sn]) {
+            $north[$h] = $ns / $nn;
+            $south[$h] = $ss / $sn;
+        }
+
+        $weekend = [];
+        $after = [];
+        foreach (['north', 'south'] as $portal) {
+            $w = self::avg(...$this->weekday[$portal]);
+            $e = self::avg(...$this->weekend[$portal]);
+            $weekend[$portal] = [
+                'weekday' => $w,
+                'weekend' => $e,
+                'ratio'   => ($w !== null && $w > 0 && $e !== null) ? round($e / $w, 2) : null,
+            ];
+            $a = self::avg(...$this->afterWin[$portal]);
+            $o = self::avg(...$this->overall[$portal]);
+            $after[$portal] = [
+                'afterAvg'   => $a,
+                'overallAvg' => $o,
+                'ratio'      => ($a !== null && $o !== null && $o > 0) ? round($a / $o, 2) : null,
+            ];
+        }
 
         return [
             'northSouth'   => $this->northSouth($north, $south),
             'weather'      => $this->weatherCorrelations($north, $south, $weather),
-            'weekend'      => $this->weekendEffect($pts),
-            'afterClosure' => $this->afterClosure($pts),
+            'weekend'      => $weekend,
+            'afterClosure' => ['events' => $this->closureEnds] + $after,
         ];
-    }
-
-    /** @return array<int, float> UTC hour start (unix ts) => mean wait in that hour */
-    private function hourlySeries(array $pts, string $key): array
-    {
-        $acc = [];
-        foreach ($pts as $p) {
-            $h = intdiv($p['ts'], 3600) * 3600;
-            $acc[$h] ??= [0.0, 0];
-            $acc[$h][0] += $p[$key];
-            $acc[$h][1]++;
-        }
-        return array_map(static fn (array $a): float => $a[0] / $a[1], $acc);
     }
 
     /**
@@ -414,66 +522,4 @@ final class StatsCalculator
         return $out;
     }
 
-    /** Average wait on weekdays vs weekends (Swiss local days), per portal. */
-    private function weekendEffect(array $pts): array
-    {
-        $out = [];
-        foreach (['north' => 'nWait', 'south' => 'sWait'] as $portal => $key) {
-            $wk = [0.0, 0];
-            $we = [0.0, 0];
-            foreach ($pts as $p) {
-                if ($p['dow'] >= 5) {
-                    $we[0] += $p[$key];
-                    $we[1]++;
-                } else {
-                    $wk[0] += $p[$key];
-                    $wk[1]++;
-                }
-            }
-            $w = self::avg($wk[0], $wk[1]);
-            $e = self::avg($we[0], $we[1]);
-            $out[$portal] = [
-                'weekday' => $w,
-                'weekend' => $e,
-                'ratio'   => ($w !== null && $w > 0 && $e !== null) ? round($e / $w, 2) : null,
-            ];
-        }
-        return $out;
-    }
-
-    /** Average wait in the 3 hours after a full closure ends, vs the overall average. */
-    private function afterClosure(array $pts): array
-    {
-        $window = 3 * 3600;
-        $ends = [];
-        for ($i = 1; $i < count($pts); $i++) {
-            if ($pts[$i - 1]['status'] === 'closed' && $pts[$i]['status'] !== 'closed') {
-                $ends[] = $pts[$i]['ts'];
-            }
-        }
-        $out = ['events' => count($ends)];
-        foreach (['north' => 'nWait', 'south' => 'sWait'] as $portal => $key) {
-            $all = [0.0, 0];
-            $after = [0.0, 0];
-            foreach ($pts as $p) {
-                $all[0] += $p[$key];
-                $all[1]++;
-                foreach ($ends as $e) {
-                    if ($p['ts'] >= $e && $p['ts'] < $e + $window) {
-                        $after[0] += $p[$key];
-                        $after[1]++;
-                        break;
-                    }
-                }
-            }
-            $a = self::avg($after[0], $after[1]);
-            $o = self::avg($all[0], $all[1]);
-            $out[$portal] = [
-                'afterAvg' => $a,
-                'overallAvg' => $o,
-                'ratio' => ($a !== null && $o !== null && $o > 0) ? round($a / $o, 2) : null,
-            ];
-        }
-        return $out;
-    }
 }

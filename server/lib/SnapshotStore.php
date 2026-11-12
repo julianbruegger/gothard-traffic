@@ -109,4 +109,39 @@ final class SnapshotStore
         $stmt->execute();
         return $stmt->fetchAll();
     }
+
+    /**
+     * Streaming variant of statsRows(): yields the same rows oldest-first but
+     * reads them in chunks of $chunk by primary key, so memory stays flat no
+     * matter how long the history grows. Works on any MySQL/MariaDB (no
+     * unbuffered-query tricks).
+     *
+     * @return Generator<int, array>
+     */
+    public function iterateStatsRows(int $days = 365, int $chunk = 10000): Generator
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT id, fetched_at, tunnel_status, closure_reason,
+                    north_queue_km, north_wait_min,
+                    south_queue_km, south_wait_min
+               FROM gotthard_snapshots
+              WHERE id > :last
+                AND fetched_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL :days DAY)
+              ORDER BY id ASC
+              LIMIT :lim'
+        );
+        $last = 0;
+        do {
+            $stmt->bindValue(':last', $last, PDO::PARAM_INT);
+            $stmt->bindValue(':days', $days, PDO::PARAM_INT);
+            $stmt->bindValue(':lim', $chunk, PDO::PARAM_INT);
+            $stmt->execute();
+            $rows = $stmt->fetchAll();
+            foreach ($rows as $row) {
+                $last = (int) $row['id'];
+                unset($row['id']);
+                yield $row;
+            }
+        } while (count($rows) === $chunk);
+    }
 }

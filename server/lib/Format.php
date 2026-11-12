@@ -50,6 +50,18 @@ final class Format
         return round($min) . ' ' . I18n::t($lang, 'portal.minutes');
     }
 
+    /** Mirrors format.ts formatWait(): a known empty queue reads "0 Min", unknown stays a dash. */
+    public static function wait(?float $queueKm, ?int $min, string $lang): string
+    {
+        if ($min !== null && $min > 0) {
+            return self::minutes($min, $lang);
+        }
+        if ($queueKm !== null && $queueKm <= 0) {
+            return '0 ' . I18n::t($lang, 'portal.minutes');
+        }
+        return '–';
+    }
+
     public static function statusLabel(string $status, string $lang): string
     {
         return match ($status) {

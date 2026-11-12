@@ -69,7 +69,7 @@ final class Ssr
             $cause = trim((string) ($portal['cause'] ?? ''));
 
             $html = self::replaceMarker($html, "{$side}-queue", Format::km($queue, $lang));
-            $html = self::replaceMarker($html, "{$side}-wait", Format::minutes($wait, $lang));
+            $html = self::replaceMarker($html, "{$side}-wait", Format::wait($queue, $wait, $lang));
             // The static build bakes no trend (no history); never leave one behind.
             $html = self::replaceMarker($html, "{$side}-trend", '');
             $html = self::setHidden($html, "{$side}-trend", true);

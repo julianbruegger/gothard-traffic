@@ -107,28 +107,53 @@ final class Ssr
     /** Adds or removes the boolean `hidden` attribute on the element with the given id (no-op if absent). */
     private static function setHidden(string $html, string $id, bool $hidden): string
     {
-        $pattern = '/<[a-zA-Z0-9]+\s+[^>]*\bid="' . preg_quote($id, '/') . '"[^>]*>/s';
-        return preg_replace_callback($pattern, static function (array $m) use ($hidden): string {
-            $tag = preg_replace('/\s+hidden(?:=""|="hidden")?(?=[\s>\/])/', '', $m[0]) ?? $m[0];
-            if ($hidden) {
-                $tag = preg_replace('/(\s*\/?>)$/', ' hidden$1', $tag, 1) ?? $tag;
-            }
-            return $tag;
-        }, $html, 1) ?? $html;
+        return self::withTag($html, $id, static fn (string $tag): string => self::setTagAttr($tag, 'hidden', $hidden ? '' : null, true));
     }
 
     private static function setStyleWidth(string $html, string $id, float $percent): string
     {
-        $pattern = '/<[a-zA-Z0-9]+\s+[^>]*\bid="' . preg_quote($id, '/') . '"[^>]*>/s';
         $style = 'width:' . rtrim(rtrim(number_format($percent, 1, '.', ''), '0'), '.') . '%';
         $style = $style === 'width:%' ? 'width:0%' : $style;
-        return preg_replace_callback($pattern, static function (array $m) use ($style): string {
-            $tag = $m[0];
-            if (preg_match('/\sstyle="[^"]*"/', $tag)) {
-                return preg_replace('/\sstyle="[^"]*"/', ' style="' . $style . '"', $tag, 1) ?? $tag;
-            }
-            return preg_replace('/(\s*\/?>)$/', ' style="' . $style . '"$1', $tag, 1) ?? $tag;
-        }, $html, 1) ?? $html;
+        return self::withTag($html, $id, static fn (string $tag): string => self::setTagAttr($tag, 'style', $style));
+    }
+
+    /** Applies $fn to the (first) start tag carrying id="$id"; no-op if absent. */
+    private static function withTag(string $html, string $id, callable $fn): string
+    {
+        $pattern = '/<[a-zA-Z][a-zA-Z0-9-]*\s[^>]*(?<=\s)id="' . preg_quote($id, '/') . '"[^>]*>/s';
+        return preg_replace_callback($pattern, static fn (array $m): string => $fn($m[0]), $html, 1) ?? $html;
+    }
+
+    /**
+     * Sets ($value string) or removes ($value null) one attribute of a single
+     * start tag. Matches every serialisation of it: attr="x", attr='x', attr=x
+     * and the bare/boolean form `attr` that Astro's compressHTML emits for empty
+     * values (e.g. `<time datetime>`). The first occurrence is replaced in place,
+     * any further duplicates are dropped; quoted values of other attributes are
+     * consumed whole, so text inside them can never match.
+     */
+    private static function setTagAttr(string $tag, string $attr, ?string $value, bool $bare = false): string
+    {
+        $render = ' ' . $attr . ($bare ? '' : '="' . htmlspecialchars((string) $value, ENT_QUOTES) . '"');
+        $done = false;
+        $tag = preg_replace_callback(
+            '/\s+([^\s"\'>\/=]+)(?:\s*=\s*(?:"[^"]*"|\'[^\']*\'|[^\s"\'=<>`]+))?/',
+            static function (array $m) use ($attr, $value, $render, &$done): string {
+                if (strcasecmp($m[1], $attr) !== 0) {
+                    return $m[0];
+                }
+                if ($value === null || $done) {
+                    return '';
+                }
+                $done = true;
+                return $render;
+            },
+            $tag,
+        ) ?? $tag;
+        if ($value !== null && !$done) {
+            $tag = preg_replace_callback('/\s*(\/?>)$/', static fn (array $m): string => $render . $m[1], $tag, 1) ?? $tag;
+        }
+        return $tag;
     }
 
     /** Fills the planned-closures banner (escaped) and toggles its `hidden` attribute. */
@@ -160,15 +185,7 @@ final class Ssr
 
     private static function replaceAttr(string $html, string $id, string $attr, string $value): string
     {
-        $pattern = '/(<[a-zA-Z0-9]+\s+[^>]*\bid="' . preg_quote($id, '/') . '"[^>]*>)/s';
-        return preg_replace_callback($pattern, static function (array $m) use ($attr, $value): string {
-            $tag = $m[1];
-            $escaped = htmlspecialchars($value, ENT_QUOTES);
-            if (preg_match('/\b' . preg_quote($attr, '/') . '="[^"]*"/', $tag)) {
-                return preg_replace('/\b' . preg_quote($attr, '/') . '="[^"]*"/', $attr . '="' . $escaped . '"', $tag, 1);
-            }
-            return preg_replace('/>$/', ' ' . $attr . '="' . $escaped . '">', $tag, 1);
-        }, $html, 1) ?? $html;
+        return self::withTag($html, $id, static fn (string $tag): string => self::setTagAttr($tag, $attr, $value));
     }
 
     private static function replaceMeta(string $html, string $key, string $value): string

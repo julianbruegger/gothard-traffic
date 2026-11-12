@@ -14,6 +14,7 @@ import {
   fitObservedModel,
   observedDayProfiles,
   observedDays,
+  type ObservedDay,
   type ObservedModel,
 } from './observed-model';
 
@@ -214,7 +215,7 @@ export function idxToWaitMinutes(idx: number, minPerKm = 9): number {
 }
 
 /** ASTRA's delay per km of queue (Zeitverlust = 10 min × Länge). */
-const ASTRA_MIN_PER_KM = 10;
+export const ASTRA_MIN_PER_KM = 10;
 
 // ─── Day/date labels ──────────────────────────────────────────────────────────
 
@@ -284,7 +285,13 @@ export function calendarLevelOf(isoDate: string): { n: number; s: number } {
  * fitted once at load. null when there is too little data, in which case the
  * TCS-based empirical profiles and then the hand-tuned curves take over.
  */
-export const OBSERVED_MODEL: ObservedModel | null = fitObservedModel(observedDays, calendarLevelOf);
+export let OBSERVED_MODEL: ObservedModel | null = fitObservedModel(observedDays, calendarLevelOf);
+
+/** Refit the measured model on fresher days (the runtime copy from api/observed.php). */
+export function setObservedDays(days: ObservedDay[]): void {
+  const model = fitObservedModel(days, calendarLevelOf);
+  if (model) OBSERVED_MODEL = model;
+}
 
 // Busy-day multiplier for the hand-tuned fallback model (when a weekday has no
 // empirical profile). The data-driven path uses measured per-weekday ratios.

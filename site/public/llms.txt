@@ -15,8 +15,6 @@ Free to quote with attribution and a link to https://gotthard.jubr.app/.
 - Historic statistics, English: https://gotthard.jubr.app/en/statistics
 - Nerd Mode (365-day data, records, minutes per km, closures, weather), German: https://gotthard.jubr.app/nerd
 - Nerd Mode, English: https://gotthard.jubr.app/en/nerd
-- Privacy notice and imprint, German: https://gotthard.jubr.app/privacy
-- Privacy notice and imprint, English: https://gotthard.jubr.app/en/privacy
 
 ## Machine-readable data
 - Current status (JSON, updated about every 3 minutes): https://gotthard.jubr.app/api/gotthard.php
@@ -50,9 +48,6 @@ The history endpoint returns an array of points:
 { "t": "<ISO 8601>", "northQueueKm": <number|null>, "southQueueKm": <number|null>,
   "northWaitMinutes": <number|null>, "southWaitMinutes": <number|null>, "status": "<tunnel status>" }
 ```
-
-## Reuse
-The JSON endpoints above are public and read-only. Reuse is welcome with attribution and a link to https://gotthard.jubr.app/. Please cache responses and poll no more than about once a minute. No guarantee of availability or accuracy. Details: https://gotthard.jubr.app/en/privacy
 
 ## Data source
 Traffic situations are sourced from the ASTRA / opentransportdata.swiss "Traffic Situations" open data feed: https://opentransportdata.swiss/en/road-traffic/

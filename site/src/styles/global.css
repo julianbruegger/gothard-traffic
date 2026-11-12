@@ -10,7 +10,7 @@
 
 :root {
   color-scheme: light;
-  --font-sans: 'Roboto Flex Variable', 'Roboto Flex', Roboto, system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-sans: Roboto, system-ui, -apple-system, 'Segoe UI', sans-serif;
 
   --md-primary: #36618e;
   --md-on-primary: #ffffff;
@@ -309,10 +309,6 @@ main { display: block; }
   padding: 12px 16px; border-radius: var(--radius-m);
   background: var(--md-sc-low); font-size: 14px; line-height: 20px;
 }
-.privacy .section p, .privacy .section h3 { margin: 0; max-width: 760px; }
-.privacy .section p { font-size: 14px; line-height: 21px; }
-.privacy .section h3 { font-size: 16px; font-weight: 600; }
-.privacy-list { margin: 0; padding-left: 20px; display: flex; flex-direction: column; gap: 8px; font-size: 14px; line-height: 20px; }
 .callout .icon { color: var(--md-primary); margin-top: 1px; }
 
 /* ── Chips, segmented buttons ──────────────────────────────────────────── */

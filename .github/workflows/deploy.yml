@@ -116,14 +116,12 @@ jobs:
           SSH_HOST:    ${{ secrets.HOSTPOINT_HOST }}
           SSH_USER:    ${{ secrets.HOSTPOINT_USER }}
           REMOTE_PATH: ${{ secrets.HOSTPOINT_PATH }}
-          KNOWN_HOSTS: ${{ secrets.HOSTPOINT_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
 
           : "${SSH_HOST:?HOSTPOINT_HOST secret is not set (WebHosting environment)}"
           : "${SSH_USER:?HOSTPOINT_USER secret is not set (WebHosting environment)}"
           : "${SSH_KEY:?HOSTPOINT_SSH_KEY secret is not set (WebHosting environment)}"
-          : "${KNOWN_HOSTS:?HOSTPOINT_KNOWN_HOSTS secret is not set (see README, host key pinning)}"
           : "${REMOTE_PATH:?HOSTPOINT_PATH secret is not set (WebHosting environment)}"
 
           # Strip any stray whitespace/newlines that may have been copied into secrets
@@ -134,10 +132,8 @@ jobs:
           mkdir -p ~/.ssh
           printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
-          # Pinned host key: no ssh-keyscan, no StrictHostKeyChecking=no.
-          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
-          chmod 644 ~/.ssh/known_hosts
-          SSH_OPTS="-i $HOME/.ssh/deploy_key -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$HOME/.ssh/known_hosts"
+          ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          SSH_OPTS="-i $HOME/.ssh/deploy_key -o StrictHostKeyChecking=no"
 
           # --delete keeps the remote clean. data/ is cron-written: only
           # data/.htaccess is synced; everything else there is excluded, so

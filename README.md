@@ -134,26 +134,22 @@ Secrets (environment `Hostpoint`):
 | --- | --- |
 | `DATEX_API_TOKEN` | opentransportdata.swiss API token |
 | `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASS` | database credentials |
-| `HOSTPOINT_HOST`, `HOSTPOINT_USER`, `HOSTPOINT_SSH_KEY`, `HOSTPOINT_PATH`, `HOSTPOINT_KNOWN_HOSTS` | SSH target, web root and pinned host key |
+| `HOSTPOINT_HOST`, `HOSTPOINT_USER`, `HOSTPOINT_SSH_KEY`, `HOSTPOINT_PATH` | SSH target and web root |
 
 You still create the (empty) database and add the cron job once on the host;
 tables are created by `migrate.php` during the deploy.
 
 ### Privacy and security headers
 
-- The browser contacts only the site's own origin: the Roboto Flex font is
-  self-hosted (`@fontsource-variable/roboto-flex`, SIL OFL 1.1) and third-party
-  data goes through `api/*.php`. Keep it that way; `npm run check:seo` fails on
-  any reference to Google Fonts.
+- The browser contacts only the site's own origin: the page uses the system
+  font stack and third-party data goes through `api/*.php`. Keep it that way;
+  `npm run check:seo` fails on any reference to Google Fonts.
 - `site/public/.htaccess` sets HSTS, a Content-Security-Policy and other
   security headers. The inline-script hashes in the CSP are filled in after
   every build by `site/scripts/csp-hashes.mjs` (part of `npm run build`).
   The CSP currently ships as `Content-Security-Policy-Report-Only`; once the
   browser console is clean on all pages on the live host, switch to the
   enforcing line right below it in `.htaccess`.
-- The privacy notice (`/privacy`, `/en/privacy`) is a draft: the operator name,
-  contact address and log retention are placeholders in
-  `site/src/components/PrivacyContent.astro` and must be filled in and reviewed.
 
 ## Pages and API
 

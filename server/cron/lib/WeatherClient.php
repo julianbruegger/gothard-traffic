@@ -26,7 +26,42 @@ final class WeatherClient
     }
 
     /**
-     * Current conditions for every portal.
+     * The last few COMPLETED hours (full-hour sums, UTC) for every portal.
+     * Replaces fetchCurrent(), whose "current" block is a 15-minute interval
+     * and would store a quarter of the hourly precipitation/snowfall.
+     *
+     * @return array<string, list<array{observedAt: string, temperature: ?float, precipitation: ?float, snowfall: ?float, weatherCode: ?int}>>
+     */
+    public function fetchRecentHours(int $hours = 3): array
+    {
+        $out = [];
+        foreach (self::PORTALS as $portal => $c) {
+            $json = $this->get(self::BASE . '?latitude=' . $c['lat'] . '&longitude=' . $c['lon']
+                . '&hourly=temperature_2m,precipitation,snowfall,weather_code&past_hours=' . max(1, min(24, $hours))
+                . '&forecast_hours=0&timezone=UTC');
+            $out[$portal] = self::completedHours(self::parseHourly($json), gmdate('Y-m-d H:00:00'));
+        }
+        return $out;
+    }
+
+    /**
+     * Keep only hours strictly before $currentHour ("Y-m-d H:00:00", UTC): the
+     * current hour is unfinished and anything later is a forecast.
+     *
+     * @param list<array{observedAt: string}> $rows
+     * @return list<array{observedAt: string, temperature: ?float, precipitation: ?float, snowfall: ?float, weatherCode: ?int}>
+     */
+    public static function completedHours(array $rows, string $currentHour): array
+    {
+        return array_values(array_filter(
+            $rows,
+            static fn (array $r): bool => $r['observedAt'] < $currentHour
+        ));
+    }
+
+    /**
+     * Current conditions for every portal (15-minute values: do NOT store the
+     * precipitation/snowfall of this as an hourly sum).
      *
      * @return array<string, array{observedAt: string, temperature: ?float, precipitation: ?float, snowfall: ?float, weatherCode: ?int}>
      */

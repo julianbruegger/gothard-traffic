@@ -51,7 +51,10 @@ function send_alert(array $config, string $subject, string $body): void
     @mail($to, '[gotthard-traffic] ' . $subject, $body, $headers);
 }
 
-// One-off: `php fetch-traffic.php --backfill-weather` loads the last 90 days of
+// One-off repair (#52): older live weather rows hold 15-minute sums labelled as
+// hours. Re-run `php cron/fetch-traffic.php --backfill-weather` once to
+// overwrite the last 90 days with real hourly sums.
+// `php fetch-traffic.php --backfill-weather` loads the last 90 days of
 // hourly weather (Open-Meteo keeps ~3 months) so history starts before the
 // collector began storing it.
 if ($backfillWeather) {
@@ -140,14 +143,17 @@ try {
     if (($config['weather_enabled'] ?? true)) {
         try {
             $weatherStore = new WeatherStore($pdo);
-            $hour = gmdate('Y-m-d H:00:00');
-            if (!$weatherStore->hasHour($hour)) {
-                foreach ((new WeatherClient($config))->fetchCurrent() as $portal => $w) {
+            // Upsert the last completed hours every run (idempotent): late model
+            // corrections overwrite earlier values and a missed hour gets filled.
+            $n = 0;
+            foreach ((new WeatherClient($config))->fetchRecentHours(3) as $portal => $rows) {
+                foreach ($rows as $w) {
                     $weatherStore->upsert($portal, $w);
+                    $n++;
                 }
-                if ($debug) {
-                    fwrite(STDOUT, "Weather stored for {$hour}.\n");
-                }
+            }
+            if ($debug) {
+                fwrite(STDOUT, "Weather upserted: {$n} portal-hour(s).\n");
             }
         } catch (Throwable $e) {
             @file_put_contents($errorLogPath, '[' . iso_now() . '] weather: ' . $e->getMessage() . "\n", FILE_APPEND);

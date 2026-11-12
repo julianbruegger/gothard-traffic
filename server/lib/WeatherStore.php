@@ -64,4 +64,34 @@ final class WeatherStore
         $stmt->execute();
         return $stmt->fetchAll();
     }
+
+    /**
+     * Latest stored observation per portal (not in the future).
+     *
+     * @return array<string, array{observedAt: string, temperature: ?float, precipitation: ?float, snowfall: ?float}>
+     */
+    public function latestPerPortal(): array
+    {
+        $out = [];
+        $stmt = $this->pdo->prepare(
+            'SELECT observed_at, temperature_c, precipitation_mm, snowfall_cm
+               FROM gotthard_weather
+              WHERE portal = :portal AND observed_at <= UTC_TIMESTAMP()
+              ORDER BY observed_at DESC
+              LIMIT 1'
+        );
+        foreach (['north', 'south'] as $portal) {
+            $stmt->execute([':portal' => $portal]);
+            $r = $stmt->fetch();
+            if ($r) {
+                $out[$portal] = [
+                    'observedAt'    => (new DateTimeImmutable($r['observed_at'], new DateTimeZone('UTC')))->format(DateTimeInterface::ATOM),
+                    'temperature'   => $r['temperature_c'] !== null ? (float) $r['temperature_c'] : null,
+                    'precipitation' => $r['precipitation_mm'] !== null ? (float) $r['precipitation_mm'] : null,
+                    'snowfall'      => $r['snowfall_cm'] !== null ? (float) $r['snowfall_cm'] : null,
+                ];
+            }
+        }
+        return $out;
+    }
 }

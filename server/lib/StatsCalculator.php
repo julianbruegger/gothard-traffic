@@ -35,7 +35,7 @@ final class StatsCalculator
     private ?string $lastIso = null;
     private int $gaps = 0;
 
-    /** @var array{ts: int, status: string, reason: ?string, nKm: float, sKm: float}|null */
+    /** @var array{ts: int, day: string, status: string, reason: ?string, nKm: float, sKm: float, nWait: float, sWait: float}|null */
     private ?array $prev = null;
 
     /** @var array<string, array<int, array<int, array{0: float, 1: int}>>> portal => dow => hour => [sum, n] */
@@ -60,17 +60,24 @@ final class StatsCalculator
 
     private ?array $maxQueue = null;
     private ?array $maxWait = null;
-    /** @var array<string, float> */
-    private array $perDay = [];
+    /** @var array<string, int> Swiss day => seconds with a queue at either portal */
+    private array $queueSeconds = [];
+    private ?string $prevDay = null;
     private ?int $runStart = null;
     private ?int $runEnd = null;
     private ?array $bestRun = null;
 
     /** @var array<string, array{count: int, seconds: int}> */
     private array $closures = [];
+    /** Open closure episode: [seconds, lastNonNullReason] or null. */
+    private ?array $closureEp = null;
 
-    private array $up = [0.0, 0];
-    private array $down = [0.0, 0];
+    /** @var array<string, ?array> portal => open queue episode [startTs, startKm, peakKm, peakTs, lastTs, lastKm] */
+    private array $episode = ['north' => null, 'south' => null];
+    /** @var list<float> */
+    private array $buildRates = [];
+    /** @var list<float> */
+    private array $dissolveRates = [];
 
     public function __construct()
     {
@@ -99,12 +106,15 @@ final class StatsCalculator
         $this->lastClosureEnd = null;
         $this->hours = [];
         $this->maxQueue = $this->maxWait = null;
-        $this->perDay = [];
+        $this->queueSeconds = [];
+        $this->prevDay = null;
         $this->runStart = $this->runEnd = null;
         $this->bestRun = null;
         $this->closures = [];
-        $this->up = [0.0, 0];
-        $this->down = [0.0, 0];
+        $this->closureEp = null;
+        $this->episode = ['north' => null, 'south' => null];
+        $this->buildRates = [];
+        $this->dissolveRates = [];
     }
 
     /** Convenience wrapper over add()/finish() for callers that already hold all rows. */
@@ -173,16 +183,24 @@ final class StatsCalculator
             $this->gaps++;
         }
 
-        // Records: queue/wait peaks and per-day sums.
-        foreach (['north', 'south'] as $portal) {
-            if ($this->maxQueue === null || $km[$portal] > $this->maxQueue['km']) {
-                $this->maxQueue = ['km' => $km[$portal], 'portal' => $portal, 'at' => $iso];
+        // Records: a peak only counts if it shows in two consecutive snapshots of
+        // the same portal, so one mis-parsed snapshot cannot hold a record.
+        if ($prev !== null && $ts - $prev['ts'] <= self::GAP_SECONDS) {
+            foreach (['north' => ['nKm', 'nWait'], 'south' => ['sKm', 'sWait']] as $portal => [$kk, $wk]) {
+                $q = min($km[$portal], $prev[$kk]);
+                if ($this->maxQueue === null || $q > $this->maxQueue['km']) {
+                    $this->maxQueue = ['km' => $q, 'portal' => $portal, 'at' => gmdate(DateTimeInterface::ATOM, $prev['ts'])];
+                }
+                $w = min($wait[$portal], $prev[$wk]);
+                if ($this->maxWait === null || $w > $this->maxWait['minutes']) {
+                    $this->maxWait = ['minutes' => (int) $w, 'portal' => $portal, 'at' => gmdate(DateTimeInterface::ATOM, $prev['ts'])];
+                }
             }
-            if ($this->maxWait === null || $wait[$portal] > $this->maxWait['minutes']) {
-                $this->maxWait = ['minutes' => (int) $wait[$portal], 'portal' => $portal, 'at' => $iso];
+            // Queue hours per Swiss day: time between two snapshots with a queue, booked to the earlier one's day.
+            if ($prev['nKm'] > 0 || $prev['sKm'] > 0) {
+                $this->queueSeconds[$prev['day']] = ($this->queueSeconds[$prev['day']] ?? 0) + ($ts - $prev['ts']);
             }
         }
-        $this->perDay[$day] = ($this->perDay[$day] ?? 0.0) + $wait['north'] + $wait['south'];
 
         // Longest stretch with no queue at either portal.
         if ($km['north'] <= 0 && $km['south'] <= 0) {
@@ -192,36 +210,27 @@ final class StatsCalculator
             $this->flushRun();
         }
 
-        // Full closures: count at the start, book hours between consecutive closed snapshots.
+        // Full closures: one episode = one count, booked under the last known reason.
         if ($closed) {
-            $key = (string) ($reason ?? 'unbekannt');
-            $this->closures[$key] ??= ['count' => 0, 'seconds' => 0];
-            if (!$wasClosed) {
-                $this->closures[$key]['count']++;
-            } else {
-                $this->closures[$key]['seconds'] += min($ts - $prev['ts'], self::GAP_SECONDS);
+            if ($this->closureEp === null) {
+                $this->closureEp = [0, null];
+            } elseif ($wasClosed) {
+                $this->closureEp[0] += min($ts - $prev['ts'], self::GAP_SECONDS);
             }
+            if ($reason !== null && $reason !== '') {
+                $this->closureEp[1] = (string) $reason;
+            }
+        } elseif ($this->closureEp !== null) {
+            $this->closeClosure();
         }
         if ($wasClosed && !$closed) {
             $this->closureEnds++;
             $this->lastClosureEnd = $ts;
         }
 
-        // Jam dynamics (step based).
-        if ($prev !== null) {
-            $dtSec = $ts - $prev['ts'];
-            if ($dtSec > 0 && $dtSec <= self::GAP_SECONDS) {
-                foreach (['north' => 'nKm', 'south' => 'sKm'] as $portal => $k) {
-                    $perHour = ($km[$portal] - $prev[$k]) / ($dtSec / 3600);
-                    if ($perHour > 0) {
-                        $this->up[0] += $perHour;
-                        $this->up[1]++;
-                    } elseif ($perHour < 0) {
-                        $this->down[0] += -$perHour;
-                        $this->down[1]++;
-                    }
-                }
-            }
+        // Jam dynamics: per continuous queue episode, not per step.
+        foreach (['north', 'south'] as $portal) {
+            $this->trackEpisode($portal, $ts, $km[$portal]);
         }
 
         // Everything below is a wait-time average: closed snapshots do not count.
@@ -268,7 +277,75 @@ final class StatsCalculator
             unset($hr);
         }
 
-        $this->prev = ['ts' => $ts, 'status' => $status, 'reason' => $reason, 'nKm' => $km['north'], 'sKm' => $km['south']];
+        $this->prev = [
+            'ts' => $ts, 'day' => $day, 'status' => $status, 'reason' => $reason,
+            'nKm' => $km['north'], 'sKm' => $km['south'], 'nWait' => $wait['north'], 'sWait' => $wait['south'],
+        ];
+    }
+
+    private function closeClosure(): void
+    {
+        if ($this->closureEp === null) {
+            return;
+        }
+        $key = $this->closureEp[1] ?? 'unbekannt';
+        $this->closures[$key] ??= ['count' => 0, 'seconds' => 0];
+        $this->closures[$key]['count']++;
+        $this->closures[$key]['seconds'] += $this->closureEp[0];
+        $this->closureEp = null;
+    }
+
+    /** Advance the queue episode of one portal; closes it (and records rates) when the queue ends or data gaps. */
+    private function trackEpisode(string $portal, int $ts, float $km): void
+    {
+        $ep = $this->episode[$portal];
+        if ($ep !== null && $ts - $ep[4] > self::GAP_SECONDS) {
+            $this->closeEpisode($ep, $ep[4], $ep[5]);
+            $ep = null;
+        }
+        if ($km > 0) {
+            if ($ep === null) {
+                $ep = [$ts, $km, $km, $ts, $ts, $km];
+            } else {
+                if ($km > $ep[2]) {
+                    $ep[2] = $km;
+                    $ep[3] = $ts;
+                }
+                $ep[4] = $ts;
+                $ep[5] = $km;
+            }
+        } elseif ($ep !== null) {
+            $this->closeEpisode($ep, $ts, 0.0);
+            $ep = null;
+        }
+        $this->episode[$portal] = $ep;
+    }
+
+    /** @param array{0: int, 1: float, 2: float, 3: int, 4: int, 5: float} $ep */
+    private function closeEpisode(array $ep, int $endTs, float $endKm): void
+    {
+        [$startTs, $startKm, $peakKm, $peakTs] = $ep;
+        if ($ep[4] <= $startTs) {
+            return; // seen in a single snapshot: no duration to measure
+        }
+        if ($peakTs > $startTs && $peakKm > $startKm) {
+            $this->buildRates[] = ($peakKm - $startKm) / (($peakTs - $startTs) / 3600);
+        }
+        if ($endTs > $peakTs && $peakKm > $endKm) {
+            $this->dissolveRates[] = ($peakKm - $endKm) / (($endTs - $peakTs) / 3600);
+        }
+    }
+
+    /** @param list<float> $v */
+    private static function median(array $v): ?float
+    {
+        $n = count($v);
+        if ($n === 0) {
+            return null;
+        }
+        sort($v);
+        $m = intdiv($n, 2);
+        return round($n % 2 ? $v[$m] : ($v[$m - 1] + $v[$m]) / 2, 1);
     }
 
     private function flushRun(): void
@@ -284,6 +361,14 @@ final class StatsCalculator
     {
         $now ??= new DateTimeImmutable('now', $this->utc);
         $this->flushRun();
+        $this->closeClosure();
+        foreach (['north', 'south'] as $portal) {
+            if ($this->episode[$portal] !== null) {
+                $ep = $this->episode[$portal];
+                $this->closeEpisode($ep, $ep[4], $ep[5]);
+                $this->episode[$portal] = null;
+            }
+        }
         ksort($this->hours);
 
         return [
@@ -294,8 +379,9 @@ final class StatsCalculator
             'minutesPerKm' => ['north' => self::avg(...$this->perKm['north']), 'south' => self::avg(...$this->perKm['south'])],
             'closures'     => $this->closuresOut(),
             'jamDynamics'  => [
-                'buildUpKmPerHour'  => self::avg(...$this->up),
-                'dissolveKmPerHour' => self::avg(...$this->down),
+                'buildUpKmPerHour'  => self::median($this->buildRates),
+                'dissolveKmPerHour' => self::median($this->dissolveRates),
+                'episodes'          => max(count($this->buildRates), count($this->dissolveRates)),
             ],
             'dataQuality'  => ['snapshots' => $this->count, 'first' => $this->firstIso, 'last' => $this->lastIso, 'gaps' => $this->gaps],
             'last7d'       => $this->hourlyOut($now, 7),
@@ -319,10 +405,13 @@ final class StatsCalculator
     private function recordsOut(): array
     {
         $worstDay = null;
-        foreach ($this->perDay as $day => $sum) {
-            if ($worstDay === null || $sum > $worstDay['waitSum']) {
-                $worstDay = ['date' => (string) $day, 'waitSum' => (int) round($sum)];
+        foreach ($this->queueSeconds as $day => $sec) {
+            if ($worstDay === null || $sec > $worstDay['seconds']) {
+                $worstDay = ['date' => (string) $day, 'seconds' => $sec];
             }
+        }
+        if ($worstDay !== null) {
+            $worstDay = ['date' => $worstDay['date'], 'queueHours' => round($worstDay['seconds'] / 3600, 1)];
         }
         $best = $this->bestRun;
         return [

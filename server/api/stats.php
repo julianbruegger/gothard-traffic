@@ -62,12 +62,16 @@ try {
     }
     // Weather history is optional: the table may not exist yet.
     $weather = [];
+    $weatherNow = (object) [];
     try {
-        $weather = (new WeatherStore($pdo))->history(365);
+        $weatherStore = new WeatherStore($pdo);
+        $weather = $weatherStore->history(365);
+        $weatherNow = $weatherStore->latestPerPortal() ?: (object) [];
     } catch (Throwable $e) {
         $weather = [];
     }
     $stats = $calc->finish(null, $weather);
+    $stats['weatherNow'] = $weatherNow;
 } catch (Throwable $e) {
     http_response_code(503);
     echo json_encode(['error' => 'Database unavailable.']);

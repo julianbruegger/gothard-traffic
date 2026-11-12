@@ -22,14 +22,15 @@ $rows = [
     row('2026-08-03 10:40:00', 'open', null, null, null, null, null),
 ];
 
-$s = (new StatsCalculator())->compute($rows, new DateTimeImmutable('2026-08-04 00:00:00', new DateTimeZone('UTC')));
+$now0 = new DateTimeImmutable('2026-08-04 00:00:00', new DateTimeZone('UTC'));
+$s = (new StatsCalculator())->compute($rows, $now0);
 
 $checks = [
     'heatmap Mon 12h north avg = (20+40+0)/3 = 20 (closed excluded)' => $s['heatmap']['north'][0][12] === 20.0,
     'heatmap has 7x24 grid'                       => count($s['heatmap']['south']) === 7 && count($s['heatmap']['south'][3]) === 24,
-    'longest queue 4 km north'                    => $s['records']['longestQueue']['km'] === 4.0 && $s['records']['longestQueue']['portal'] === 'north',
-    'longest wait 40'                             => $s['records']['longestWait']['minutes'] === 40,
-    'worst day 2026-08-03 sum 80'                 => $s['records']['worstDay'] === ['date' => '2026-08-03', 'waitSum' => 80],
+    'longest queue ignores the single-snapshot 4 km spike -> 2 km north' => $s['records']['longestQueue']['km'] === 2.0 && $s['records']['longestQueue']['portal'] === 'north',
+    'longest wait ignores the single-snapshot spike -> 20' => $s['records']['longestWait']['minutes'] === 20,
+    'worst day = queue hours (0.5 h), ISO date'   => $s['records']['worstDay'] === ['date' => '2026-08-03', 'queueHours' => 0.5],
     'jam-free streak 10:30..10:40 = 0.2 h'        => $s['records']['longestJamFree']['hours'] === 0.2,
     'asymmetry month north avg 15 (closed excluded)' => $s['asymmetry'][0]['month'] === '2026-08' && $s['asymmetry'][0]['north'] === 15.0,
     'minutes per km north = 10'                   => $s['minutesPerKm']['north'] === 10.0,
@@ -37,8 +38,8 @@ $checks = [
     'reason keys'                                 => StatsCalculator::reasonKey('Ausnahmetransport') === 'special_transport'
         && StatsCalculator::reasonKey('Pannenfahrzeug Bergungsarbeiten') === 'breakdown'
         && StatsCalculator::reasonKey(null) === 'unknown' && StatsCalculator::reasonKey('xyz') === 'unknown',
-    'build-up > 0'                                => $s['jamDynamics']['buildUpKmPerHour'] > 0,
-    'dissolve > 0'                                => $s['jamDynamics']['dissolveKmPerHour'] > 0,
+    'build-up per episode = 12 km/h'              => $s['jamDynamics']['buildUpKmPerHour'] === 12.0,
+    'dissolve per episode = 12 km/h'              => $s['jamDynamics']['dissolveKmPerHour'] === 12.0,
     'data quality: 6 snapshots, 1 gap'            => $s['dataQuality']['snapshots'] === 6 && $s['dataQuality']['gaps'] === 1,
     'last7d has 2 hourly buckets'                 => count($s['last7d']) === 2,
     'hourly30d has 2 hourly buckets'              => count($s['hourly30d']) === 2,
@@ -67,6 +68,30 @@ $checks['corr: precipitation r positive (north)'] = ($c['weather'][0]['r']['prec
 $checks['corr: no south weather -> r null']      = $c['weather'][1]['r']['temperature'] === null;
 $checks['corr: weekend ratio computed']          = $c['weekend']['north']['ratio'] !== null;
 $checks['corr: no closures -> 0 events']         = $c['afterClosure']['events'] === 0;
+
+// Jam episodes: slow 1 km steps over an hour are ~ a few km/h, not 20 km/h per step.
+$rows4 = [];
+$b4 = new DateTimeImmutable('2026-08-03 08:00:00', new DateTimeZone('UTC'));
+foreach ([0, 1, 1, 1, 2, 2, 3, 3, 2, 1, 1, 0] as $i => $km) {
+    $rows4[] = row($b4->modify('+' . ($i * 10) . ' minutes')->format('Y-m-d H:i:s'), 'congested', null, (float) $km, $km * 10, null, null);
+}
+$s4 = (new StatsCalculator())->compute($rows4, $now0);
+// start 1 km @10 min, peak 3 km @60 min: 2 km / (50/60 h) = 2.4; peak -> 0 km @110 min: 3 / (50/60) = 3.6
+$checks['jam dynamics: episode build-up 2.4 km/h'] = $s4['jamDynamics']['buildUpKmPerHour'] === 2.4;
+$checks['jam dynamics: episode dissolve 3.6 km/h'] = $s4['jamDynamics']['dissolveKmPerHour'] === 3.6;
+$checks['records: sustained 3 km counts']         = $s4['records']['longestQueue']['km'] === 3.0;
+
+// Closure episode with a mid-closure reason change counts once, under the last reason.
+$rows5 = [
+    row('2026-08-03 22:00:00', 'open', null, null, null, null, null),
+    row('2026-08-03 22:10:00', 'closed', 'Unfall', null, null, null, null),
+    row('2026-08-03 22:20:00', 'closed', null, null, null, null, null),
+    row('2026-08-03 22:30:00', 'closed', 'Pannenfahrzeug Bergungsarbeiten', null, null, null, null),
+    row('2026-08-03 22:40:00', 'open', null, null, null, null, null),
+];
+$s5 = (new StatsCalculator())->compute($rows5, $now0);
+$checks['closure episode: one entry, last reason, full hours'] = count($s5['closures']) === 1
+    && $s5['closures'][0]['key'] === 'breakdown' && $s5['closures'][0]['count'] === 1 && $s5['closures'][0]['hours'] === 0.3;
 
 // Accumulator API gives the same result as compute() on the same rows.
 $acc = new StatsCalculator();

@@ -718,7 +718,7 @@ details.table-toggle > summary::-webkit-details-marker { display: none; }
 .nerd__title { font-size: 1.4rem; margin: 0 0 0.3rem; }
 .nerd__intro, .nerd-card__sub { color: var(--color-text-muted); font-size: 0.85rem; margin: 0 0 1rem; }
 .nerd__empty { color: var(--color-text-muted); }
-.nerd__grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); }
+.nerd__grid { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr)); }
 .nerd__grid[hidden], .nerd-card[hidden], .nerd__empty[hidden] { display: none; }
 .nerd-card { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-lg); padding: 1.1rem; box-shadow: var(--shadow-card); min-width: 0; }
 .nerd-card--wide, .nerd__actions { grid-column: 1 / -1; }
@@ -735,8 +735,12 @@ details.table-toggle > summary::-webkit-details-marker { display: none; }
 .nerd-table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
 .nerd-table th, .nerd-table td { text-align: left; padding: 0.3rem 0.4rem; border-bottom: 1px solid var(--color-border); }
 .nerd-svg { width: 100%; height: auto; display: block; }
-.nerd-svg__t { font-size: 10px; fill: var(--color-text-muted); font-family: var(--font-sans); }
+.nerd-svg__t { font-size: 11px; fill: var(--color-text-muted); font-family: var(--font-sans); }
 .nerd-legend { display: flex; gap: 1rem; font-size: 0.78rem; margin: 0.4rem 0 0; color: var(--color-text-muted); }
 .nerd-legend span::before { content: ''; display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 0.35rem; background: var(--c); }
 .nerd__btn { font: inherit; padding: 0.55rem 1rem; border-radius: var(--radius-lg); border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-text); cursor: pointer; }
 .nerd__btn:hover { border-color: var(--color-accent); }
+.nerd-toggle { display: flex; gap: 0.5rem; margin: 0 0 0.6rem; flex-wrap: wrap; }
+.nerd__btn--toggle { padding: 0.3rem 0.7rem; font-size: 0.8rem; }
+.nerd__btn--toggle[aria-pressed='true'] { border-color: var(--color-accent); background: var(--color-surface-alt); font-weight: 600; }
+.nerd-heat .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }

@@ -4,10 +4,18 @@ import Header from '../components/Header.astro';
 import Footer from '../components/Footer.astro';
 import ForecastsContent from '../components/ForecastsContent.astro';
 
+import { t } from '../lib/i18n';
+
 const lang = 'de' as const;
 ---
 
-<Layout lang={lang} updatedIso={null}>
+<Layout
+  lang={lang}
+  updatedIso={null}
+  title={t(lang, 'meta.forecasts.title')}
+  description={t(lang, 'meta.forecasts.description')}
+  schema="webpage"
+>
   <Header lang={lang} currentPage="forecasts" />
   <ForecastsContent lang={lang} />
   <Footer lang={lang} dataSource="Verkehrsmodell (ASTRA-Daten)" />

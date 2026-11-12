@@ -5,12 +5,24 @@ import { DEFAULT_LANG, t, type Lang } from '../lib/i18n';
 interface Props {
   lang?: Lang;
   updatedIso?: string | null;
+  /** Per-page <title>; defaults to the home title. */
+  title?: string;
+  /** Per-page meta description; defaults to the home description. */
+  description?: string;
+  /** 'dataset' (home, default) emits the live Dataset JSON-LD; 'webpage' emits WebPage + BreadcrumbList. */
+  schema?: 'dataset' | 'webpage';
 }
 
-const { lang = DEFAULT_LANG, updatedIso = null } = Astro.props;
+const {
+  lang = DEFAULT_LANG,
+  updatedIso = null,
+  title: titleProp,
+  description: descriptionProp,
+  schema = 'dataset',
+} = Astro.props;
 
-const title = `${t(lang, 'site.title')} – ${t(lang, 'site.tagline')}`;
-const description = t(lang, 'meta.description');
+const title = titleProp ?? `${t(lang, 'site.title')} – ${t(lang, 'site.tagline')}`;
+const description = descriptionProp ?? t(lang, 'meta.description');
 const siteUrl = Astro.site?.toString().replace(/\/$/, '') ?? '';
 
 // Build canonical + hreflang from the *actual* page path (not just the lang),
@@ -24,6 +36,28 @@ const logical = path === '/en' ? '/' : path.startsWith('/en/') ? path.slice(3) :
 const deHref = siteUrl + logical;
 const enHref = siteUrl + (logical === '/' ? '/en' : '/en' + logical);
 const canonical = lang === DEFAULT_LANG ? deHref : enHref;
+const homeHref = lang === DEFAULT_LANG ? siteUrl + '/' : siteUrl + '/en';
+const webPageLd = {
+  '@context': 'https://schema.org',
+  '@graph': [
+    {
+      '@type': 'WebPage',
+      '@id': canonical + '#webpage',
+      url: canonical,
+      name: title,
+      description,
+      inLanguage: lang === 'de' ? 'de-CH' : 'en',
+      isPartOf: { '@type': 'WebSite', name: t(lang, 'site.title'), url: homeHref },
+    },
+    {
+      '@type': 'BreadcrumbList',
+      itemListElement: [
+        { '@type': 'ListItem', position: 1, name: t(lang, 'site.title'), item: homeHref },
+        { '@type': 'ListItem', position: 2, name: title.split(' – ')[0], item: canonical },
+      ],
+    },
+  ],
+};
 ---
 
 <!doctype html>
@@ -47,7 +81,10 @@ const canonical = lang === DEFAULT_LANG ? deHref : enHref;
     <link rel="alternate" hreflang="de" href={deHref} />
     <link rel="alternate" hreflang="en" href={enHref} />
     <link rel="alternate" hreflang="x-default" href={deHref} />
+    <link rel="icon" href="/favicon.ico" sizes="32x32" />
     <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/apple-touch-icon.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <meta name="theme-color" content="#eceef4" media="(prefers-color-scheme: light)" />
     <meta name="theme-color" content="#1d2024" media="(prefers-color-scheme: dark)" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -74,7 +111,7 @@ const canonical = lang === DEFAULT_LANG ? deHref : enHref;
 
     <!-- JSON-LD structured data: replaced server-side (index.php) with live values on deploy;
          this default block keeps the page valid/self-describing when served as plain static HTML. -->
-    <script type="application/ld+json" id="ld-traffic" is:inline set:html={JSON.stringify({
+    {schema === 'dataset' ? <script type="application/ld+json" id="ld-traffic" is:inline set:html={JSON.stringify({
       '@context': 'https://schema.org',
       '@type': 'Dataset',
       name: 'Gotthard Tunnel & Pass Traffic Status',
@@ -92,7 +129,11 @@ const canonical = lang === DEFAULT_LANG ? deHref : enHref;
         url: 'https://opentransportdata.swiss/en/road-traffic/',
       },
       variableMeasured: ['queue length (km)', 'waiting time (min)', 'road status'],
-    })} />
+      distribution: [
+        { '@type': 'DataDownload', encodingFormat: 'application/json', contentUrl: siteUrl + '/api/gotthard.php' },
+        { '@type': 'DataDownload', encodingFormat: 'application/json', contentUrl: siteUrl + '/api/history.php' },
+      ],
+    })} /> : <script type="application/ld+json" is:inline set:html={JSON.stringify(webPageLd)} />}
 
     <!-- Site-level identity for search engines, in the current page language. -->
     <script type="application/ld+json" is:inline set:html={JSON.stringify({
@@ -101,7 +142,7 @@ const canonical = lang === DEFAULT_LANG ? deHref : enHref;
       name: t(lang, 'site.title'),
       url: siteUrl + '/',
       inLanguage: lang === 'de' ? 'de-CH' : 'en',
-      description,
+      description: t(lang, 'meta.description'),
     })} />
   </head>
   <body>

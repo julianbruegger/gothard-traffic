@@ -1,0 +1,14 @@
+{
+  "name": "Gotthard Traffic Live",
+  "short_name": "Gotthard Live",
+  "description": "Live waiting times, queue length and tunnel status at the Gotthard.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#eceef4",
+  "theme_color": "#eceef4",
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}

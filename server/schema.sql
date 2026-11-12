@@ -22,8 +22,6 @@ CREATE TABLE IF NOT EXISTS gotthard_snapshots (
     INDEX idx_fetched_at (fetched_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Migration for installs created before planned_closures existed (safe, nullable):
--- ALTER TABLE gotthard_snapshots ADD COLUMN planned_closures TEXT DEFAULT NULL AFTER pass_note;
-
--- Migration for installs created before closure_reason existed (safe, nullable):
--- ALTER TABLE gotthard_snapshots ADD COLUMN closure_reason VARCHAR(200) DEFAULT NULL AFTER tunnel_status;
+-- Column additions for older installs are applied automatically and idempotently
+-- by cron/migrate.php (run at the end of every deploy). When adding a column,
+-- add it above AND to the $columns list in server/cron/migrate.php.

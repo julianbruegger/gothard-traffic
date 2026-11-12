@@ -177,4 +177,22 @@ final class SnapshotStore
             }
         } while (count($rows) === $chunk);
     }
+
+    /**
+     * Slim rows for the observed-days aggregate (see ObservedDays): the last
+     * $days days, oldest first. Filters on fetched_at so the index is used.
+     */
+    public function observedRows(int $days = 365): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT fetched_at, tunnel_status, closure_reason,
+                    north_queue_km, south_queue_km
+               FROM gotthard_snapshots
+              WHERE fetched_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL :days DAY)
+              ORDER BY fetched_at ASC'
+        );
+        $stmt->bindValue(':days', $days, PDO::PARAM_INT);
+        $stmt->execute();
+        return $stmt->fetchAll();
+    }
 }

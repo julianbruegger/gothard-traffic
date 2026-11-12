@@ -4,6 +4,7 @@
 import { isLang, DEFAULT_LANG, t } from '../lib/i18n';
 import { generateDayCurve, generateForecast, swissDayInfo, type DayCurve, type TrafficLevel } from '../lib/forecast';
 import { iconSvg } from '../lib/icons';
+import { OBSERVED_UPDATED_EVENT } from '../lib/observed-live';
 
 const lang = (() => {
   const attr = document.documentElement.dataset.lang;
@@ -128,13 +129,25 @@ function measure() {
   PB = H - 38;
 }
 
+/** Typical peak below this (minutes, both directions) counts as "no relevant queue". */
+const QUIET_PEAK_MIN = 5;
+
 function renderProfiles() {
-  measure();
   curve = generateDayCurve(new Date(Date.now() + dayOffset * 86_400_000), lang);
-  const peak = Math.max(...curve.points.map((p) => Math.max(p.northWaitHigh, p.southWaitHigh)));
-  maxMin = Math.max(60, Math.ceil((peak * 1.05) / 30) * 30);
-  drawPanel('north');
-  drawPanel('south');
+  const typical = Math.max(...curve.points.map((p) => Math.max(p.northWait, p.southWait)));
+  const quiet = typical < QUIET_PEAK_MIN;
+  // Off-season days: a plain statement instead of two empty charts.
+  document.getElementById('dp-quiet')!.hidden = !quiet;
+  document.getElementById('dp-panels')!.style.display = quiet ? 'none' : '';
+  document.getElementById('dp-legend')!.style.display = quiet ? 'none' : '';
+  if (!quiet) {
+    measure();
+    const peak = Math.max(...curve.points.map((p) => Math.max(p.northWaitHigh, p.southWaitHigh)));
+    // At least 20 min (4 even ticks) so a small queue is still readable.
+    maxMin = peak * 1.05 <= 20 ? 20 : peak * 1.05 <= 40 ? 40 : Math.max(60, Math.ceil((peak * 1.05) / 30) * 30);
+    drawPanel('north');
+    drawPanel('south');
+  }
   document.getElementById('dp-ctx')!.textContent = `${curve.fullDayLabel}, ${curve.dateLabel}${curve.context ? ` · ${curve.context}` : ''}`;
   setReadout(null);
 }
@@ -203,6 +216,9 @@ window.addEventListener('resize', () => {
   lastW = window.innerWidth;
   renderProfiles();
 });
+
+// The measured model is refitted on fresh data after load: redraw with it.
+window.addEventListener(OBSERVED_UPDATED_EVENT, () => { renderProfiles(); renderCalendar(); });
 
 renderDayChips();
 bindHover();

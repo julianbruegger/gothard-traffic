@@ -1,0 +1,26 @@
+name: Forecast backtest
+
+on:
+  pull_request:
+    paths:
+      - 'site/src/lib/forecast*.ts'
+      - 'site/src/lib/observed-model.ts'
+      - 'site/src/data/observed-days.json'
+      - 'site/scripts/backtest-forecast.ts'
+  workflow_dispatch: {}
+
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      # package-lock.json is out of sync with package.json, so npm ci would fail.
+      - name: Install dependencies
+        working-directory: site
+        run: npm install
+      - name: Backtest (pass/fail summary against the #56 targets is in the log)
+        working-directory: site
+        run: npm run backtest | tee "$GITHUB_STEP_SUMMARY"

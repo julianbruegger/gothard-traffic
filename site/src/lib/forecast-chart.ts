@@ -81,15 +81,16 @@ export function buildForecastChart(
   const highKey = direction === 'north' ? 'northWaitHigh' : 'southWaitHigh';
   const actualKey = direction;
 
-  // Y scale: at least 60 min, rounded up to a clean 30-min step above the peak.
-  // Includes the busy-day upper edge so the range band is never clipped.
+  // Y scale: at least 20 min (4 even ticks) so a quiet off-season day is still readable, then
+  // rounded up to a clean step above the peak. Includes the busy-day upper edge
+  // so the range band is never clipped. The comparison days do not set the
+  // scale: they are clipped at the top rather than flattening the forecast.
   const peak = Math.max(
     0,
     ...forecast.map((p) => p[highKey]),
     ...actual.map((p) => p[actualKey] ?? 0),
-    ...historic.flatMap((h) => h.waitMinutes),
   );
-  const maxMin = Math.max(60, Math.ceil((peak * 1.1) / 30) * 30);
+  const maxMin = peak * 1.1 <= 20 ? 20 : peak * 1.1 <= 40 ? 40 : Math.max(60, Math.ceil((peak * 1.1) / 30) * 30);
 
   const xOf = (minuteOfDay: number) => PADDING_LEFT + (innerW * minuteOfDay) / 1440;
   const yOf = (min: number) => PADDING_TOP + innerH - (Math.min(min, maxMin) / maxMin) * innerH;

@@ -46,10 +46,7 @@ const labour = holiday.labourday;
 <main id="main" class="container page">
   <div class="page-head">
     <h1>{L('Wann ist am Gotthard Stau?', 'When is the Gotthard congested?')}</h1>
-    <p>{L(
-      `Prognosen aus Wochentag, Saison und Ferienkalender, kalibriert auf ${profiles.meta.usedReports.toLocaleString('de-CH')} TCS-Staumeldungen (${profiles.meta.dateStart.slice(0, 4)}–${profiles.meta.dateEnd.slice(0, 4)}). Wartezeit ≈ 9 Minuten pro km Stau.`,
-      `Forecasts from weekday, season and holiday calendar, calibrated on ${profiles.meta.usedReports.toLocaleString('en-CH')} TCS jam reports (${profiles.meta.dateStart.slice(0, 4)}–${profiles.meta.dateEnd.slice(0, 4)}). Waiting time ≈ 9 minutes per km of queue.`,
-    )}</p>
+    <p>{t(lang, 'forecast.method')}</p>
   </div>
 
   <!-- Day profile: both directions as small multiples on one scale -->
@@ -65,7 +62,8 @@ const labour = holiday.labourday;
       <span class="legend__item"><span class="swatch" style="background: var(--c-south)"></span>{t(lang, 'dir.north')} <strong id="dp-south-val">–</strong></span>
       <span class="readout__ctx" id="dp-ctx"></span>
     </div>
-    <div class="panels">
+    <p class="section__note" id="dp-quiet" hidden>{t(lang, 'forecast.noQueues')}</p>
+    <div class="panels" id="dp-panels">
       {(['north', 'south'] as const).map((dir) => (
         <figure class="panel">
           <figcaption class="panel__cap">
@@ -80,7 +78,7 @@ const labour = holiday.labourday;
         </figure>
       ))}
     </div>
-    <div class="legend">
+    <div class="legend" id="dp-legend">
       <span class="legend__item"><span class="swatch--line" style="color: var(--md-on-surface-variant)"></span>{t(lang, 'fchart.predicted')}</span>
       <span class="legend__item"><span class="swatch swatch--wide" style="background: var(--md-sc-highest)"></span>{t(lang, 'fchart.range')}</span>
     </div>

@@ -47,7 +47,7 @@ included GitHub Actions workflow). The web host only ever needs PHP + cron.
   `data/gotthard.json` and `data/history.json`.
 - `server/translations.json` – a build-time copy of `site/src/data/translations.json`
   kept in sync by the deploy workflow (single source of truth is the Astro copy).
-- `.github/workflows/deploy.yml` – builds the site and (optionally) FTP-deploys it.
+- `.github/workflows/deploy.yml` – builds the site and deploys it via rsync over SSH (gated by `ci.yml`).
 
 ## 1. Get an ASTRA / opentransportdata.swiss API token
 
@@ -110,13 +110,14 @@ php fetch-traffic.php --debug
 ├── index.html          ← from site/dist/ (Astro build output)
 ├── _astro/...          ← from site/dist/
 ├── robots.txt, sitemap.xml, llms.txt, favicon.svg, og-image.png  ← from site/dist/
-├── lib/                ← from server/lib/
+├── lib/                ← from server/lib/ (HTTP access denied)
 ├── translations.json   ← copy of site/src/data/translations.json
 ├── cron/
 │   ├── fetch-traffic.php
+│   ├── migrate.php, schema.sql
 │   ├── lib/
 │   └── config.php       ← you create this on the server, never commit it
-└── data/                ← created automatically by the first cron run
+└── data/                ← cron-written; only .htaccess (deny all) is deployed
     ├── gotthard.json
     └── history.json
 ```
@@ -138,23 +139,40 @@ php fetch-traffic.php --debug
 
 ### Option B: GitHub Actions (automatic on push)
 
-The included `.github/workflows/deploy.yml` builds the site and uploads it
-over FTP. It's disabled by default so pushes don't fail before you configure
-it. To enable:
+`.github/workflows/ci.yml` runs on every pull request and push to `main`: PHP
+lint, the PHP test scripts in `server/cron/tests/`, and `npm ci` +
+`npm run build` (Astro check and build) in `site/`.
 
-1. Repo **Settings → Secrets and variables → Actions → Secrets**: add
-   `FTP_SERVER`, `FTP_USERNAME`, `FTP_PASSWORD`.
-2. Same page, **Variables** tab: add `DEPLOY_ENABLED` = `true`. Optionally add
-   `FTP_SERVER_DIR` if your host needs a specific remote path (e.g.
-   `/httpdocs/` or `/public_html/`) instead of `/`.
-3. Push to `main` (or run the workflow manually from the Actions tab).
+`.github/workflows/deploy.yml` runs on pushes to `main`, only after CI passes.
+It builds the site, assembles the bundle, rsyncs it over SSH (environment
+**Hostpoint**), runs `php cron/migrate.php` on the server (creates tables and
+applies idempotent column additions) and finally smoke-tests the live site
+(`/`, `/en`, `/forecasts`, `/api/gotthard.php` not older than 30 minutes,
+`data/` and `schema.sql` not public). Set the repository variable `SITE_URL`
+to override the default `https://gotthard.jubr.app`.
 
-The workflow never uploads `data/` or `cron/config.php`, so it's safe to
-re-run on every push without disturbing the live, cron-maintained data or
-your server credentials.
+Secrets (environment **Hostpoint**): `DATEX_API_TOKEN`, `DB_HOST`, `DB_NAME`,
+`DB_USER`, `DB_PASS`, `HOSTPOINT_HOST`, `HOSTPOINT_USER`, `HOSTPOINT_SSH_KEY`,
+`HOSTPOINT_PATH` and `HOSTPOINT_KNOWN_HOSTS`.
 
-You still need to do steps 6-7 from Option A once, manually, on the server
-(creating `cron/config.php` and the cron job) - CI can't do that part for you.
+#### SSH host key pinning (`HOSTPOINT_KNOWN_HOSTS`)
+
+The deploy refuses unknown hosts, so the server's host key must be stored as a
+secret. Obtain it once from a network you trust and verify the fingerprint
+against your hosting panel:
+
+```
+ssh-keyscan -H your.host.example          # value for HOSTPOINT_KNOWN_HOSTS
+ssh-keygen -lf <(ssh-keyscan your.host.example 2>/dev/null)   # fingerprint to compare
+```
+
+Paste the full `ssh-keyscan` output (one line per key type) as the secret.
+If the host key legitimately changes, update the secret.
+
+The workflow only syncs `data/.htaccess` into `data/` and never touches the
+files cron writes there, nor `cron/config.php` (generated from secrets on each
+deploy). `data/`, `lib/` and `cron/` are denied over HTTP. You still need to
+set up the cron job once, manually (step 7 from Option A).
 
 ## Notes & limitations
 

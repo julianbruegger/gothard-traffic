@@ -1,5 +1,7 @@
 -- Gotthard Traffic Live – database schema
--- Run once to initialise: mysql -u USER -p DATABASE < schema.sql
+-- Readable reference. The deploy ships this file to cron/schema.sql (denied over
+-- HTTP), never to the public web root. To initialise by hand:
+--   mysql -u USER -p DATABASE < cron/schema.sql
 -- Compatible with MySQL 5.7+ and MariaDB 10.3+.
 
 CREATE TABLE IF NOT EXISTS gotthard_snapshots (
@@ -36,12 +38,6 @@ CREATE TABLE IF NOT EXISTS gotthard_weather (
     UNIQUE KEY uq_observed_portal (observed_at, portal)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Migration for installs created before planned_closures existed (safe, nullable):
--- ALTER TABLE gotthard_snapshots ADD COLUMN planned_closures TEXT DEFAULT NULL AFTER pass_note;
-
--- Migration for installs created before pass_source existed (safe, nullable).
--- Which source set the pass status: 'datex' (ASTRA) or 'alpen-paesse.ch'.
--- ALTER TABLE gotthard_snapshots ADD COLUMN pass_source VARCHAR(30) DEFAULT NULL AFTER pass_note;
-
--- Migration for installs created before closure_reason existed (safe, nullable):
--- ALTER TABLE gotthard_snapshots ADD COLUMN closure_reason VARCHAR(200) DEFAULT NULL AFTER tunnel_status;
+-- Column additions for older installs are applied automatically and idempotently
+-- by cron/migrate.php (run at the end of every deploy). When adding a column,
+-- add it above AND to the $columns list in server/cron/migrate.php.

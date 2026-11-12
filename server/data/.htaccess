@@ -1,0 +1,3 @@
+# Runtime data written by cron/PHP (caches, error log, exports).
+# Never served over HTTP; PHP reads/writes it via the filesystem.
+Require all denied

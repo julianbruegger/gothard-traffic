@@ -131,7 +131,9 @@ $assertions = [
     'calm: summary has no "ca. –"'              => !str_contains($rCalm, 'ca. –'),
 
     // (b) closed row with planned closures
-    'closed: summary names closure reason'      => str_contains($rClosed, 'Gotthard-Strassentunnel gesperrt (Pannenfahrzeug).'),
+    'closed: summary names closure reason'      => str_contains($rClosed, 'Gotthard-Strassentunnel, 09.11.2026, 21:00 Uhr: gesperrt (Pannenfahrzeug).'),
+    'closed: summary names next closure'        => str_contains($rClosed, 'Nächste geplante Sperrung: 15.07. 21:00–22:30 Uhr (Sondertransport).'),
+    'calm: summary is answer-first'             => str_contains($rCalm, '<!--SSR:summary-->Gotthard-Strassentunnel, 09.11.2026, 21:00 Uhr: kein Stau in beiden Richtungen. Gotthardpass: Winterschliessung.<!--/SSR-->'),
     'closed: north cause escaped'               => str_contains($rClosed, 'Stau &lt;b&gt;x&lt;/b&gt;') && !str_contains($rClosed, '<b>x</b>'),
     'closed: cause rows visible/hidden'         => !preg_match('/id="north-cause-row"[^>]*\bhidden\b/', $rClosed)
                                                     && (bool) preg_match('/id="south-cause-row"[^>]*\bhidden\b/', $rClosed),

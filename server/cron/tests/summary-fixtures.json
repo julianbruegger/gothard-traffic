@@ -1,0 +1,306 @@
+[
+    {
+        "name": "no queue, pass closed, maintenance tonight",
+        "now": "2026-11-11T09:30:00Z",
+        "data": {
+            "updated": "2026-11-11T09:27:03+00:00",
+            "source": "opentransportdata.swiss (ASTRA Traffic Situations)",
+            "tunnel": {
+                "status": "open",
+                "closureReason": null,
+                "north": {
+                    "queueKm": 0,
+                    "waitMinutes": null,
+                    "cause": null,
+                    "closures": []
+                },
+                "south": {
+                    "queueKm": null,
+                    "waitMinutes": null,
+                    "cause": null,
+                    "closures": []
+                },
+                "plannedClosures": [
+                    {
+                        "from": "2026-11-11T22:00:00+00:00",
+                        "to": "2026-11-12T00:00:00+00:00",
+                        "cause": "Unterhaltsarbeiten"
+                    }
+                ]
+            },
+            "pass": {
+                "status": "closed",
+                "note": null
+            }
+        },
+        "expected": {
+            "de": "Gotthard-Strassentunnel, 11.11.2026, 10:27 Uhr: kein Stau in beiden Richtungen. Gotthardpass: Winterschliessung. Nächste geplante Sperrung: heute 23:00–01:00 Uhr (Unterhaltsarbeiten).",
+            "en": "Gotthard road tunnel, 11 Nov 2026, 10:27: no queue in either direction. Gotthard Pass: closed for winter. Next planned closure: tonight 23:00–01:00 (maintenance)."
+        }
+    },
+    {
+        "name": "north queue with wait, pass open",
+        "now": "2026-07-18T08:10:00Z",
+        "data": {
+            "updated": "2026-07-18T08:06:00+00:00",
+            "source": "opentransportdata.swiss (ASTRA Traffic Situations)",
+            "tunnel": {
+                "status": "congested",
+                "closureReason": null,
+                "north": {
+                    "queueKm": 12,
+                    "waitMinutes": 120,
+                    "cause": "Hohes Verkehrsaufkommen",
+                    "closures": []
+                },
+                "south": {
+                    "queueKm": null,
+                    "waitMinutes": null,
+                    "cause": null,
+                    "closures": []
+                },
+                "plannedClosures": []
+            },
+            "pass": {
+                "status": "open",
+                "note": null
+            }
+        },
+        "expected": {
+            "de": "Gotthard-Strassentunnel, 18.07.2026, 10:06 Uhr: 12.0 km Rückstau am Nordportal (Göschenen), ca. 120 Min Wartezeit. Gotthardpass: Geöffnet.",
+            "en": "Gotthard road tunnel, 18 Jul 2026, 10:06: 12.0 km queue at the north portal (Göschenen), about 120 min wait. Gotthard Pass: open."
+        }
+    },
+    {
+        "name": "both queues, unknown south wait, pass restricted, past closure skipped",
+        "now": "2026-05-23T13:00:00Z",
+        "data": {
+            "updated": "2026-05-23T12:58:00+00:00",
+            "source": "opentransportdata.swiss (ASTRA Traffic Situations)",
+            "tunnel": {
+                "status": "congested",
+                "closureReason": null,
+                "north": {
+                    "queueKm": 3.2,
+                    "waitMinutes": 25,
+                    "cause": null,
+                    "closures": []
+                },
+                "south": {
+                    "queueKm": 0.5,
+                    "waitMinutes": null,
+                    "cause": null,
+                    "closures": []
+                },
+                "plannedClosures": [
+                    {
+                        "from": "2026-05-22T22:00:00+00:00",
+                        "to": "2026-05-23T03:00:00+00:00",
+                        "cause": "Sondertransport"
+                    },
+                    {
+                        "from": "2026-05-23T15:00:00+00:00",
+                        "to": "2026-05-23T16:30:00+00:00",
+                        "cause": "Ausnahmetransport"
+                    }
+                ]
+            },
+            "pass": {
+                "status": "restricted",
+                "note": null
+            }
+        },
+        "expected": {
+            "de": "Gotthard-Strassentunnel, 23.05.2026, 14:58 Uhr: 3.2 km Rückstau am Nordportal (Göschenen), ca. 25 Min Wartezeit; 0.5 km Rückstau am Südportal (Airolo). Gotthardpass: Eingeschränkt befahrbar. Nächste geplante Sperrung: heute 17:00–18:30 Uhr (Sondertransport).",
+            "en": "Gotthard road tunnel, 23 May 2026, 14:58: 3.2 km queue at the north portal (Göschenen), about 25 min wait; 0.5 km queue at the south portal (Airolo). Gotthard Pass: restricted access. Next planned closure: today 17:00–18:30 (special transport)."
+        }
+    },
+    {
+        "name": "closed (broken-down vehicle), special transport tomorrow",
+        "now": "2026-11-11T21:45:00Z",
+        "data": {
+            "updated": "2026-11-11T21:44:00+00:00",
+            "source": "opentransportdata.swiss (ASTRA Traffic Situations)",
+            "tunnel": {
+                "status": "closed",
+                "closureReason": "Pannenfahrzeug",
+                "north": {
+                    "queueKm": 2,
+                    "waitMinutes": null,
+                    "cause": null,
+                    "closures": []
+                },
+                "south": {
+                    "queueKm": null,
+                    "waitMinutes": null,
+                    "cause": null,
+                    "closures": []
+                },
+                "plannedClosures": [
+                    {
+                        "from": "2026-11-12T21:00:00+00:00",
+                        "to": "2026-11-13T04:00:00+00:00",
+                        "cause": "Sondertransport"
+                    }
+                ]
+            },
+            "pass": {
+                "status": "closed",
+                "note": null
+            }
+        },
+        "expected": {
+            "de": "Gotthard-Strassentunnel, 11.11.2026, 22:44 Uhr: gesperrt (Pannenfahrzeug). Gotthardpass: Winterschliessung. Nächste geplante Sperrung: morgen 22:00–05:00 Uhr (Sondertransport).",
+            "en": "Gotthard road tunnel, 11 Nov 2026, 22:44: closed (broken-down vehicle). Gotthard Pass: closed for winter. Next planned closure: tomorrow 22:00–05:00 (special transport)."
+        }
+    },
+    {
+        "name": "no timestamp, status unknown",
+        "now": "2026-11-11T09:30:00Z",
+        "data": {
+            "updated": null,
+            "source": "opentransportdata.swiss (ASTRA Traffic Situations)",
+            "tunnel": {
+                "status": "unknown",
+                "closureReason": null,
+                "north": {
+                    "queueKm": null,
+                    "waitMinutes": null,
+                    "cause": null,
+                    "closures": []
+                },
+                "south": {
+                    "queueKm": null,
+                    "waitMinutes": null,
+                    "cause": null,
+                    "closures": []
+                }
+            },
+            "pass": {
+                "status": "unknown",
+                "note": null
+            }
+        },
+        "expected": {
+            "de": "Gotthard-Strassentunnel: Verkehrslage unbekannt. Gotthardpass: Status unbekannt.",
+            "en": "Gotthard road tunnel: traffic situation unknown. Gotthard Pass: status unknown."
+        }
+    },
+    {
+        "name": "multi-day closure without cause on a later date",
+        "now": "2026-11-11T09:30:00Z",
+        "data": {
+            "updated": "2026-11-11T09:27:03+00:00",
+            "source": "opentransportdata.swiss (ASTRA Traffic Situations)",
+            "tunnel": {
+                "status": "open",
+                "closureReason": null,
+                "north": {
+                    "queueKm": 0,
+                    "waitMinutes": null,
+                    "cause": null,
+                    "closures": []
+                },
+                "south": {
+                    "queueKm": 0,
+                    "waitMinutes": null,
+                    "cause": null,
+                    "closures": []
+                },
+                "plannedClosures": [
+                    {
+                        "from": "2026-11-20T19:00:00+00:00",
+                        "to": "2026-11-23T04:00:00+00:00",
+                        "cause": null
+                    }
+                ]
+            },
+            "pass": {
+                "status": "closed",
+                "note": null
+            }
+        },
+        "expected": {
+            "de": "Gotthard-Strassentunnel, 11.11.2026, 10:27 Uhr: kein Stau in beiden Richtungen. Gotthardpass: Winterschliessung. Nächste geplante Sperrung: 20.11. 20:00 Uhr bis 23.11. 05:00 Uhr.",
+            "en": "Gotthard road tunnel, 11 Nov 2026, 10:27: no queue in either direction. Gotthard Pass: closed for winter. Next planned closure: 20 Nov 20:00 to 23 Nov 05:00."
+        }
+    },
+    {
+        "name": "open-ended closure with an unmapped feed cause, south queue only",
+        "now": "2026-11-11T09:30:00Z",
+        "data": {
+            "updated": "2026-11-11T09:27:03+00:00",
+            "source": "opentransportdata.swiss (ASTRA Traffic Situations)",
+            "tunnel": {
+                "status": "congested",
+                "closureReason": null,
+                "north": {
+                    "queueKm": 0,
+                    "waitMinutes": null,
+                    "cause": null,
+                    "closures": []
+                },
+                "south": {
+                    "queueKm": 1.25,
+                    "waitMinutes": 10,
+                    "cause": null,
+                    "closures": []
+                },
+                "plannedClosures": [
+                    {
+                        "from": "2026-11-11T11:00:00+00:00",
+                        "to": null,
+                        "cause": "Lawinengefahr"
+                    }
+                ]
+            },
+            "pass": {
+                "status": "closed",
+                "note": null
+            }
+        },
+        "expected": {
+            "de": "Gotthard-Strassentunnel, 11.11.2026, 10:27 Uhr: 1.3 km Rückstau am Südportal (Airolo), ca. 10 Min Wartezeit. Gotthardpass: Winterschliessung. Nächste geplante Sperrung: heute ab 12:00 Uhr (Lawinengefahr).",
+            "en": "Gotthard road tunnel, 11 Nov 2026, 10:27: 1.3 km queue at the south portal (Airolo), about 10 min wait. Gotthard Pass: closed for winter. Next planned closure: today from 12:00 (Lawinengefahr)."
+        }
+    },
+    {
+        "name": "closed without reason, closure from 18:00 today",
+        "now": "2026-08-02T06:00:00Z",
+        "data": {
+            "updated": "2026-08-02T05:57:00+00:00",
+            "source": "opentransportdata.swiss (ASTRA Traffic Situations)",
+            "tunnel": {
+                "status": "closed",
+                "closureReason": null,
+                "north": {
+                    "queueKm": null,
+                    "waitMinutes": null,
+                    "cause": null,
+                    "closures": []
+                },
+                "south": {
+                    "queueKm": null,
+                    "waitMinutes": null,
+                    "cause": null,
+                    "closures": []
+                },
+                "plannedClosures": [
+                    {
+                        "from": "2026-08-02T16:00:00+00:00",
+                        "to": "2026-08-02T17:00:00+00:00",
+                        "cause": "Unfall"
+                    }
+                ]
+            },
+            "pass": {
+                "status": "open",
+                "note": null
+            }
+        },
+        "expected": {
+            "de": "Gotthard-Strassentunnel, 02.08.2026, 07:57 Uhr: gesperrt. Gotthardpass: Geöffnet. Nächste geplante Sperrung: heute 18:00–19:00 Uhr (Unfall).",
+            "en": "Gotthard road tunnel, 2 Aug 2026, 07:57: closed. Gotthard Pass: open. Next planned closure: tonight 18:00–19:00 (accident)."
+        }
+    }
+]

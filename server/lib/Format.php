@@ -161,48 +161,223 @@ final class Format
         return $lang === 'de' ? ", ca. {$m} Wartezeit" : ", about {$m} wait";
     }
 
-    public static function summary(array $data, string $lang): string
+    // ─── Data freshness (mirrors dataFreshness / formatAge in format.ts) ────────
+
+    /** Older than this, a reading is flagged as stale. */
+    public const STALE_AFTER_MIN = 20;
+    /** Older than this (or no timestamp at all), live data counts as unavailable. */
+    public const UNAVAILABLE_AFTER_MIN = 360;
+
+    /** @return array{level: string, ageMin: int|null} level is 'fresh', 'stale' or 'unavailable' */
+    public static function freshness(?string $updated, ?DateTimeImmutable $now = null): array
     {
-        $north = $data['tunnel']['north'];
-        $south = $data['tunnel']['south'];
+        $ts = self::parseSwiss($updated);
+        if ($ts === null) {
+            return ['level' => 'unavailable', 'ageMin' => null];
+        }
+        $now ??= new DateTimeImmutable('now');
+        $ageMin = max(0, intdiv($now->getTimestamp() - $ts->getTimestamp(), 60));
+        $level = $ageMin > self::UNAVAILABLE_AFTER_MIN ? 'unavailable' : ($ageMin > self::STALE_AFTER_MIN ? 'stale' : 'fresh');
+        return ['level' => $level, 'ageMin' => $ageMin];
+    }
+
+    /** "25 Min", "2 Std 5 Min" / "25 min", "2 h 5 min". */
+    public static function age(int $ageMin, string $lang): string
+    {
+        $min = I18n::t($lang, 'portal.minutes');
+        if ($ageMin < 60) {
+            return "{$ageMin} {$min}";
+        }
+        $h = intdiv($ageMin, 60);
+        $m = $ageMin % 60;
+        $hUnit = $lang === 'de' ? 'Std' : 'h';
+        return $m ? "{$h} {$hUnit} {$m} {$min}" : "{$h} {$hUnit}";
+    }
+
+    // ─── Answer-first summary (mirrors buildSummary in format.ts) ─────────────
+
+    private const MONTHS_EN = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+    private static function parseSwiss(mixed $iso): ?DateTimeImmutable
+    {
+        if (!is_string($iso) || trim($iso) === '') {
+            return null;
+        }
+        try {
+            return (new DateTimeImmutable($iso))->setTimezone(new DateTimeZone('Europe/Zurich'));
+        } catch (Exception) {
+            return null;
+        }
+    }
+
+    /** "15.07." / "15 Jul" (Swiss calendar day). */
+    private static function dayMonth(DateTimeImmutable $d, string $lang): string
+    {
+        return $lang === 'de' ? $d->format('d.m.') : $d->format('j') . ' ' . self::MONTHS_EN[(int) $d->format('n') - 1];
+    }
+
+    /** de: "heute", "morgen", "15.07."; en: "today", "tonight" (from 18:00), "tomorrow", "15 Jul". */
+    private static function relativeDay(DateTimeImmutable $d, DateTimeImmutable $now, string $lang): string
+    {
+        $today = $now->format('Y-m-d');
+        $tomorrow = (new DateTimeImmutable($today, new DateTimeZone('UTC')))->modify('+1 day')->format('Y-m-d');
+        $day = $d->format('Y-m-d');
+        if ($day === $today) {
+            return $lang === 'de' ? 'heute' : ((int) $d->format('G') >= 18 ? 'tonight' : 'today');
+        }
+        if ($day === $tomorrow) {
+            return $lang === 'de' ? 'morgen' : 'tomorrow';
+        }
+        return self::dayMonth($d, $lang);
+    }
+
+    /** Friendly cause label; mapped English labels are lower-cased to read inside a sentence. */
+    private static function inlineCause(?string $cause, string $lang): ?string
+    {
+        $label = self::closureCauseLabel($cause, $lang);
+        if ($label === null) {
+            return null;
+        }
+        if ($lang === 'en' && $label !== $cause) {
+            return mb_strtolower($label);
+        }
+        return $label;
+    }
+
+    /**
+     * First planned closure that has not ended yet (the list is sorted by start).
+     *
+     * @return array{from: DateTimeImmutable, to: ?DateTimeImmutable, cause: ?string}|null
+     */
+    private static function nextClosure(array $closures, DateTimeImmutable $now): ?array
+    {
+        foreach ($closures as $c) {
+            if (!is_array($c)) {
+                continue;
+            }
+            $from = self::parseSwiss($c['from'] ?? null);
+            if ($from === null) {
+                continue;
+            }
+            $to = self::parseSwiss($c['to'] ?? null);
+            if (($to ?? $from) > $now) {
+                $cause = $c['cause'] ?? null;
+                return ['from' => $from, 'to' => $to, 'cause' => is_string($cause) ? $cause : null];
+            }
+        }
+        return null;
+    }
+
+    /** "heute 23:00–01:00 Uhr (Unterhaltsarbeiten)" / "tonight 23:00–01:00 (maintenance)". */
+    private static function closurePhrase(array $c, DateTimeImmutable $now, string $lang): string
+    {
+        $from = $c['from'];
+        $to = $c['to'];
+        $de = $lang === 'de';
+        $day = self::relativeDay($from, $now, $lang);
+        $t1 = $from->format('H:i');
+        if ($to === null) {
+            $text = $de ? "{$day} ab {$t1} Uhr" : "{$day} from {$t1}";
+        } elseif ($to->getTimestamp() - $from->getTimestamp() < 86400) {
+            $t2 = $to->format('H:i');
+            $text = $de ? "{$day} {$t1}–{$t2} Uhr" : "{$day} {$t1}–{$t2}";
+        } else {
+            $day2 = self::relativeDay($to, $now, $lang);
+            $t2 = $to->format('H:i');
+            $text = $de ? "{$day} {$t1} Uhr bis {$day2} {$t2} Uhr" : "{$day} {$t1} to {$day2} {$t2}";
+        }
+        $cause = self::inlineCause($c['cause'], $lang);
+        return $cause !== null ? "{$text} ({$cause})" : $text;
+    }
+
+    /**
+     * Answer-first summary: one to three self-contained, quotable sentences with
+     * the Swiss-time timestamp, queue figures, pass status and the next planned
+     * closure. Crawlers, snippets, AI assistants and api/summary.php quote it.
+     * $now only decides "today/tomorrow" and which planned closures are over.
+     */
+    public static function summary(array $data, string $lang, ?DateTimeImmutable $now = null): string
+    {
+        $now = ($now ?? new DateTimeImmutable('now'))->setTimezone(new DateTimeZone('Europe/Zurich'));
+        $de = $lang === 'de';
+        $tunnel = is_array($data['tunnel'] ?? null) ? $data['tunnel'] : [];
+        $north = is_array($tunnel['north'] ?? null) ? $tunnel['north'] : [];
+        $south = is_array($tunnel['south'] ?? null) ? $tunnel['south'] : [];
         $noNorth = empty($north['queueKm']) || $north['queueKm'] <= 0;
         $noSouth = empty($south['queueKm']) || $south['queueKm'] <= 0;
-        $passLabel = mb_strtolower(self::passStatusLabel($data['pass']['status'] ?? 'unknown', $lang));
+        $status = (string) ($tunnel['status'] ?? 'unknown');
 
-        if (($data['tunnel']['status'] ?? '') === 'closed') {
-            $reason = self::closureCauseLabel($data['tunnel']['closureReason'] ?? null, $lang);
-            if ($lang === 'de') {
-                $lead = 'Gotthard-Strassentunnel gesperrt' . ($reason ? " ({$reason})" : '') . '.';
-                return "{$lead} Gotthardpass: {$passLabel}.";
-            }
-            $lead = 'Gotthard road tunnel closed' . ($reason ? " ({$reason})" : '') . '.';
-            return "{$lead} Gotthard Pass: {$passLabel}.";
-        }
+        $stamp = self::parseSwiss($data['updated'] ?? null) !== null ? self::updated($data['updated'], $lang) : null;
+        $head = $de
+            ? 'Gotthard-Strassentunnel' . ($stamp !== null ? ", {$stamp} Uhr" : '') . ': '
+            : 'Gotthard road tunnel' . ($stamp !== null ? ", {$stamp}" : '') . ': ';
 
-        if ($lang === 'de') {
-            if ($noNorth && $noSouth) {
-                return "Aktuell freie Fahrt am Gotthard-Strassentunnel in beide Richtungen. Gotthardpass: {$passLabel}.";
-            }
+        if ($status === 'closed') {
+            $reason = self::inlineCause($tunnel['closureReason'] ?? null, $lang);
+            $body = ($de ? 'gesperrt' : 'closed') . ($reason !== null ? " ({$reason})" : '');
+        } elseif ($status === 'unknown' && ($north['queueKm'] ?? null) === null && ($south['queueKm'] ?? null) === null) {
+            $body = $de ? 'Verkehrslage unbekannt' : 'traffic situation unknown';
+        } elseif ($noNorth && $noSouth) {
+            $body = $de ? 'kein Stau in beiden Richtungen' : 'no queue in either direction';
+        } else {
             $parts = [];
             if (!$noNorth) {
-                $parts[] = self::km($north['queueKm'], $lang) . ' Rückstau am Nordportal (Göschenen)' . self::waitClause($north['waitMinutes'] ?? null, $lang);
+                $parts[] = self::km((float) $north['queueKm'], $lang)
+                    . ($de ? ' Rückstau am Nordportal (Göschenen)' : ' queue at the north portal (Göschenen)')
+                    . self::waitClause(isset($north['waitMinutes']) ? (int) $north['waitMinutes'] : null, $lang);
             }
             if (!$noSouth) {
-                $parts[] = self::km($south['queueKm'], $lang) . ' Rückstau am Südportal (Airolo)' . self::waitClause($south['waitMinutes'] ?? null, $lang);
+                $parts[] = self::km((float) $south['queueKm'], $lang)
+                    . ($de ? ' Rückstau am Südportal (Airolo)' : ' queue at the south portal (Airolo)')
+                    . self::waitClause(isset($south['waitMinutes']) ? (int) $south['waitMinutes'] : null, $lang);
             }
-            return 'Aktuell: ' . implode('; ', $parts) . ". Gotthardpass: {$passLabel}.";
+            $body = implode('; ', $parts);
         }
 
-        if ($noNorth && $noSouth) {
-            return "Currently clear at the Gotthard road tunnel in both directions. Gotthard Pass: {$passLabel}.";
+        $pass = self::passStatusLabel((string) ($data['pass']['status'] ?? 'unknown'), $lang);
+        $out = $head . $body . '. ' . ($de ? "Gotthardpass: {$pass}." : 'Gotthard Pass: ' . mb_strtolower($pass) . '.');
+
+        $planned = is_array($tunnel['plannedClosures'] ?? null) ? $tunnel['plannedClosures'] : [];
+        $next = self::nextClosure($planned, $now);
+        if ($next !== null) {
+            $out .= ($de ? ' Nächste geplante Sperrung: ' : ' Next planned closure: ') . self::closurePhrase($next, $now, $lang) . '.';
         }
-        $parts = [];
-        if (!$noNorth) {
-            $parts[] = self::km($north['queueKm'], $lang) . ' queue at the north portal (Göschenen)' . self::waitClause($north['waitMinutes'] ?? null, $lang);
+        return $out;
+    }
+
+    /**
+     * Replaces summary() when the reading is too old to describe current traffic
+     * (freshness level not "fresh"). Never claims a current state.
+     */
+    public static function staleSummary(array $data, string $lang, ?DateTimeImmutable $now = null): string
+    {
+        $de = $lang === 'de';
+        $f = self::freshness($data['updated'] ?? null, $now);
+        if ($f['ageMin'] === null) {
+            return $de
+                ? 'Gotthard-Strassentunnel: Live-Verkehrsdaten sind derzeit nicht verfügbar, die aktuelle Verkehrslage ist unbekannt.'
+                : 'Gotthard road tunnel: live traffic data is currently not available, so the current traffic situation is unknown.';
         }
-        if (!$noSouth) {
-            $parts[] = self::km($south['queueKm'], $lang) . ' queue at the south portal (Airolo)' . self::waitClause($south['waitMinutes'] ?? null, $lang);
-        }
-        return 'Right now: ' . implode('; ', $parts) . ". Gotthard Pass: {$passLabel}.";
+        $stamp = self::updated($data['updated'], $lang);
+        $age = self::age($f['ageMin'], $lang);
+        return $de
+            ? "Gotthard-Strassentunnel: keine aktuellen Verkehrsdaten. Die letzte Messung ist vom {$stamp} Uhr (vor {$age}), die aktuelle Verkehrslage ist daher unbekannt."
+            : "Gotthard road tunnel: no current traffic data. The last reading is from {$stamp} ({$age} ago), so the current traffic situation is unknown.";
+    }
+
+    /**
+     * Plain-text answer for api/summary.php: the summary (or the stale notice when
+     * the reading is older than STALE_AFTER_MIN), then source and live page link.
+     */
+    public static function plainAnswer(array $data, string $lang, string $siteUrl, ?DateTimeImmutable $now = null): string
+    {
+        $fresh = self::freshness($data['updated'] ?? null, $now)['level'] === 'fresh';
+        $answer = $fresh ? self::summary($data, $lang, $now) : self::staleSummary($data, $lang, $now);
+        $source = trim((string) ($data['source'] ?? ''));
+        $source = $source !== '' ? $source : 'opentransportdata.swiss (ASTRA Traffic Situations)';
+        $page = rtrim($siteUrl, '/') . ($lang === 'de' ? '/' : '/' . $lang);
+        return $lang === 'de'
+            ? "{$answer} Quelle: {$source}. Live-Seite: {$page}"
+            : "{$answer} Source: {$source}. Live page: {$page}";
     }
 }

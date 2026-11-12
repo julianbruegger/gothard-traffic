@@ -14,8 +14,10 @@ require __DIR__ . '/lib/TrafficParser.php';
 require __DIR__ . '/lib/PassStatusClient.php';
 require __DIR__ . '/lib/WeatherClient.php';
 require __DIR__ . '/lib/CollectorState.php';
+require __DIR__ . '/lib/IndexNow.php';
 require __DIR__ . '/../lib/Db.php';
 require __DIR__ . '/../lib/SnapshotStore.php';
+require __DIR__ . '/../lib/SnapshotMapper.php';
 require __DIR__ . '/../lib/WeatherStore.php';
 
 $debug = in_array('--debug', $argv, true);
@@ -136,6 +138,20 @@ try {
 
     $pdo   = Db::connect($config);
     $store = new SnapshotStore($pdo);
+
+    // IndexNow (optional): the previous snapshot is the change baseline on the
+    // first run. Never let it affect the snapshot itself.
+    $indexNowKey = trim((string) ($config['indexnow_key'] ?? (getenv('INDEXNOW_KEY') ?: '')));
+    $previous = null;
+    if ($indexNowKey !== '') {
+        try {
+            $previousRow = $store->latest();
+            $previous = $previousRow !== null ? SnapshotMapper::fromRow($previousRow) : null;
+        } catch (Throwable) {
+            $previous = null;
+        }
+    }
+
     $store->insert($result, $now);
 
     // Hourly weather history (advisory, non-fatal): never let a weather problem
@@ -174,6 +190,33 @@ try {
             }
         } catch (Throwable $e) {
             @file_put_contents($errorLogPath, '[' . iso_now() . '] retention: ' . $e->getMessage() . "\n", FILE_APPEND);
+        }
+    }
+
+    // IndexNow ping when the tunnel status or the planned closures changed
+    // (at most every 30 min). Writes <webroot>/<key>.txt if missing. Non-fatal.
+    if ($indexNowKey !== '') {
+        try {
+            $indexNow = new IndexNow(
+                $indexNowKey,
+                (string) ($config['site_url'] ?? 'https://gotthard.jubr.app'),
+                (string) ($config['indexnow_state_file'] ?? __DIR__ . '/../data/indexnow-state.json'),
+            );
+            if (!IndexNow::isValidKey($indexNowKey)) {
+                throw new RuntimeException('invalid indexnow_key (8-128 characters a-z, A-Z, 0-9, "-")');
+            }
+            if (!$indexNow->ensureKeyFile(__DIR__ . '/..')) {
+                throw new RuntimeException('could not write the key file to the web root');
+            }
+            $ping = $indexNow->maybePing($result, $previous, time());
+            if ($ping === 'failed') {
+                @file_put_contents($errorLogPath, '[' . iso_now() . "] indexnow: ping failed\n", FILE_APPEND);
+            }
+            if ($debug) {
+                fwrite(STDOUT, "IndexNow: {$ping}\n");
+            }
+        } catch (Throwable $e) {
+            @file_put_contents($errorLogPath, '[' . iso_now() . '] indexnow: ' . $e->getMessage() . "\n", FILE_APPEND);
         }
     }
 

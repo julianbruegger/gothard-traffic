@@ -13,6 +13,7 @@ require __DIR__ . '/lib/DatexClient.php';
 require __DIR__ . '/lib/TrafficParser.php';
 require __DIR__ . '/lib/PassStatusClient.php';
 require __DIR__ . '/lib/WeatherClient.php';
+require __DIR__ . '/lib/CollectorState.php';
 require __DIR__ . '/../lib/Db.php';
 require __DIR__ . '/../lib/SnapshotStore.php';
 require __DIR__ . '/../lib/WeatherStore.php';
@@ -35,7 +36,25 @@ function iso_now(): string
     return (new DateTimeImmutable('now', new DateTimeZone('UTC')))->format(DateTimeInterface::ATOM);
 }
 
-// One-off: `php fetch-traffic.php --backfill-weather` loads the last 90 days of
+$dataDir   = dirname($errorLogPath);
+$statePath = $config['state_file'] ?? __DIR__ . '/../data/collector-state.json';
+
+/** Send a plain-text alert mail to the optional alert_email (non-fatal). */
+function send_alert(array $config, string $subject, string $body): void
+{
+    $to = $config['alert_email'] ?? '';
+    if ($to === '') {
+        return;
+    }
+    $headers = isset($config['alert_from']) && $config['alert_from'] !== ''
+        ? 'From: ' . $config['alert_from'] : '';
+    @mail($to, '[gotthard-traffic] ' . $subject, $body, $headers);
+}
+
+// One-off repair (#52): older live weather rows hold 15-minute sums labelled as
+// hours. Re-run `php cron/fetch-traffic.php --backfill-weather` once to
+// overwrite the last 90 days with real hourly sums.
+// `php fetch-traffic.php --backfill-weather` loads the last 90 days of
 // hourly weather (Open-Meteo keeps ~3 months) so history starts before the
 // collector began storing it.
 if ($backfillWeather) {
@@ -56,12 +75,27 @@ if ($backfillWeather) {
     }
 }
 
+// Run lock: the cron fires every ~3 min but a run can take up to ~50 s when an
+// upstream hangs. If the previous run is still going, exit quietly.
+if (!is_dir($dataDir)) {
+    @mkdir($dataDir, 0775, true);
+}
+$lockHandle = @fopen($dataDir . '/fetch.lock', 'c');
+if ($lockHandle !== false && !flock($lockHandle, LOCK_EX | LOCK_NB)) {
+    exit(0);
+}
+
+CollectorState::rotateLog($errorLogPath);
+$state = new CollectorState($statePath);
+
 try {
     $client = new DatexClient($config);
     $xml    = $client->fetchRaw();
 
     $parser = new TrafficParser($config);
     $result = $parser->parse($xml);
+    // Refuse an empty / partial feed instead of storing it as "free traffic".
+    TrafficParser::assertFeedSane($result, $config);
 
     if ($debug) {
         fwrite(STDOUT, 'Matched ' . count($result['debug']) . " record(s):\n");
@@ -73,6 +107,7 @@ try {
     // Secondary, advisory source for the PASS status (alpen-paesse.ch). DATEX
     // (official ASTRA) stays authoritative; this only fills the pass status when
     // DATEX carries no pass record (e.g. summer, pass simply open). Non-fatal.
+    $result['pass']['source'] = $result['pass']['status'] !== 'unknown' ? 'datex' : null;
     if (($config['pass_source_enabled'] ?? true)) {
         try {
             $second = (new PassStatusClient($config))->fetch();
@@ -83,9 +118,9 @@ try {
                 $datexStatus = $result['pass']['status'] ?? 'unknown';
                 if ($datexStatus === 'unknown') {
                     $result['pass']['status'] = $second['status'];
-                    if (empty($result['pass']['note'])) {
-                        $result['pass']['note'] = $second['note'];
-                    }
+                    // Note stays null: it was German-only. The client renders
+                    // "Source: alpen-paesse.ch" from pass_source in both languages.
+                    $result['pass']['source'] = 'alpen-paesse.ch';
                 } elseif ($debug && $datexStatus !== $second['status']) {
                     fwrite(STDOUT, "  note: pass status differs — DATEX={$datexStatus}, alpen-paesse={$second['status']}\n");
                 }
@@ -108,14 +143,17 @@ try {
     if (($config['weather_enabled'] ?? true)) {
         try {
             $weatherStore = new WeatherStore($pdo);
-            $hour = gmdate('Y-m-d H:00:00');
-            if (!$weatherStore->hasHour($hour)) {
-                foreach ((new WeatherClient($config))->fetchCurrent() as $portal => $w) {
+            // Upsert the last completed hours every run (idempotent): late model
+            // corrections overwrite earlier values and a missed hour gets filled.
+            $n = 0;
+            foreach ((new WeatherClient($config))->fetchRecentHours(3) as $portal => $rows) {
+                foreach ($rows as $w) {
                     $weatherStore->upsert($portal, $w);
+                    $n++;
                 }
-                if ($debug) {
-                    fwrite(STDOUT, "Weather stored for {$hour}.\n");
-                }
+            }
+            if ($debug) {
+                fwrite(STDOUT, "Weather upserted: {$n} portal-hour(s).\n");
             }
         } catch (Throwable $e) {
             @file_put_contents($errorLogPath, '[' . iso_now() . '] weather: ' . $e->getMessage() . "\n", FILE_APPEND);
@@ -123,6 +161,24 @@ try {
                 fwrite(STDOUT, 'Weather failed: ' . $e->getMessage() . "\n");
             }
         }
+    }
+
+    // Optional nightly retention: thin old rows to one per hour (opt-in).
+    $retentionDays = (int) ($config['retention_days'] ?? 0);
+    if ($retentionDays > 0 && gmdate('H') === '03' && $state->get('lastRetention') !== gmdate('Y-m-d')) {
+        try {
+            $thinned = $store->thinOlderThan($retentionDays);
+            $state->set('lastRetention', gmdate('Y-m-d'));
+            if ($debug) {
+                fwrite(STDOUT, "Retention: thinned {$thinned} row(s) older than {$retentionDays} days.\n");
+            }
+        } catch (Throwable $e) {
+            @file_put_contents($errorLogPath, '[' . iso_now() . '] retention: ' . $e->getMessage() . "\n", FILE_APPEND);
+        }
+    }
+
+    if ($state->recordSuccess($now)) {
+        send_alert($config, 'collector recovered', "The collector is fetching successfully again as of {$now}.\n");
     }
 
     fwrite(STDOUT, "[{$now}] OK — north " . ($result['tunnel']['north']['queueKm'] ?? 0) . ' km'
@@ -136,6 +192,12 @@ try {
         @mkdir($logDir, 0775, true);
     }
     @file_put_contents($errorLogPath, '[' . iso_now() . "] {$message}\n", FILE_APPEND);
+
+    $threshold = (int) ($config['alert_after_failures'] ?? 5);
+    if ($state->recordFailure($message, $threshold)) {
+        send_alert($config, 'collector failing',
+            "The collector failed {$threshold} times in a row (about " . ($threshold * 3) . " min).\nLast error: {$message}\n");
+    }
 
     exit(1);
 }

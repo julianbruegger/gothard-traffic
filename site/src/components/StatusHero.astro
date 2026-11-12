@@ -29,6 +29,7 @@ const prefix = lang === 'de' ? '' : '/en';
       </span>
       <span class="chip chip--outline" id="hero-context" hidden><Icon name="event" size={18} /><span id="hero-context-label"></span></span>
     </div>
+    <div aria-live="polite"><p class="hero__stale" id="hero-stale" hidden></p></div>
     <p class="hero__headline" id="summary"><!--SSR:summary-->{summary}<!--/SSR--></p>
   </div>
   <div class="hero__side">

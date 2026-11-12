@@ -1,16 +1,27 @@
 # Gotthard Traffic Live
 
-> Live waiting times, queue length, and road status for the Gotthard road tunnel (A2, Switzerland) and the Gotthard Pass mountain road, refreshed automatically from official Swiss traffic data.
+> Live waiting times, queue length, planned night closures and road status for the Gotthard road tunnel (A2, Switzerland) and the Gotthard Pass mountain road, refreshed every ~3 minutes from official Swiss traffic data.
 
 This is an independent, unofficial project. It is not affiliated with ASTRA (the Swiss Federal Roads Office) or any official authority. For safety-critical travel decisions, use official channels.
 
+Free to quote with attribution and a link to https://gotthard.jubr.app/.
+
 ## Pages
-- Dashboard, German (default): /
-- Dashboard, English: /?lang=en
+- Live dashboard, German (default): https://gotthard.jubr.app/
+- Live dashboard, English: https://gotthard.jubr.app/en
+- Traffic forecast, German: https://gotthard.jubr.app/forecasts
+- Traffic forecast, English: https://gotthard.jubr.app/en/forecasts
+- Historic statistics (busiest weekdays, Easter records), German: https://gotthard.jubr.app/statistics
+- Historic statistics, English: https://gotthard.jubr.app/en/statistics
+- Nerd Mode (365-day data, records, minutes per km, closures, weather), German: https://gotthard.jubr.app/nerd
+- Nerd Mode, English: https://gotthard.jubr.app/en/nerd
 
 ## Machine-readable data
-- Current status (JSON, refreshed every ~10-15 min): /data/gotthard.json
-- Queue length / wait time history, last 48h (JSON): /data/history.json
+- Current status (JSON, updated about every 3 minutes): https://gotthard.jubr.app/api/gotthard.php
+- Queue length / wait time history, last 24 hours (JSON array of points): https://gotthard.jubr.app/api/history.php
+- Aggregated statistics of the last 365 days (JSON, cached 15 min; heatmap, records, asymmetry, minutesPerKm, closures, jamDynamics, dataQuality, last7d, weatherNow): https://gotthard.jubr.app/api/stats.php
+- Per-day hourly queue aggregate used by the forecast (JSON, cached 1 h): https://gotthard.jubr.app/api/observed.php
+- Collector health (JSON; HTTP 503 when the collector has not succeeded recently): https://gotthard.jubr.app/api/health.php
 
 The current-status JSON has this shape:
 
@@ -20,14 +31,24 @@ The current-status JSON has this shape:
   "source": "opentransportdata.swiss (ASTRA Traffic Situations)",
   "tunnel": {
     "status": "open | congested | restricted | closed | unknown",
-    "north": { "queueKm": <number|null>, "waitMinutes": <number|null>, "cause": "<string|null>" },
-    "south": { "queueKm": <number|null>, "waitMinutes": <number|null>, "cause": "<string|null>" }
+    "closureReason": "<string|null>",
+    "north": { "queueKm": <number|null>, "waitMinutes": <number|null>, "cause": "<string|null>", "closures": [] },
+    "south": { "queueKm": <number|null>, "waitMinutes": <number|null>, "cause": "<string|null>", "closures": [] },
+    "plannedClosures": [ <upcoming planned (night) closures, may be empty> ]
   },
   "pass": { "status": "open | closed | restricted | unknown", "note": "<string|null>" }
 }
 ```
 
-"north" refers to the Göschenen portal (Uri/German-speaking side), "south" to the Airolo portal (Ticino/Italian-speaking side). "queueKm" is the reported traffic queue length in kilometers; "waitMinutes" is the estimated additional waiting time.
+"north" refers to the Göschenen portal (Uri/German-speaking side), "south" to the Airolo portal (Ticino/Italian-speaking side). "queueKm" is the reported traffic queue length in kilometers; "waitMinutes" is the estimated additional waiting time. "closureReason" explains a closure when the tunnel status is "closed". "plannedClosures" lists announced upcoming closures.
+
+The history endpoint returns an array of points:
+
+```
+{ "t": "<ISO 8601>", "northQueueKm": <number|null>, "southQueueKm": <number|null>,
+  "northWaitMinutes": <number|null>, "southWaitMinutes": <number|null>, "status": "<tunnel status>" }
+```
 
 ## Data source
 Traffic situations are sourced from the ASTRA / opentransportdata.swiss "Traffic Situations" open data feed: https://opentransportdata.swiss/en/road-traffic/
+The forecast page is a model calibrated on historic TCS queue reports and holiday calendars; it is an estimate, not a live measurement.

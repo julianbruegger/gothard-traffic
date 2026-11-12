@@ -54,13 +54,16 @@ const ROUTES: RouteDef[] = [
       en: 'Over the summit (Tremola). Scenic but slow — only while the pass road is open.',
     },
     extraMinutes: 60,
-    available: (data) => data.pass.status === 'open' || data.pass.status === 'restricted',
+    // 'unknown' (no pass data) is not evidence the road is shut: offer it, flagged as unconfirmed.
+    available: (data) => data.pass.status === 'open' || data.pass.status === 'restricted' || data.pass.status === 'unknown',
     note: (data) =>
       data.pass.status === 'restricted'
         ? { de: 'Nur eingeschränkt befahrbar.', en: 'Restricted access.' }
-        : data.pass.status !== 'open'
-          ? { de: 'Derzeit geschlossen (Winter).', en: 'Currently closed (winter).' }
-          : null,
+        : data.pass.status === 'unknown'
+          ? { de: 'Status unbekannt', en: 'Status unknown' }
+          : data.pass.status !== 'open'
+            ? { de: 'Derzeit geschlossen (Winter).', en: 'Currently closed (winter).' }
+            : null,
   },
   {
     id: 'simplon',

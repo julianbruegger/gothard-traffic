@@ -7,21 +7,29 @@ on:
       - 'site/**'
       - 'server/**'
       - '.github/workflows/deploy.yml'
+      - '.github/workflows/ci.yml'
   workflow_dispatch: {}
 
 concurrency:
   group: deploy-hostpoint
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
+  ci:
+    uses: ./.github/workflows/ci.yml
+
   build-and-deploy:
+    needs: ci
     runs-on: ubuntu-latest
     environment: Hostpoint
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
           node-version: '22'
           cache: npm
@@ -29,7 +37,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: site
-        run: npm install
+        run: npm ci
 
       - name: Build static site
         working-directory: site
@@ -50,7 +58,6 @@ jobs:
           cp  server/index.php  deploy-staging/index.php
           cp -r server/lib      deploy-staging/lib
           cp -r server/api      deploy-staging/api
-          cp  server/schema.sql deploy-staging/schema.sql
 
           # translations.json kept in sync with the Astro project
           cp site/src/data/translations.json deploy-staging/translations.json
@@ -61,7 +68,19 @@ jobs:
           rm -rf deploy-staging/cron/tests
           rm -f  deploy-staging/cron/config.php
 
+          # Schema reference lives next to the cron scripts (cron/ is denied over HTTP)
+          cp server/schema.sql deploy-staging/cron/schema.sql
+
+          # data/ is written by cron at runtime; only its .htaccess is synced
+          # (see the rsync filters below), so it is never publicly readable.
+          mkdir -p deploy-staging/data
+          cp server/data/.htaccess deploy-staging/data/.htaccess
+
           echo "Deploy tree:" && find deploy-staging -maxdepth 2 -type d
+
+      - uses: shivammathur/setup-php@ccf2c627fe61b1b4d924adfcbd19d661a18133a0 # 2.35.2
+        with:
+          php-version: '8.3'
 
       - name: Generate cron/config.php from secrets
         env:
@@ -114,14 +133,61 @@ jobs:
           printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "$SSH_HOST" >> ~/.ssh/known_hosts 2>/dev/null || true
+          SSH_OPTS="-i $HOME/.ssh/deploy_key -o StrictHostKeyChecking=no"
 
-          # --delete keeps the remote clean; data/ is preserved (cron writes there).
+          # --delete keeps the remote clean. data/ is cron-written: only
+          # data/.htaccess is synced; everything else there is excluded, so
+          # it is neither overwritten nor deleted.
           rsync -az --delete \
-            --exclude 'data/' \
+            --include 'data/' \
+            --include 'data/.htaccess' \
+            --exclude 'data/*' \
             --exclude '.well-known/' \
-            -e "ssh -i ~/.ssh/deploy_key -o StrictHostKeyChecking=no" \
+            -e "ssh $SSH_OPTS" \
             deploy-staging/ \
             "$SSH_USER@$SSH_HOST:$REMOTE_PATH/"
 
+          # Create tables / apply additive column migrations (idempotent).
+          # shellcheck disable=SC2086
+          ssh $SSH_OPTS "$SSH_USER@$SSH_HOST" \
+            "cd $(printf '%q' "$REMOTE_PATH") && php cron/migrate.php"
+
           rm -f ~/.ssh/deploy_key
+
+      - name: Smoke test
+        env:
+          SITE_URL: ${{ vars.SITE_URL || 'https://gotthard.jubr.app' }}
+        run: |
+          set -euo pipefail
+          base="${SITE_URL%/}"
+
+          fetch() { # url -> stdout; retries for a short while after the deploy
+            curl --fail --silent --show-error --location --retry 5 --retry-delay 5 \
+              --retry-all-errors --max-time 30 "$1"
+          }
+          status() { curl --silent --output /dev/null --max-time 30 --write-out '%{http_code}' "$1"; }
+
+          for path in / /en /forecasts; do
+            echo "GET $path"
+            fetch "$base$path" >/dev/null
+          done
+
+          fetch "$base/" | grep -q 'id="status-badge"' \
+            || { echo "::error::home page lacks id=\"status-badge\""; exit 1; }
+
+          fetch "$base/api/gotthard.php" > api.json
+          python3 - <<'PY'
+          import json, sys
+          from datetime import datetime, timezone
+          d = json.load(open('api.json'))
+          updated = datetime.fromisoformat(d['updated'])
+          age = (datetime.now(timezone.utc) - updated).total_seconds() / 60
+          print(f"API updated {age:.1f} min ago")
+          if age > 30:
+              sys.exit(f"API data is stale ({age:.0f} min > 30 min)")
+          PY
+
+          # Internal files must not be public (#53)
+          [ "$(status "$base/data/stats-cache.json")" != 200 ] || { echo "::error::data/ is public"; exit 1; }
+          [ "$(status "$base/schema.sql")" != 200 ] || { echo "::error::schema.sql is public"; exit 1; }
 

@@ -36,8 +36,9 @@ final class PassStatusClient
         curl_setopt_array($ch, [
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_FOLLOWLOCATION => true,
+            CURLOPT_CONNECTTIMEOUT => 5,
             CURLOPT_TIMEOUT => 10,
-            CURLOPT_USERAGENT => 'gotthard-traffic-scraper/1.0 (+https://github.com/)',
+            CURLOPT_USERAGENT => 'gotthard-traffic-scraper/1.0 (+https://github.com/julianbruegger/gothard-traffic)',
             CURLOPT_HTTPHEADER => ['Accept: text/html,application/xhtml+xml'],
         ]);
         $html = curl_exec($ch);

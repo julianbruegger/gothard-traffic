@@ -25,24 +25,9 @@ final class SnapshotStore
         $tunnel = $result['tunnel'];
         $pass   = $result['pass'];
 
-        $stmt = $this->pdo->prepare(
-            'INSERT INTO gotthard_snapshots
-               (fetched_at,
-                tunnel_status, closure_reason,
-                north_queue_km, north_wait_min, north_cause,
-                south_queue_km, south_wait_min, south_cause,
-                pass_status, pass_note, planned_closures)
-             VALUES
-               (:fetched_at,
-                :tunnel_status, :closure_reason,
-                :north_queue_km, :north_wait_min, :north_cause,
-                :south_queue_km, :south_wait_min, :south_cause,
-                :pass_status, :pass_note, :planned_closures)'
-        );
-
         $plannedClosures = $tunnel['plannedClosures'] ?? [];
 
-        $stmt->execute([
+        $params = [
             ':fetched_at'     => gmdate('Y-m-d H:i:s', strtotime($fetchedAt)),
             ':tunnel_status'  => $tunnel['status'],
             ':closure_reason' => $tunnel['closureReason'] ?? null,
@@ -57,7 +42,55 @@ final class SnapshotStore
             ':planned_closures' => $plannedClosures
                 ? json_encode($plannedClosures, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES)
                 : null,
-        ]);
+        ];
+
+        // pass_source is a newer, nullable column. Installs that have not run
+        // the ALTER from schema.sql yet keep working without it.
+        $sql = 'INSERT INTO gotthard_snapshots
+               (fetched_at,
+                tunnel_status, closure_reason,
+                north_queue_km, north_wait_min, north_cause,
+                south_queue_km, south_wait_min, south_cause,
+                pass_status, pass_note, planned_closures%COL%)
+             VALUES
+               (:fetched_at,
+                :tunnel_status, :closure_reason,
+                :north_queue_km, :north_wait_min, :north_cause,
+                :south_queue_km, :south_wait_min, :south_cause,
+                :pass_status, :pass_note, :planned_closures%VAL%)';
+        try {
+            $stmt = $this->pdo->prepare(str_replace(['%COL%', '%VAL%'], [', pass_source', ', :pass_source'], $sql));
+            $stmt->execute($params + [':pass_source' => $pass['source'] ?? null]);
+        } catch (PDOException $e) {
+            if (stripos($e->getMessage(), 'pass_source') === false) {
+                throw $e;
+            }
+            $stmt = $this->pdo->prepare(str_replace(['%COL%', '%VAL%'], '', $sql));
+            $stmt->execute($params);
+        }
+    }
+
+    /**
+     * Retention: thin rows older than $days days to one per hour (the first of
+     * each hour is kept). Returns the number of deleted rows.
+     */
+    public function thinOlderThan(int $days): int
+    {
+        $cutoff = gmdate('Y-m-d H:i:s', time() - $days * 86400);
+        $stmt = $this->pdo->prepare(
+            "DELETE FROM gotthard_snapshots
+              WHERE fetched_at < :cutoff1
+                AND id NOT IN (
+                    SELECT keep_id FROM (
+                        SELECT MIN(id) AS keep_id
+                          FROM gotthard_snapshots
+                         WHERE fetched_at < :cutoff2
+                         GROUP BY DATE_FORMAT(fetched_at, '%Y-%m-%d %H')
+                    ) kept
+                )"
+        );
+        $stmt->execute([':cutoff1' => $cutoff, ':cutoff2' => $cutoff]);
+        return $stmt->rowCount();
     }
 
     /**
@@ -101,6 +134,59 @@ final class SnapshotStore
             'SELECT fetched_at, tunnel_status, closure_reason,
                     north_queue_km, north_wait_min,
                     south_queue_km, south_wait_min
+               FROM gotthard_snapshots
+              WHERE fetched_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL :days DAY)
+              ORDER BY fetched_at ASC'
+        );
+        $stmt->bindValue(':days', $days, PDO::PARAM_INT);
+        $stmt->execute();
+        return $stmt->fetchAll();
+    }
+
+    /**
+     * Streaming variant of statsRows(): yields the same rows oldest-first but
+     * reads them in chunks of $chunk by primary key, so memory stays flat no
+     * matter how long the history grows. Works on any MySQL/MariaDB (no
+     * unbuffered-query tricks).
+     *
+     * @return Generator<int, array>
+     */
+    public function iterateStatsRows(int $days = 365, int $chunk = 10000): Generator
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT id, fetched_at, tunnel_status, closure_reason,
+                    north_queue_km, north_wait_min,
+                    south_queue_km, south_wait_min
+               FROM gotthard_snapshots
+              WHERE id > :last
+                AND fetched_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL :days DAY)
+              ORDER BY id ASC
+              LIMIT :lim'
+        );
+        $last = 0;
+        do {
+            $stmt->bindValue(':last', $last, PDO::PARAM_INT);
+            $stmt->bindValue(':days', $days, PDO::PARAM_INT);
+            $stmt->bindValue(':lim', $chunk, PDO::PARAM_INT);
+            $stmt->execute();
+            $rows = $stmt->fetchAll();
+            foreach ($rows as $row) {
+                $last = (int) $row['id'];
+                unset($row['id']);
+                yield $row;
+            }
+        } while (count($rows) === $chunk);
+    }
+
+    /**
+     * Slim rows for the observed-days aggregate (see ObservedDays): the last
+     * $days days, oldest first. Filters on fetched_at so the index is used.
+     */
+    public function observedRows(int $days = 365): array
+    {
+        $stmt = $this->pdo->prepare(
+            'SELECT fetched_at, tunnel_status, closure_reason,
+                    north_queue_km, south_queue_km
                FROM gotthard_snapshots
               WHERE fetched_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL :days DAY)
               ORDER BY fetched_at ASC'

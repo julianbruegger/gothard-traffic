@@ -1,8 +1,8 @@
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import { computeQueueTrend } from './trend';
-import sampleData from '../data/sample-gotthard.json';
-import sampleHistory from '../data/sample-history.json';
+import placeholderData from '../data/sample-gotthard.json';
+import placeholderHistory from '../data/sample-history.json';
 import type { GotthardData, HistoryPoint } from './types';
 
 function readJson<T>(path: string, fallback: T): T {
@@ -13,15 +13,25 @@ function readJson<T>(path: string, fallback: T): T {
 }
 
 /**
- * Reads the live snapshot + history written into public/data at build time,
- * falling back to the bundled samples. Shared by the German (`/`) and English
- * (`/en`) home pages so both render identical data without duplicating the
- * file-reading logic.
+ * Data for the home pages (`/` and `/en`).
+ *
+ * Production build: a NEUTRAL placeholder (status 'unknown', no timestamp, no
+ * causes/notes, empty history). Nothing time-sensitive is baked into the static
+ * HTML; the live values are injected per request by server/index.php (SSR) and
+ * then kept fresh by live.ts. Baking public/data/*.json here used to freeze a
+ * months-old snapshot that crawlers and no-JS visitors saw as "current".
+ *
+ * `astro dev` only: read the sample snapshot in public/data so the UI has
+ * something realistic to show without PHP.
  */
 export function loadHomeData() {
-  const root = join(process.cwd(), 'public/data');
-  const data = readJson<GotthardData>(join(root, 'gotthard.json'), sampleData as GotthardData);
-  const history = readJson<HistoryPoint[]>(join(root, 'history.json'), sampleHistory as HistoryPoint[]);
+  let data = placeholderData as GotthardData;
+  let history = placeholderHistory as HistoryPoint[];
+  if (import.meta.env.DEV) {
+    const root = join(process.cwd(), 'public/data');
+    data = readJson<GotthardData>(join(root, 'gotthard.json'), data);
+    history = readJson<HistoryPoint[]>(join(root, 'history.json'), history);
+  }
   const northTrend = computeQueueTrend(history, 'northQueueKm');
   const southTrend = computeQueueTrend(history, 'southQueueKm');
   return { data, history, northTrend, southTrend };

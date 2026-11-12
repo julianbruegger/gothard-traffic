@@ -1,170 +1,201 @@
 # Gotthard Traffic Live
 
-An independent clone of the gotthard-traffic.ch idea: live queue length, waiting
-time and road status for the Gotthard road tunnel (north/south portal) and the
-Gotthard Pass, built for **plain HTML/PHP web hosting with no Node.js at
-runtime**.
+Live queue length, waiting time and road status for the Gotthard road tunnel
+(north portal Göschenen / south portal Airolo) and the Gotthard Pass, plus a
+traffic forecast. German and English. Built for **plain PHP + MySQL web
+hosting with no Node.js at runtime**.
+
+Live site: https://gotthard.jubr.app
+
+This is an independent, unofficial project, not affiliated with ASTRA or any
+Swiss authority. Do not rely on it for safety-critical decisions.
 
 ## How it works
 
 ```
-                 ┌─────────────────────────┐
-   npm run build │  Astro (site/)          │  → dist/index.html, /_astro/*,
-   (Node, local  │  static output only     │    robots.txt, sitemap.xml, ...
-   or in CI)     └─────────────────────────┘
-                              │  upload once (or via CI)
-                              ▼
-   ┌───────────────────────────────────────────────────────────┐
-   │  Your PHP web host (no Node needed here at all)           │
-   │                                                            │
-   │  index.php  ──reads──▶ index.html (template) + data/*.json│
-   │      │                                                     │
-   │      └─ injects live status into <title>, meta tags,      │
-   │         JSON-LD and the visible numbers before sending    │
-   │         HTML to the browser (crawlers/AI bots see live    │
-   │         data even without running JavaScript)             │
-   │                                                            │
-   │  cron/fetch-traffic.php  ──runs every 5–15 min via cron──▶ │
-   │      calls the official ASTRA / opentransportdata.swiss   │
-   │      traffic feed, writes data/gotthard.json + history.json│
-   │                                                            │
-   │  Browser JS (bundled into dist/) polls data/*.json every  │
-   │  60s and updates the page live without a reload.          │
-   └───────────────────────────────────────────────────────────┘
+ opentransportdata.swiss (DATEX II)      alpen-paesse.ch (pass status, fallback)
+              │                                   │
+              └──────────────┬────────────────────┘
+                             ▼
+        cron/fetch-traffic.php   (every ~3 minutes; weather hourly, Open-Meteo)
+                             │ INSERT
+                             ▼
+              MySQL / MariaDB: gotthard_snapshots, gotthard_weather
+                             │                         (server/schema.sql)
+          ┌──────────────────┴───────────────────┐
+          ▼                                      ▼
+  api/*.php (JSON)                         index.php (SSR)
+                                           takes the built index.html and
+          ▲                                injects live status into title,
+          │ polled every 60 s              meta tags, JSON-LD and the visible
+     browser JS (live.ts)                  numbers, so crawlers without
+                                           JavaScript see current data
 ```
 
-Node/npm is **only** needed to run `astro build` (on your laptop, or in the
-included GitHub Actions workflow). The web host only ever needs PHP + cron.
+Node/npm is only needed to build the static frontend (`astro build`) locally
+or in CI. The host only needs PHP, MySQL and cron.
 
 ## Repository layout
 
-- `site/` – the Astro project (frontend). `npm run build` produces `site/dist/`.
-- `server/index.php` – reads `dist/index.html` as a template and injects live
-  data server-side (SEO/AI-crawler support). Deployed to the web root.
-- `server/lib/` – PHP helpers shared by `index.php` (i18n, formatting, the SSR
-  injection logic).
-- `server/cron/fetch-traffic.php` – the scraper, invoked by a cron job. Writes
-  `data/gotthard.json` and `data/history.json`.
-- `server/translations.json` – a build-time copy of `site/src/data/translations.json`
-  kept in sync by the deploy workflow (single source of truth is the Astro copy).
-- `.github/workflows/deploy.yml` – builds the site and (optionally) FTP-deploys it.
+| Path | Purpose |
+| --- | --- |
+| `site/` | Astro project (static frontend). `npm run build` writes `site/dist/`. |
+| `site/src/pages/` | `/`, `/forecasts`, `/statistics`, `/nerd` and the English `/en/...` equivalents. |
+| `site/src/data/` | `translations.json` (de/en strings) and generated forecast data, see [docs/data-pipeline.md](docs/data-pipeline.md). |
+| `site/public/` | `robots.txt`, `llms.txt`, icons, manifest, sample data for local dev. |
+| `server/index.php`, `server/lib/` | PHP SSR wrapper and helpers (i18n, DB, formatting). |
+| `server/api/` | JSON endpoints backed by the database. |
+| `server/cron/` | The collector (`fetch-traffic.php`), DATEX/pass/weather clients, parser, `migrate.php` and tests. |
+| `server/schema.sql` | Database schema (`gotthard_snapshots`, `gotthard_weather`). |
+| `.github/workflows/` | `ci.yml` (PHP lint and tests, Astro build), `deploy.yml`, `backtest.yml` (forecast backtest). |
+| `.github/workflows/deploy.yml` | Build and deploy over SSH/rsync. |
 
-## 1. Get an ASTRA / opentransportdata.swiss API token
+## Setup
 
-Traffic data comes from the official Swiss open data platform, not from
-scraping another traffic site's HTML.
+### 1. API token
 
-1. Register at https://api-manager.opentransportdata.swiss/
-2. Subscribe to the "Traffic Situations" (road traffic) product.
-3. Copy `server/cron/config.example.php` to `server/cron/config.php` and set
-   `api_token` (and `auth_header`/`auth_prefix` if the portal shows you a
-   `Ocp-Apim-Subscription-Key` header instead of a Bearer token).
+1. Register at https://api-manager.opentransportdata.swiss/ and subscribe to
+   the "Traffic Situations" (road traffic) product.
+2. Keep the token for step 3 (or the `DATEX_API_TOKEN` secret for CI).
 
-`config.php` is gitignored - never commit real credentials.
+### 2. Database
 
-**Note on the DATEX II parsing:** this project was built without a live API
-token to test against, so `TrafficParser.php` matches records by keyword
-search (case-insensitive "gotthard", "göschenen", "airolo", ...) and
-namespace-agnostic field names (`local-name()` XPath) rather than a strict
-schema. Once you have a real token, run:
+Create a MySQL 5.7+ / MariaDB 10.3+ database and load the schema once:
 
-```
-php server/cron/fetch-traffic.php --debug
+```bash
+mysql -u USER -p DATABASE < server/schema.sql
 ```
 
-This prints every matched raw XML record. If `queueKm`/`waitMinutes` come back
-empty, inspect the dumped XML and adjust the field names in
-`extractQueueKm()` / `extractWaitMinutes()` in `TrafficParser.php`. A test
-fixture + assertions are in `server/cron/tests/` (`php server/cron/tests/test-parser.php`).
+The collector inserts one row per run into `gotthard_snapshots` (full history
+for the API, statistics and forecast) and hourly weather into
+`gotthard_weather`. On existing installs `php server/cron/migrate.php`
+creates missing tables and applies additive column migrations; the deploy runs
+it automatically.
 
-## 2. Local development
+### 3. Configuration
+
+```bash
+cp server/cron/config.example.php server/cron/config.php
+```
+
+Fill in `api_token`, `db_host`, `db_name`, `db_user`, `db_pass`. `config.php`
+is gitignored. The deploy workflow generates it from secrets (see below).
+
+### 4. Cron
+
+Run the collector every 3 minutes on the host:
+
+```
+*/3 * * * * php /path/to/webroot/cron/fetch-traffic.php >> /path/to/webroot/cron/cron.log 2>&1
+```
+
+Check parsing against the live feed with `php server/cron/fetch-traffic.php --debug`
+and inspect unmatched records with `php server/cron/diagnose.php`. To load the
+last 90 days of weather once: `php cron/fetch-traffic.php --backfill-weather`.
+Optional settings (failure alert mail, health threshold, retention, weather
+switch) are documented in `config.example.php`.
+
+## Local development
 
 ```bash
 cd site
 npm install
-npm run dev       # http://localhost:4321, uses sample data in public/data/
-npm run build     # produces site/dist/
+npm run dev        # http://localhost:4321
+npm run build      # astro check + build -> site/dist/
+npm run check:seo  # after build: unique titles/descriptions, llms.txt URLs exist
 ```
 
-The dashboard reads `/data/gotthard.json` and `/data/history.json` at
-runtime via `fetch()`. `site/public/data/*.json` contains sample data so the
-UI looks realistic in local dev; those files are deliberately **not**
-deployed (see below) so they never overwrite the real, cron-maintained data
-on your host.
+Without PHP, the browser falls back to the sample data in
+`site/public/data/*.json` (never deployed). `npm run fetch` refreshes those
+sample files from the live feed (needs `DATEX_API_TOKEN` in `site/.env`).
 
-To test the PHP layer locally:
+## Tests
+
+PHP tests live in `server/cron/tests/` (they also cover `server/lib/`). Run all
+of them, exactly as CI does:
 
 ```bash
-cd server/cron
-cp config.example.php config.php   # fill in your API token
-php fetch-traffic.php --debug
+for t in server/cron/tests/test-*.php; do php "$t" || exit 1; done
 ```
 
-## 3. Deploy to your PHP host
+The forecast model has a backtest: `cd site && npm run backtest`.
 
-### Directory layout on the host (web root)
+## Deployment (GitHub Actions)
 
+`.github/workflows/deploy.yml` runs on push to `main` (after CI, environment
+`Hostpoint`). It builds the site, assembles `index.php`, `lib/`, `api/`,
+`translations.json` and `cron/` (with `schema.sql`), writes `cron/config.php`
+from secrets, rsyncs the result over SSH (keeping the server's `data/` folder),
+runs `php cron/migrate.php` and finishes with a smoke test.
+
+Secrets (environment `Hostpoint`):
+
+| Secret | Meaning |
+| --- | --- |
+| `DATEX_API_TOKEN` | opentransportdata.swiss API token |
+| `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASS` | database credentials |
+| `HOSTPOINT_HOST`, `HOSTPOINT_USER`, `HOSTPOINT_SSH_KEY`, `HOSTPOINT_PATH` | SSH target and web root |
+
+You still create the (empty) database and add the cron job once on the host;
+tables are created by `migrate.php` during the deploy.
+
+### Privacy and security headers
+
+- The browser contacts only the site's own origin: the page uses the system
+  font stack and third-party data goes through `api/*.php`. Keep it that way;
+  `npm run check:seo` fails on any reference to Google Fonts.
+- `site/public/.htaccess` sets HSTS, a Content-Security-Policy and other
+  security headers. The inline-script hashes in the CSP are filled in after
+  every build by `site/scripts/csp-hashes.mjs` (part of `npm run build`).
+  The CSP currently ships as `Content-Security-Policy-Report-Only`; once the
+  browser console is clean on all pages on the live host, switch to the
+  enforcing line right below it in `.htaccess`.
+
+## Pages and API
+
+| URL | Content |
+| --- | --- |
+| `/`, `/en` | Live dashboard (status, queues, pass, planned closures, trend, FAQ) |
+| `/forecasts`, `/en/forecasts` | Forecast by weekday, time of day and holidays |
+| `/statistics`, `/en/statistics` | Historic statistics from TCS reports (busiest weekdays, Easter records) |
+| `/nerd`, `/en/nerd` | Nerd Mode: 365-day records, heatmap, minutes per km, closures, weather, CSV |
+| `/api/gotthard.php` | Current status (JSON) |
+| `/api/history.php` | Last 24 h of snapshots (JSON array) |
+| `/api/stats.php` | Aggregated 365-day statistics (JSON, cached 15 min) |
+| `/api/observed.php` | Per-day hourly queues for the forecast model (JSON, cached 1 h) |
+| `/api/health.php` | Collector health for uptime monitors (HTTP 503 when stale) |
+| `/api/holidays.php`, `/api/train.php` | Cached proxies for school holidays and the next Göschenen-Airolo train |
+
+Example `/api/gotthard.php` response:
+
+```json
+{
+  "updated": "2026-11-11T09:27:03+00:00",
+  "source": "opentransportdata.swiss (ASTRA Traffic Situations)",
+  "tunnel": {
+    "status": "congested",
+    "closureReason": null,
+    "north": { "queueKm": 4.0, "waitMinutes": 40, "cause": "Hohes Verkehrsaufkommen", "closures": [] },
+    "south": { "queueKm": null, "waitMinutes": null, "cause": null, "closures": [] },
+    "plannedClosures": []
+  },
+  "pass": { "status": "closed", "note": null }
+}
 ```
-/ (web root)
-├── index.php          ← from server/index.php
-├── index.html          ← from site/dist/ (Astro build output)
-├── _astro/...          ← from site/dist/
-├── robots.txt, sitemap.xml, llms.txt, favicon.svg, og-image.png  ← from site/dist/
-├── lib/                ← from server/lib/
-├── translations.json   ← copy of site/src/data/translations.json
-├── cron/
-│   ├── fetch-traffic.php
-│   ├── lib/
-│   └── config.php       ← you create this on the server, never commit it
-└── data/                ← created automatically by the first cron run
-    ├── gotthard.json
-    └── history.json
-```
 
-### Option A: manual upload
+`/api/history.php` returns points such as
+`{"t":"2026-11-11T09:24:01+00:00","northQueueKm":4,"southQueueKm":null,"northWaitMinutes":40,"southWaitMinutes":null,"status":"congested"}`.
 
-1. `cd site && npm run build`
-2. Upload the contents of `site/dist/` to your web root, **except**
-   `dist/data/` (that's sample data for local dev only).
-3. Upload `server/index.php` and `server/lib/` to the web root.
-4. Upload `server/cron/` (minus `server/cron/tests/`) to `webroot/cron/`.
-5. Copy `site/src/data/translations.json` to `webroot/translations.json`.
-6. On the server, copy `cron/config.example.php` to `cron/config.php` and add
-   your API token.
-7. Set up a cron job (cPanel → Cron Jobs, every 10-15 minutes):
-   ```
-   */10 * * * * php /home/yourusername/public_html/cron/fetch-traffic.php >> /home/yourusername/public_html/cron/cron.log 2>&1
-   ```
+Languages live at real URLs (`/`, `/en`), not `?lang=`. Free-text fields from
+the feed (`cause`, pass `note`) are shown in the feed's language and are not
+translated.
 
-### Option B: GitHub Actions (automatic on push)
+## Known limitations
 
-The included `.github/workflows/deploy.yml` builds the site and uploads it
-over FTP. It's disabled by default so pushes don't fail before you configure
-it. To enable:
-
-1. Repo **Settings → Secrets and variables → Actions → Secrets**: add
-   `FTP_SERVER`, `FTP_USERNAME`, `FTP_PASSWORD`.
-2. Same page, **Variables** tab: add `DEPLOY_ENABLED` = `true`. Optionally add
-   `FTP_SERVER_DIR` if your host needs a specific remote path (e.g.
-   `/httpdocs/` or `/public_html/`) instead of `/`.
-3. Push to `main` (or run the workflow manually from the Actions tab).
-
-The workflow never uploads `data/` or `cron/config.php`, so it's safe to
-re-run on every push without disturbing the live, cron-maintained data or
-your server credentials.
-
-You still need to do steps 6-7 from Option A once, manually, on the server
-(creating `cron/config.php` and the cron job) - CI can't do that part for you.
-
-## Notes & limitations
-
-- **Language switching** (`?lang=de` / `?lang=en`) is fully server-rendered by
-  `index.php`, including `<title>`, meta tags and JSON-LD. If you ever host
-  the raw static `dist/` output without PHP, the page only exists in German
-  (the build default) - client-side JS does not re-translate static UI
-  strings, by design, to avoid duplicating the i18n logic.
-- Free-text fields straight from the traffic feed (the `cause`/`note` you see
-  under a queue, or the pass status note) are shown in whatever language the
-  upstream ASTRA feed returns them in - they are not machine-translated.
-- This is an independent, unofficial project, not affiliated with ASTRA or
-  any Swiss authority. Don't rely on it for safety-critical routing decisions.
+- Forecast and statistics data are generated offline from a scraped
+  third-party dataset that is not in the repository, see
+  [docs/data-pipeline.md](docs/data-pipeline.md).
+- No licence file yet (owner decision pending); data attributions: traffic
+  data from ASTRA / opentransportdata.swiss, pass status cross-check from
+  alpen-paesse.ch.
+- See the open GitHub issues for further work.

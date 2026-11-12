@@ -45,6 +45,10 @@ export interface ObservedModel {
   high: Record<Dir, number[][]>;       // [dow][hour] busy-day km at level 1
   monthCorr: Record<Dir, number[]>;    // [month 0–11] posterior correction
   recentCorr: Record<Dir, number>;     // effective correction over the last RECENT_DAYS days
+  recentGroup: Record<Dir, number[]>;  // same, per weekday group (see weekdayGroup)
+  persist: Record<Dir, number[][][]>;  // [dow][k][hour] normalised hourly km of the last same-weekday days, newest first
+  persistWeight: number;
+  persistTau: number;
   recentWeight: number;
   recentTau: number;
   monthDays: number[];                 // observed days per month
@@ -62,6 +66,9 @@ const SHRINK_DAYS = 7;
 const HIGH_QUANTILE = 0.9;
 /** Window for the recent-level estimate. */
 const RECENT_DAYS = 14;
+/** Window and shrinkage (pseudo-days) for the per-weekday-group recent level. */
+const RECENT_GROUP_DAYS = 28;
+const GROUP_SHRINK = 3;
 
 export interface FitOptions {
   /** Weight of the recent level on the day right after the data ends (0 = off). */
@@ -74,11 +81,23 @@ export interface FitOptions {
    * times each week, so the hourly mean flattens every peak).
    */
   peakScale?: number;
+  /** Weight of the same-weekday persistence curve on the day right after the data ends (0 = off). */
+  persistWeight?: number;
+  /** e-folding time (days) over which the persistence weight fades out. */
+  persistTau?: number;
 }
-const DEFAULT_FIT: Required<FitOptions> = { recentWeight: 0.8, recentTau: 14, peakScale: 0.75 };
+const DEFAULT_FIT: Required<FitOptions> = {
+  recentWeight: 0.8, recentTau: 14, peakScale: 0.75, persistWeight: 0.8, persistTau: 20,
+};
+/** Number of recent same-weekday days kept for the persistence term, and their decay per week back. */
+const PERSIST_DAYS = 4;
+const PERSIST_DECAY = 0.6;
 
 export const observedDays: ObservedDay[] = (observed as { days: ObservedDay[] }).days;
 export const observedMeta = (observed as { meta: { firstReading: string; lastReading: string; readings: number } }).meta;
+
+/** Weekday groups with their own recent level: Mon–Thu, Fri, Sat, Sun. */
+export const weekdayGroup = (dow: number) => (dow === 0 ? 3 : dow === 6 ? 2 : dow === 5 ? 1 : 0);
 
 const dowOf = (iso: string) => new Date(iso + 'T12:00:00Z').getUTCDay();
 const monthOf = (iso: string) => +iso.slice(5, 7) - 1;
@@ -104,6 +123,19 @@ function quantile(sorted: number[], q: number): number {
 // One circular [1,2,1] pass: removes 3-minute sampling jitter without moving peaks.
 const smooth = (row: number[]) =>
   row.map((_, h) => (row[(h + 23) % 24] + 2 * row[h] + row[(h + 1) % 24]) / 4);
+
+/** Replace missing hours by the nearest known value (a day needs most hours to get here). */
+function fillGaps(hours: (number | null)[]): number[] {
+  return hours.map((v, h) => {
+    if (v !== null) return v;
+    for (let d = 1; d < 24; d++) {
+      const a = hours[h - d], b = hours[h + d];
+      if (a != null) return a;
+      if (b != null) return b;
+    }
+    return 0;
+  });
+}
 
 const round = (v: number, d = 3) => +v.toFixed(d);
 
@@ -196,7 +228,35 @@ export function fitObservedModel(
     });
     const recent = predSum > 0 ? obsSum / predSum : 1;
 
-    return { shape, high, corr: post.map((v) => round(v)), recent: round(recent) };
+    // Same, per weekday group over a longer window (a quiet midweek must not
+    // pull down the Saturday forecast), shrunk towards the overall recent level.
+    const groupCutoff = new Date(Date.parse(lastIso + 'T12:00:00Z') - (RECENT_GROUP_DAYS - 1) * 86_400_000).toISOString().slice(0, 10);
+    const gObs = [0, 0, 0, 0], gPred = [0, 0, 0, 0], gN = [0, 0, 0, 0];
+    meta.forEach((x, i) => {
+      if (x.day.d < groupCutoff) return;
+      const g = weekdayGroup(x.dow);
+      gObs[g] += vol[i];
+      gPred[g] += shape[x.dow].reduce((a, b) => a + b, 0) * lvl[i];
+      gN[g]++;
+    });
+    const recentGroup = gObs.map((o, g) => {
+      const raw = gPred[g] > 0 ? o / gPred[g] : recent;
+      return round((gN[g] * raw + GROUP_SHRINK * recent) / (gN[g] + GROUP_SHRINK));
+    });
+
+    // Last same-weekday days, normalised by their own calendar level and month
+    // correction so a holiday week does not leak into a normal one.
+    const persist: number[][][] = Array.from({ length: 7 }, () => []);
+    meta
+      .map((x, i) => ({ x, k: lvl[i] * post[x.m] }))
+      .sort((a, b) => (a.x.day.d < b.x.day.d ? 1 : -1))
+      .forEach(({ x, k }) => {
+        if (persist[x.dow].length >= PERSIST_DAYS) return;
+        if (x.day[dir].filter((v) => v !== null).length < 18) return;
+        persist[x.dow].push(fillGaps(x.day[dir]).map((v) => round(v / k)));
+      });
+
+    return { shape, high, corr: post.map((v) => round(v)), recent: round(recent), recentGroup, persist };
   };
 
   const n = fitDir('n');
@@ -207,6 +267,10 @@ export function fitObservedModel(
     high: { n: n.high, s: s.high },
     monthCorr: { n: n.corr, s: s.corr },
     recentCorr: { n: n.recent, s: s.recent },
+    recentGroup: { n: n.recentGroup, s: s.recentGroup },
+    persist: { n: n.persist, s: s.persist },
+    persistWeight: opts.persistWeight,
+    persistTau: opts.persistTau,
     recentWeight: opts.recentWeight,
     recentTau: opts.recentTau,
     monthDays,
@@ -229,12 +293,28 @@ export function observedDayProfiles(
   // Blend towards the recent level for dates shortly after the data ends.
   const gap = (Date.parse(isoDate + 'T12:00:00Z') - Date.parse(model.dateEnd + 'T12:00:00Z')) / 86_400_000;
   const w = gap > 0 ? model.recentWeight * Math.exp(-(gap - 1) / model.recentTau) : 0;
-  const kN = level.n * ((1 - w) * model.monthCorr.n[m] + w * model.recentCorr.n);
-  const kS = level.s * ((1 - w) * model.monthCorr.s[m] + w * model.recentCorr.s);
-  return {
-    n: model.shape.n[dow].map((v) => round(v * kN)),
-    s: model.shape.s[dow].map((v) => round(v * kS)),
-    nHigh: model.high.n[dow].map((v) => round(v * kN)),
-    sHigh: model.high.s[dow].map((v) => round(v * kS)),
+  const g = weekdayGroup(dow);
+  const kN = level.n * ((1 - w) * model.monthCorr.n[m] + w * model.recentGroup.n[g]);
+  const kS = level.s * ((1 - w) * model.monthCorr.s[m] + w * model.recentGroup.s[g]);
+  // Same-weekday persistence: blend the typical curve with the exponentially
+  // weighted mean of the last same-weekday days (already at level 1).
+  const pw = gap > 0 ? model.persistWeight * Math.exp(-(gap - 1) / model.persistTau) : 0;
+  const blend = (dir: Dir, k: number) => {
+    const shape = model.shape[dir][dow];
+    const days = model.persist[dir][dow];
+    if (pw <= 0 || !days.length) return shape.map((v) => round(v * k));
+    let wsum = 0;
+    const avg = new Array(24).fill(0);
+    days.forEach((d, i) => {
+      const wi = Math.pow(PERSIST_DECAY, i);
+      wsum += wi;
+      for (let h = 0; h < 24; h++) avg[h] += wi * d[h];
+    });
+    return shape.map((v, h) => round(((1 - pw) * v + pw * (avg[h] / wsum)) * k));
   };
+  const nTyp = blend('n', kN);
+  const sTyp = blend('s', kS);
+  const band = (dir: Dir, k: number, typ: number[]) =>
+    model.high[dir][dow].map((v, h) => round(Math.max(v * k, typ[h] * 1.15)));
+  return { n: nTyp, s: sTyp, nHigh: band('n', kN, nTyp), sHigh: band('s', kS, sTyp) };
 }

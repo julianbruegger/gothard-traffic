@@ -1,6 +1,7 @@
 import { isLang, DEFAULT_LANG, t } from '../lib/i18n';
-import { formatKm, formatMinutes, formatUpdated, formatTrendDelta, statusLabel, passStatusLabel, buildSummary, closureTitle, closureDetail } from '../lib/format';
+import { formatKm, formatWait, dataFreshness, staleMessage, type Freshness, formatUpdated, formatTrendDelta, statusLabel, passStatusLabel, buildSummary, closureTitle, closureDetail } from '../lib/format';
 import { axesSvg, buildSparkline, type SparklineResult } from '../lib/chart';
+import { fmtTime, fmtIsoDayMonth } from '../lib/swiss-time';
 import { computeQueueTrend } from '../lib/trend';
 import { generateForecast, generateDayCurve, swissDayInfo, idxToWaitMinutes, type ForecastPoint, type TrafficLevel } from '../lib/forecast';
 import { iconSvg } from '../lib/icons';
@@ -55,28 +56,49 @@ function renderClosures(side: 'north' | 'south', closures: string[] | undefined)
   const el = document.getElementById(`${side}-closures`);
   if (!el) return;
   const items = closures ?? [];
-  el.innerHTML = items.map(c => `<li class="card__closure-tag">${c}</li>`).join('');
+  el.innerHTML = items.map(c => `<li class="card__closure-tag">${escapeHtml(String(c))}</li>`).join('');
   if (items.length > 0) el.removeAttribute('hidden');
   else el.setAttribute('hidden', '');
 }
 
+// Freshness is judged from the data's own `updated` stamp and re-evaluated on
+// every tick, so a stalled cron can't leave a stale "Freie Fahrt" on screen.
+function renderStale(level: Freshness, message: string | null) {
+  const el = document.getElementById('hero-stale');
+  if (!el) return;
+  if (message) {
+    el.textContent = message;
+    el.setAttribute('data-level', level);
+    el.removeAttribute('hidden');
+  } else {
+    el.textContent = '';
+    el.removeAttribute('data-level');
+    el.setAttribute('hidden', '');
+  }
+}
+
 function renderData(data: GotthardData) {
-  setAttr('status-badge', 'data-status', data.tunnel.status);
-  setText('status-label', statusLabel(data.tunnel.status, lang));
-  setText('summary', buildSummary(data, lang));
+  const fresh = dataFreshness(data.updated);
+  const isFresh = fresh.level === 'fresh';
+  renderStale(fresh.level, staleMessage(fresh, lang));
+
+  setAttr('status-badge', 'data-status', isFresh ? data.tunnel.status : 'unknown');
+  setText('status-label', statusLabel(isFresh ? data.tunnel.status : 'unknown', lang));
+  setText('summary', isFresh ? buildSummary(data, lang) : t(lang, 'hero.staleSummary'));
   setText('hero-updated', formatUpdated(data.updated, lang));
   if (data.updated) setAttr('hero-updated', 'datetime', data.updated);
 
   for (const side of ['north', 'south'] as const) {
-    const portal = data.tunnel[side];
+    // Stale readings must not be shown as current: blank the figures.
+    const portal = isFresh ? data.tunnel[side] : { queueKm: null, waitMinutes: null, cause: null, closures: [] as string[] };
     setText(`${side}-queue`, formatKm(portal.queueKm, lang));
-    setText(`${side}-wait`, formatMinutes(portal.waitMinutes, lang));
+    setText(`${side}-wait`, formatWait(portal, lang, !isFresh));
     setText(`${side}-cause`, portal.cause ?? '');
     document.getElementById(`${side}-cause-row`)?.toggleAttribute('hidden', !portal.cause);
     // Queue meter: 0–15 km track (longer queues pin the bar full).
     const meter = document.getElementById(`${side}-meter`);
     if (meter) meter.style.width = `${Math.min(100, Math.max(0, ((portal.queueKm ?? 0) / 15) * 100)).toFixed(1)}%`;
-    const free = data.tunnel.status !== 'closed' && (!portal.queueKm || portal.queueKm <= 0);
+    const free = isFresh && data.tunnel.status !== 'closed' && (!portal.queueKm || portal.queueKm <= 0);
     document.getElementById(`${side}-free`)?.toggleAttribute('hidden', !free);
     renderClosures(side, portal.closures);
   }
@@ -118,7 +140,6 @@ interface TrendChartState {
 }
 let trendChartState: TrendChartState | null = null;
 let trendHoverBound = false;
-const trendTimeFormatter = new Intl.DateTimeFormat(lang === 'de' ? 'de-CH' : 'en-CH', { hour: '2-digit', minute: '2-digit' });
 
 function bindTrendChartHover(svg: SVGSVGElement) {
   if (trendHoverBound) return;
@@ -164,7 +185,7 @@ function bindTrendChartHover(svg: SVGSVGElement) {
       (p.north !== null ? dot(p.yNorth, 'var(--c-north)') : '') +
       (p.south !== null ? dot(p.ySouth, 'var(--c-south)') : '');
 
-    const timeLabel = trendTimeFormatter.format(new Date(p.t));
+    const timeLabel = fmtTime(new Date(p.t), lang);
     tip.innerHTML =
       `<div class="trend__tt-time">${timeLabel}</div>` +
       `<div class="trend__tt-row"><span class="trend__tt-key"><span class="trend__tt-dot" style="background:var(--c-north)"></span>${t(lang, 'dir.south')}</span>` +
@@ -255,8 +276,7 @@ function swissDow(now: Date): number {
 }
 
 function isoDateLabel(iso: string): string {
-  const [, m, d] = iso.split('-');
-  return lang === 'de' ? `${d}.${m}.` : `${m}/${d}`;
+  return fmtIsoDayMonth(iso, lang);
 }
 
 // fchartDayOffset: days from today (Swiss local), can be negative. Bound to the
@@ -440,7 +460,7 @@ function renderForecastChart(history: HistoryPoint[]) {
   const note = document.getElementById('fchart-note');
   if (note) {
     if (chart.historic.length === 0) {
-      note.textContent = `${t(lang, 'fchart.noHistoric')} ${historicMeta.dateStart} – ${historicMeta.dateEnd}.`;
+      note.textContent = `${t(lang, 'fchart.noHistoric')} ${isoDateLabel(historicMeta.dateStart)} – ${isoDateLabel(historicMeta.dateEnd)}.`;
       note.hidden = false;
     } else {
       note.hidden = true;
@@ -731,24 +751,45 @@ async function fetchJson<T>(url: string): Promise<T | null> {
   }
 }
 
-// Try the DB-backed API endpoint first; fall back to the static JSON file so
-// local Astro dev (no PHP) keeps working with the sample data in public/data/.
+// Try the DB-backed API endpoint first. Only local Astro dev (no PHP) falls back
+// to the static sample JSON; in production an old leftover /data/*.json on the
+// host must never be shown as live data.
 async function fetchWithFallback<T>(apiUrl: string, fallbackUrl: string): Promise<T | null> {
   const data = await fetchJson<T>(apiUrl);
   if (data !== null) return data;
-  return fetchJson<T>(fallbackUrl);
+  return import.meta.env.DEV ? fetchJson<T>(fallbackUrl) : null;
+}
+
+let lastData: GotthardData | null = null;
+let currentIsoDate = swissDayInfo(new Date()).isoDate;
+
+// Calendar widgets are rendered from the clock, so redo them when the Swiss
+// date rolls over (tab left open past midnight).
+function refreshCalendarIfDayChanged() {
+  const iso = swissDayInfo(new Date()).isoDate;
+  if (iso === currentIsoDate) return;
+  currentIsoDate = iso;
+  fchartDayOffset = 0;
+  renderWeek();
+  renderHeroContext();
+  renderDayTabs(new Date());
 }
 
 async function tick() {
+  refreshCalendarIfDayChanged();
   const [data, history] = await Promise.all([
     fetchWithFallback<GotthardData>('/api/gotthard.php', '/data/gotthard.json'),
     fetchWithFallback<HistoryPoint[]>('/api/history.php', '/data/history.json'),
   ]);
-  if (data) {
-    renderData(data);
-    renderDiversions(data);
+  if (data) lastData = data;
+  if (lastData) {
+    // Also covers a failed fetch: the last known data is re-judged by its age.
+    renderData(lastData);
+    if (dataFreshness(lastData.updated).level === 'fresh') renderDiversions(lastData);
+    else document.getElementById('diversion-section')?.setAttribute('hidden', '');
   } else {
     setText('summary', t(lang, 'hero.dataUnavailable'));
+    renderStale('unavailable', t(lang, 'hero.staleUnavailable'));
   }
   if (history) renderHistory(history);
   lastHistory = history ?? [];
@@ -772,9 +813,11 @@ window.addEventListener('resize', () => {
 });
 
 tick();
-setInterval(tick, POLL_INTERVAL_MS);
+// No polling in hidden tabs; refresh right away when the tab becomes visible again.
+setInterval(() => { if (!document.hidden) tick(); }, POLL_INTERVAL_MS);
+document.addEventListener('visibilitychange', () => { if (!document.hidden) tick(); });
 
-// Week outlook + holiday context are calendar-based — render once on load
+// Week outlook + holiday context are calendar-based — rendered on load and again when the Swiss date changes
 renderWeek();
 renderHeroContext();
 // Day tabs + portal toggle are calendar-based too — set up once, no polling needed

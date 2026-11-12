@@ -18,6 +18,17 @@ $hourly = WeatherClient::parseHourly([
     ],
 ]);
 
+// A response with past hours, the current partial hour and a future hour.
+$recent = WeatherClient::completedHours(WeatherClient::parseHourly([
+    'hourly' => [
+        'time'           => ['2026-11-09T17:00', '2026-11-09T18:00', '2026-11-09T19:00', '2026-11-09T20:00', '2026-11-09T21:00'],
+        'temperature_2m' => [1.0, 1.5, 2.0, 2.5, 3.0],
+        'precipitation'  => [0.1, 0.2, 0.3, 0.4, 0.5],
+        'snowfall'       => [0.0, 0.0, 0.0, 0.0, 0.0],
+        'weather_code'   => [3, 3, 3, 3, 3],
+    ],
+]), '2026-11-09 20:00:00');
+
 $bad = false;
 try {
     WeatherClient::parseCurrent(['nope' => 1]);
@@ -31,6 +42,8 @@ $checks = [
     'hourly skips future empty hour'     => count($hourly) === 2,
     'hourly row values'                  => $hourly[1]['snowfall'] === 0.3 && $hourly[1]['weatherCode'] === 71,
     'missing block throws'               => $bad,
+    'only completed hours kept'          => array_column($recent, 'observedAt') === ['2026-11-09 17:00:00', '2026-11-09 18:00:00', '2026-11-09 19:00:00'],
+    'completed hours keep hourly sums'   => $recent[2]['precipitation'] === 0.3,
 ];
 
 $failures = 0;

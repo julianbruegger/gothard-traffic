@@ -6,15 +6,26 @@
 // Output: site/src/data/historic-days.json — consumed by
 // site/src/lib/historic-days.ts.
 //
-// Usage: node site/scripts/build-historic-days.mjs
+// Usage: node site/scripts/build-historic-days.mjs <path/to/tcs_gotthard_tweets.json>
 
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, resolve } from 'node:path';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = resolve(__dirname, '..', '..');
-const SRC = resolve(REPO_ROOT, 'tcs_gotthard_tweets.json');
+// The scraped TCS tweet history is not part of the repository (third-party
+// content). Pass its path as the first argument or via TCS_TWEETS_FILE.
+const SRC_ARG = process.argv[2] ?? process.env.TCS_TWEETS_FILE;
+if (!SRC_ARG) {
+  console.error('Usage: node scripts/build-historic-days.mjs <path/to/tcs_gotthard_tweets.json>  (or set TCS_TWEETS_FILE)');
+  process.exit(1);
+}
+const SRC = resolve(process.cwd(), SRC_ARG);
+if (!existsSync(SRC)) {
+  console.error(`Input file not found: ${SRC}`);
+  process.exit(1);
+}
 const OUT = resolve(__dirname, '..', 'src', 'data', 'historic-days.json');
 
 const dec = (s) => s.replace(/&gt;/g, '>').replace(/&lt;/g, '<').replace(/&amp;/g, '&');

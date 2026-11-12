@@ -7,8 +7,30 @@
 # was throwing an error. Map an extensionless request to its `.html` file when
 # one exists; real files (api/*.php, _astro/*), directories, and the `/` root
 # (served by index.php via DirectoryIndex) are left untouched.
+#
+# SSR: "/" and "/en" must be answered by index.php (live server-side render of
+# the built index.html / en.html templates). Without an explicit DirectoryIndex
+# this host prefers the static index.html, which serves a stale build snapshot.
+DirectoryIndex index.php index.html
+Options -Indexes
+# "/en" is also a directory (en/ holds /en/forecasts). With DirectorySlash on,
+# Apache 301s /en -> /en/ before any rewrite runs, so the canonical /en URL would
+# always be a redirect. Turn it off and route /en ourselves below.
+DirectorySlash Off
+
 <IfModule mod_rewrite.c>
   RewriteEngine On
+
+  # Optional: collapse the template / script URLs onto "/" (only for direct
+  # client requests, never for our own internal rewrite to index.php).
+  RewriteCond %{THE_REQUEST} \s/index\.(?:html|php)(?:\?\S*)?\s [NC]
+  RewriteCond %{QUERY_STRING} ^$
+  RewriteRule ^index\.(?:html|php)$ / [R=301,L]
+
+  # Home pages are rendered live by index.php (de = index.html template,
+  # en = en.html template).
+  RewriteRule ^$ index.php [L]
+  RewriteRule ^en/?$ index.php?lang=en [L]
 
   # Language home like /en is emitted as the flat file en.html, but a same-named
   # directory (en/) also exists to hold its sub-pages (/en/forecasts). Without
@@ -27,4 +49,31 @@
   # /forecasts -> /forecasts.html  (only when that file actually exists)
   RewriteCond %{REQUEST_FILENAME}.html -f
   RewriteRule ^(.+?)/?$ $1.html [L]
+</IfModule>
+
+# ── Security headers ─────────────────────────────────────────────────────────
+# Content-Security-Policy: the page loads nothing from other origins (the font is
+# self-hosted, third-party data goes through api/*.php), so everything is 'self'.
+#  * script-src: the few inline scripts Astro and our layout emit (theme bootstrap,
+#    theme toggle, one inline module) are allowed by SHA-256 hash, not
+#    'unsafe-inline'. scripts/csp-hashes.mjs computes the hashes from dist/*.html
+#    after every build and replaces __CSP_SCRIPT_HASHES__ below, so editing an
+#    inline script can never silently break the policy. JSON-LD blocks are data
+#    (type="application/ld+json"), not executed, and need no entry.
+#  * style-src 'unsafe-inline': charts and the SSR step (index.php) emit style="..."
+#    attributes; style attributes cannot be hash-allowed without 'unsafe-hashes'.
+#  * Report-Only first (issue #62): browsers log violations to the console but
+#    block nothing. After a clean pass over all pages, comment the Report-Only
+#    line out and enable the enforcing line directly below it.
+# HSTS: one year, without includeSubDomains/preload until the operator has
+# confirmed that every subdomain of jubr.app is HTTPS-only.
+<IfModule mod_headers.c>
+  Header always set Strict-Transport-Security "max-age=31536000"
+  Header always set X-Content-Type-Options "nosniff"
+  Header always set X-Frame-Options "SAMEORIGIN"
+  Header always set Referrer-Policy "strict-origin-when-cross-origin"
+  Header always set Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), interest-cohort=()"
+  Header always set Cross-Origin-Opener-Policy "same-origin"
+  Header always set Content-Security-Policy-Report-Only "default-src 'self'; script-src 'self' __CSP_SCRIPT_HASHES__; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
+  # Header always set Content-Security-Policy "default-src 'self'; script-src 'self' __CSP_SCRIPT_HASHES__; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'"
 </IfModule>

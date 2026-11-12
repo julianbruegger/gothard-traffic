@@ -1,6 +1,7 @@
 import { t, type Lang } from './i18n';
 import type { GotthardData, RoadStatus, ClosureWindow } from './types';
 import { FLAT_THRESHOLD_KM, type TrendDirection } from './trend';
+import { fmtDateTime, fmtDayMonth, fmtTime, swissIsoDate } from './swiss-time';
 
 // DATEX "Ursache" / causeType values seen on Gotthard closures → friendly label.
 const CLOSURE_CAUSE: Record<string, { de: string; en: string }> = {
@@ -22,25 +23,26 @@ export function closureCauseLabel(cause: string | null | undefined, lang: Lang):
   return hit ? hit[lang] : cause;
 }
 
+/** Same calendar day in Swiss time, regardless of the browser's timezone. */
 function sameLocalDay(a: Date, b: Date): boolean {
-  return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+  return swissIsoDate(a) === swissIsoDate(b);
 }
 
 /** Headline for a planned closure: flags a same-day (tonight) closure specially. */
 export function closureTitle(c: ClosureWindow, lang: Lang): string {
   const from = new Date(c.from);
-  const startsToday = !Number.isNaN(from.getTime()) && sameLocalDay(from, new Date()) && from > new Date();
+  const now = new Date();
+  const startsToday = !Number.isNaN(from.getTime()) && sameLocalDay(from, now) && from > now;
   if (lang === 'de') return startsToday ? 'Geplante Sperrung heute Nacht!' : 'Geplante Tunnelsperrung';
   return startsToday ? 'Planned closure tonight!' : 'Planned tunnel closure';
 }
 
-/** Detail line: "Sondertransport – 15.07. 23:00 – 16.07. 01:00". */
+/** Detail line in Swiss time: "Sondertransport – 15.07. 23:00 – 16.07. 01:00" / "Special transport – 15 Jul 23:00 – 16 Jul 01:00". */
 export function closureDetail(c: ClosureWindow, lang: Lang): string {
-  const loc = lang === 'de' ? 'de-CH' : 'en-CH';
   const from = new Date(c.from);
   const to = c.to ? new Date(c.to) : null;
-  const day = (d: Date) => new Intl.DateTimeFormat(loc, { day: '2-digit', month: '2-digit' }).format(d);
-  const time = (d: Date) => new Intl.DateTimeFormat(loc, { hour: '2-digit', minute: '2-digit' }).format(d);
+  const day = (d: Date) => fmtDayMonth(d, lang);
+  const time = (d: Date) => fmtTime(d, lang);
 
   let range = '';
   if (!Number.isNaN(from.getTime())) {
@@ -78,6 +80,57 @@ export function formatMinutes(min: number | null, lang: Lang): string {
   return `${Math.round(min)} ${t(lang, 'portal.minutes')}`;
 }
 
+/**
+ * Wait time for a portal. A known, empty queue shows "0 Min" instead of a dash
+ * (which reads like missing data); the dash stays for truly unknown values
+ * (no queue figure at all, or the data is stale).
+ */
+export function formatWait(portal: { queueKm: number | null; waitMinutes: number | null }, lang: Lang, stale = false): string {
+  if (stale) return '–';
+  if (portal.waitMinutes !== null && portal.waitMinutes !== undefined && portal.waitMinutes > 0) {
+    return formatMinutes(portal.waitMinutes, lang);
+  }
+  if (portal.queueKm !== null && portal.queueKm !== undefined && portal.queueKm <= 0) {
+    return `0 ${t(lang, 'portal.minutes')}`;
+  }
+  return '–';
+}
+
+// ─── Data freshness ───────────────────────────────────────────────────────────
+
+/** Older than this, a reading is flagged as stale. */
+export const STALE_AFTER_MIN = 20;
+/** Older than this (or no timestamp at all), live data counts as unavailable. */
+export const UNAVAILABLE_AFTER_MIN = 6 * 60;
+
+export type Freshness = 'fresh' | 'stale' | 'unavailable';
+
+/** Age of a reading, judged by its own `updated` timestamp (not by when it was fetched). */
+export function dataFreshness(updated: string | null | undefined, now: Date = new Date()): { level: Freshness; ageMin: number | null } {
+  const ts = updated ? new Date(updated).getTime() : NaN;
+  if (Number.isNaN(ts)) return { level: 'unavailable', ageMin: null };
+  const ageMin = Math.max(0, Math.floor((now.getTime() - ts) / 60_000));
+  const level: Freshness = ageMin > UNAVAILABLE_AFTER_MIN ? 'unavailable' : ageMin > STALE_AFTER_MIN ? 'stale' : 'fresh';
+  return { level, ageMin };
+}
+
+/** "25 Min", "2 Std 5 Min" / "25 min", "2 h 5 min". */
+export function formatAge(ageMin: number, lang: Lang): string {
+  const min = t(lang, 'portal.minutes');
+  if (ageMin < 60) return `${ageMin} ${min}`;
+  const h = Math.floor(ageMin / 60);
+  const m = ageMin % 60;
+  const hUnit = lang === 'de' ? 'Std' : 'h';
+  return m ? `${h} ${hUnit} ${m} ${min}` : `${h} ${hUnit}`;
+}
+
+/** Warning line for the hero banner, or null when the data is fresh. */
+export function staleMessage(f: { level: Freshness; ageMin: number | null }, lang: Lang): string | null {
+  if (f.level === 'fresh') return null;
+  if (f.level === 'unavailable' || f.ageMin === null) return t(lang, 'hero.staleUnavailable');
+  return t(lang, 'hero.stale').replace('{age}', formatAge(f.ageMin, lang));
+}
+
 export function statusLabel(status: RoadStatus, lang: Lang): string {
   switch (status) {
     case 'open':
@@ -110,10 +163,13 @@ export function formatUpdated(iso: string | null, lang: Lang): string {
   if (!iso) return '–';
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return '–';
-  return new Intl.DateTimeFormat(lang === 'de' ? 'de-CH' : 'en-CH', {
-    dateStyle: 'medium',
-    timeStyle: 'short',
-  }).format(date);
+  return fmtDateTime(date, lang);
+}
+
+/** ", ca. 25 Min Wartezeit" - empty when no wait is reported (mirrors Format::waitClause). */
+function waitClause(min: number | null, lang: Lang): string {
+  if (min === null || min === undefined || min <= 0) return '';
+  return lang === 'de' ? `, ca. ${formatMinutes(min, lang)} Wartezeit` : `, about ${formatMinutes(min, lang)} wait`;
 }
 
 /** A single crawlable, natural-language summary sentence describing current conditions. */
@@ -138,8 +194,8 @@ export function buildSummary(data: GotthardData, lang: Lang): string {
       return `Aktuell freie Fahrt am Gotthard-Strassentunnel in beide Richtungen. Gotthardpass: ${passStatusLabel(data.pass.status, lang).toLowerCase()}.`;
     }
     const parts: string[] = [];
-    if (!noNorthQueue) parts.push(`${formatKm(north.queueKm, lang)} Rückstau am Nordportal (Göschenen), ca. ${formatMinutes(north.waitMinutes, lang)} Wartezeit`);
-    if (!noSouthQueue) parts.push(`${formatKm(south.queueKm, lang)} Rückstau am Südportal (Airolo), ca. ${formatMinutes(south.waitMinutes, lang)} Wartezeit`);
+    if (!noNorthQueue) parts.push(`${formatKm(north.queueKm, lang)} Rückstau am Nordportal (Göschenen)${waitClause(north.waitMinutes, lang)}`);
+    if (!noSouthQueue) parts.push(`${formatKm(south.queueKm, lang)} Rückstau am Südportal (Airolo)${waitClause(south.waitMinutes, lang)}`);
     return `Aktuell: ${parts.join('; ')}. Gotthardpass: ${passStatusLabel(data.pass.status, lang).toLowerCase()}.`;
   }
 
@@ -147,7 +203,7 @@ export function buildSummary(data: GotthardData, lang: Lang): string {
     return `Currently clear at the Gotthard road tunnel in both directions. Gotthard Pass: ${passStatusLabel(data.pass.status, lang).toLowerCase()}.`;
   }
   const parts: string[] = [];
-  if (!noNorthQueue) parts.push(`${formatKm(north.queueKm, lang)} queue at the north portal (Göschenen), about ${formatMinutes(north.waitMinutes, lang)} wait`);
-  if (!noSouthQueue) parts.push(`${formatKm(south.queueKm, lang)} queue at the south portal (Airolo), about ${formatMinutes(south.waitMinutes, lang)} wait`);
+  if (!noNorthQueue) parts.push(`${formatKm(north.queueKm, lang)} queue at the north portal (Göschenen)${waitClause(north.waitMinutes, lang)}`);
+  if (!noSouthQueue) parts.push(`${formatKm(south.queueKm, lang)} queue at the south portal (Airolo)${waitClause(south.waitMinutes, lang)}`);
   return `Right now: ${parts.join('; ')}. Gotthard Pass: ${passStatusLabel(data.pass.status, lang).toLowerCase()}.`;
 }

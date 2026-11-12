@@ -79,7 +79,7 @@ const RW = 1200, RL = 48, RR = 1184, RT = 24, RB = 288;
 const rMax = 25;
 const rX = (m: number) => RL + ((RR - RL) * m) / 1440;
 const rY = (v: number) => RB - (Math.min(v, rMax) / rMax) * (RB - RT);
-const dateFmt = new Intl.DateTimeFormat(loc, { weekday: 'short', day: 'numeric', month: 'numeric', year: 'numeric', timeZone: 'UTC' });
+const dateFmt = new Intl.DateTimeFormat(loc, { weekday: 'short', day: 'numeric', month: lang === 'de' ? 'numeric' : 'short', year: 'numeric', timeZone: 'UTC' });
 const replayDays = replay.map((r, i) => {
   const dow = new Date(`${r.iso}T12:00:00Z`).getUTCDay();
   let step = `M${rX(r.pts[0][0]).toFixed(1)} ${rY(r.pts[0][1]).toFixed(1)}`;

@@ -429,6 +429,12 @@ details.table-toggle > summary::-webkit-details-marker { display: none; }
 .hero__main { flex: 999 1 520px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
 .hero__chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .hero__chips .chip { background: var(--md-sc-lowest); }
+.hero__stale {
+  display: inline-block; margin: 0; padding: 8px 14px; border-radius: var(--radius-s);
+  border: 1px solid var(--status-serious); background: var(--closed-bg);
+  color: var(--md-on-surface); font-size: 14px; font-weight: 600;
+}
+.hero__stale[hidden] { display: none; }
 .hero__headline { font-size: clamp(26px, 3.2vw, 40px); line-height: 1.2; font-weight: 400; max-width: 900px; }
 .hero__side { flex: 1 1 260px; max-width: 360px; display: flex; flex-direction: column; gap: 10px; font-size: 14px; }
 .hero__meta { display: flex; align-items: center; gap: 6px; }

@@ -32,7 +32,7 @@ export interface ForecastDay {
   isoDate: string;       // "2026-07-12"
   dayLabel: string;      // "Sa" / "Sat"
   fullDayLabel: string;  // "Samstag" / "Saturday"
-  dateLabel: string;     // "12.07." / "07/12"
+  dateLabel: string;     // "12.07." / "12 Jul"
   context: string | null;
   isPeak: boolean;
   hours: ForecastHour[]; // 24 entries, index = local hour 0–23
@@ -221,6 +221,7 @@ export const ASTRA_MIN_PER_KM = 10;
 
 const SHORT_DE = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'] as const;
 const LONG_DE  = ['Sonntag','Montag','Dienstag','Mittwoch','Donnerstag','Freitag','Samstag'] as const;
+const MONTHS_EN_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'] as const;
 const SHORT_EN = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'] as const;
 const LONG_EN  = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'] as const;
 
@@ -327,7 +328,7 @@ function computeDayModel(
     isoDate,
     dayLabel: lang === 'de' ? SHORT_DE[dow] : SHORT_EN[dow],
     fullDayLabel: lang === 'de' ? LONG_DE[dow] : LONG_EN[dow],
-    dateLabel: lang === 'de' ? `${pad2(dom)}.${pad2(month)}.` : `${pad2(month)}/${pad2(dom)}`,
+    dateLabel: lang === 'de' ? `${pad2(dom)}.${pad2(month)}.` : `${dom} ${MONTHS_EN_SHORT[month - 1]}`,
   };
 
   // 1st choice: the model learned from our own ASTRA readings. Its profiles are

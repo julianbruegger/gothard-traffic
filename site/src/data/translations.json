@@ -1,7 +1,7 @@
 {
   "de": {
     "site.title": "Gotthard Verkehr Live",
-    "site.tagline": "Live-Wartezeiten, Stau-Länge und Tunnelstatus am Gotthard",
+    "site.tagline": "Stau, Wartezeit und Sperrungen am Gotthard",
     "site.h1": "Gotthard Stau und Wartezeit aktuell – Tunnel und Pass live",
     "nav.status": "Status",
     "nav.trend": "Verlauf",
@@ -204,7 +204,7 @@
   },
   "en": {
     "site.title": "Gotthard Traffic Live",
-    "site.tagline": "Live waiting times, queue length and tunnel status at the Gotthard",
+    "site.tagline": "Queues, Waiting Times and Closures",
     "site.h1": "Gotthard Traffic Jam and Waiting Time Now – Tunnel and Pass Live",
     "nav.status": "Status",
     "nav.trend": "Trend",

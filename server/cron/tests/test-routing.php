@@ -156,6 +156,17 @@ $assertions = [
     'invalid: array param -> home'              => $status('/index.php?page[]=x') === 200,
     'page=index -> 301 /'                       => $redir('/index.php?page=index') === '/',
     'page=404 -> 404'                           => $status('/index.php?page=404') === 404,
+
+    '?lang=en -> /en'                           => $redir('/?lang=en') === '/en',
+    '?lan=en -> /en'                            => $redir('/?lan=en') === '/en',
+    '?lang=de -> /'                             => $redir('/?lang=de') === '/',
+    '?lang=xx -> /'                             => $redir('/?lang=xx') === '/',
+    '/en?lang=de -> /'                          => $redir('/en?lang=de') === '/',
+    '/en?lang=en -> /en'                        => $redir('/en?lang=en') === '/en',
+    '/forecasts?lang=en -> /forecasts'          => $redir('/forecasts?lang=en') === '/forecasts',
+    'trailing slash /en/ -> /en'                => $redir('/en/') === '/en',
+    'trailing slash /en/forecasts/ -> no slash' => $redir('/en/forecasts/?a=1') === '/en/forecasts?a=1',
+    'other query params do not redirect'        => $status('/?utm_source=x') === 200,
 ];
 
 proc_terminate($proc);

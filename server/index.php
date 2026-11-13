@@ -89,6 +89,20 @@ if ($page === 'index') {
 }
 $isHome = $page === '' || $page === 'en';
 
+// Duplicate URLs -> one canonical URL (defensive; .htaccess does the same for
+// client requests). "?lang=xx" / "?lan=xx" on a home page goes to that
+// language's home, on any other page the parameter is dropped.
+$queryLang = $requestQuery['lang'] ?? $requestQuery['lan'] ?? null;
+if ($queryLang !== null) {
+    ssr_redirect($isHome ? ($queryLang === 'en' ? '/en' : '/') : '/' . $page);
+}
+// Trailing-slash variant ("/en/", "/forecasts/") -> no slash (trailingSlash: 'never').
+if ($requestPath !== '/' && str_ends_with($requestPath, '/') && !str_contains($requestPath, '..')) {
+    $clean = rtrim($requestPath, '/');
+    $query = (string) (parse_url($requestUri, PHP_URL_QUERY) ?? '');
+    ssr_redirect(($clean === '' ? '/' : $clean) . ($query !== '' ? '?' . $query : ''));
+}
+
 // Resolve the template strictly inside the web root.
 $root = realpath(__DIR__);
 $templatePath = $page === '' ? __DIR__ . '/index.html' : __DIR__ . '/' . $page . '.html';

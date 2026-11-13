@@ -54,6 +54,10 @@ jobs:
         working-directory: site
         run: npm run build
 
+      - name: SEO check
+        working-directory: site
+        run: npm run check:seo
+
       - name: Tests (Swiss time, TS/PHP summary parity)
         working-directory: site
         run: npm test

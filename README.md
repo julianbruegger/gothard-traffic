@@ -108,7 +108,9 @@ cd site
 npm install
 npm run dev        # http://localhost:4321
 npm run build      # astro check + build -> site/dist/
-npm run check:seo  # after build: unique titles/descriptions, llms.txt URLs exist
+npm run check:seo  # after build: titles/descriptions, one h1, hreflang/canonical/sitemap
+                   # agreement, JSON-LD parses, internal links and llms.txt URLs resolve
+npm test           # Swiss-time formatting + TS/PHP summary parity
 ```
 
 Without PHP, the browser falls back to the sample data in

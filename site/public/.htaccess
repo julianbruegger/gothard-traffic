@@ -1,16 +1,14 @@
-# Serve the static Astro build on a plain Apache host (Hostpoint).
+# Serve the Astro build on a plain Apache/PHP host (Hostpoint).
 #
 # The site is built with Astro `build.format: 'file'`, so pages are emitted as
-# `forecasts.html`, `index.html`, … while internal links (and the canonical
-# tags / sitemap) use clean, extensionless URLs like `/forecasts`. Without a
-# rewrite the host 404s on `/forecasts`, which is why the "Prognosen" nav link
-# was throwing an error. Map an extensionless request to its `.html` file when
-# one exists; real files (api/*.php, _astro/*), directories, and the `/` root
-# (served by index.php via DirectoryIndex) are left untouched.
+# `forecasts.html`, `en.html`, `en/forecasts.html`, … while links, canonicals
+# and the sitemap use clean, extensionless URLs (`/forecasts`, `/en`).
 #
-# SSR: "/" and "/en" must be answered by index.php (live server-side render of
-# the built index.html / en.html templates). Without an explicit DirectoryIndex
-# this host prefers the static index.html, which serves a stale build snapshot.
+# SSR: EVERY page is answered by index.php (index.php?page=<path>), which reads
+# the built .html as a template and fills its live markers (current status,
+# today's forecast, see lib/Ssr.php) so crawlers and AI fetchers that run no
+# JavaScript get current content. Real files (api/*.php, _astro/*, *.json,
+# *.xml, *.txt, images) and directories are served untouched.
 DirectoryIndex index.php index.html
 Options -Indexes
 # "/en" is also a directory (en/ holds /en/forecasts). With DirectorySlash on,
@@ -21,34 +19,59 @@ DirectorySlash Off
 <IfModule mod_rewrite.c>
   RewriteEngine On
 
-  # Optional: collapse the template / script URLs onto "/" (only for direct
-  # client requests, never for our own internal rewrite to index.php).
+  # ── Duplicate URLs -> one canonical URL (301) ──────────────────────────────
+  # All of these test THE_REQUEST (the raw client request line), so they only
+  # ever fire for client requests, never for our own internal rewrite to
+  # index.php. index.php repeats the lang / trailing-slash checks defensively.
+
+  # /index.html, /index.php -> /
   RewriteCond %{THE_REQUEST} \s/index\.(?:html|php)(?:\?\S*)?\s [NC]
   RewriteCond %{QUERY_STRING} ^$
   RewriteRule ^index\.(?:html|php)$ / [R=301,L]
 
-  # Home pages are rendered live by index.php (de = index.html template,
-  # en = en.html template).
-  RewriteRule ^$ index.php [L]
-  RewriteRule ^en/?$ index.php?lang=en [L]
+  # Legacy language switch on a home page: /?lang=en, /?lan=en, /en?lang=en
+  # -> /en; any other value (de, unknown) -> /. The query is dropped.
+  RewriteCond %{THE_REQUEST} ^\S+\s/(?:en/?)?\?\S*\s
+  RewriteCond %{QUERY_STRING} (?:^|&)lang?=en(?:&|$) [NC]
+  RewriteRule ^(?:en/?)?$ /en? [R=301,L]
+  RewriteCond %{THE_REQUEST} ^\S+\s/(?:en/?)?\?\S*\s
+  RewriteCond %{QUERY_STRING} (?:^|&)lang?= [NC]
+  RewriteRule ^(?:en/?)?$ /? [R=301,L]
 
-  # Language home like /en is emitted as the flat file en.html, but a same-named
-  # directory (en/) also exists to hold its sub-pages (/en/forecasts). Without
-  # this, /en resolves to that directory and 404s (no index inside). Serve the
-  # .html for a bare single-segment path when it exists, before the directory
-  # passthrough below can claim it. Real files/dirs without a .html sibling
-  # (data/, _astro/, robots.txt) fall through untouched.
+  # Trailing slash: /en/ -> /en, /forecasts/ -> /forecasts (trailingSlash: 'never').
+  RewriteCond %{THE_REQUEST} ^\S+\s/[^?\s]+/(?:\?\S*)?\s
   RewriteCond %{DOCUMENT_ROOT}/$1.html -f
-  RewriteRule ^([^/]+)/?$ $1.html [L]
+  RewriteRule ^([a-z0-9-]+(?:/[a-z0-9-]+)?)/$ /$1 [R=301,L]
 
-  # Don't rewrite requests that already resolve to a real file or directory.
+  # Direct .html requests: /forecasts.html -> /forecasts, /en.html -> /en.
+  RewriteCond %{THE_REQUEST} ^\S+\s/([a-z0-9-]+(?:/[a-z0-9-]+)?)\.html(?:\?\S*)?\s
+  RewriteRule ^ /%1 [R=301,L]
+
+  # ── Pages -> index.php (SSR) ───────────────────────────────────────────────
+  # "/" (German home, index.html template).
+  RewriteRule ^$ index.php [L]
+  # Any extensionless path of one or two segments whose .html exists:
+  # /en, /forecasts, /en/forecasts, future /it, /it/..., landing pages.
+  # Checked before the real-directory passthrough below because /en is both
+  # en.html and the directory en/.
+  RewriteCond %{DOCUMENT_ROOT}/$1.html -f
+  RewriteRule ^([a-z0-9-]+(?:/[a-z0-9-]+)?)$ index.php?page=$1 [L,QSA]
+
+  # Everything else that exists (files, directories) is served as is.
   RewriteCond %{REQUEST_FILENAME} -f [OR]
   RewriteCond %{REQUEST_FILENAME} -d
   RewriteRule ^ - [L]
+</IfModule>
 
-  # /forecasts -> /forecasts.html  (only when that file actually exists)
-  RewriteCond %{REQUEST_FILENAME}.html -f
-  RewriteRule ^(.+?)/?$ $1.html [L]
+# ── Caching ──────────────────────────────────────────────────────────────────
+# index.php sends its own "Cache-Control: public, max-age=60" (live data). A
+# host-level mod_expires rule for text/html would add a second, conflicting
+# Cache-Control (max-age=3600) to those responses, so switch mod_expires off for
+# PHP output; static assets keep whatever the host configures.
+<IfModule mod_expires.c>
+  <FilesMatch "\.php$">
+    ExpiresActive Off
+  </FilesMatch>
 </IfModule>
 
 # ── Security headers ─────────────────────────────────────────────────────────

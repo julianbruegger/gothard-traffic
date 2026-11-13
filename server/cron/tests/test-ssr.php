@@ -93,6 +93,19 @@ $rCalm   = Ssr::render($tplDe, $calm, 'de', 'https://gotthard.jubr.app/');
 $rClosed = Ssr::render($tplDe, $closed, 'de', 'https://gotthard.jubr.app/');
 $rClosedEn = Ssr::render((string) file_get_contents($tmp . '/en.html'), $closed, 'en', 'https://gotthard.jubr.app/en');
 
+// Minified template as Astro's compressHTML emits it: empty attributes become
+// bare (`datetime`, `hidden`), single quotes, plus traps (data-id, "hidden" inside
+// another attribute's value) that must not be touched.
+$minified = '<html lang="de" data-lang="de"><body>'
+    . '<time id="hero-updated" datetime><!--SSR:updated-human-->x<!--/SSR--></time>'
+    . '<span class="chip" data-id="status-badge" id="status-badge" data-status>s</span>'
+    . '<span id="pass-badge" data-status=\'open\' aria-label="is hidden now">p</span>'
+    . '<p class="card__cause" id="pass-note-row" hidden=""><span id="pass-note"><!--SSR:pass-note-->n<!--/SSR--></span></p>'
+    . '<span id="north-free" hidden="hidden">free</span>'
+    . '<div id="north-meter" style>m</div>'
+    . '</body></html>';
+$rMin = Ssr::render($minified, $closed, 'de', 'https://gotthard.jubr.app/');
+
 /** Runs the real index.php with a given lang / hostile Host header and returns [headers-free body]. */
 function run_index(string $dir, string $lang, string $uri): string
 {
@@ -154,6 +167,17 @@ $assertions = [
     'closed: english closure title'             => str_contains($rClosedEn, 'Planned tunnel closure'),
     'canonical fixed (given url)'               => str_contains($rClosed, '<link rel="canonical" href="https://gotthard.jubr.app/">')
                                                     && str_contains($rClosedEn, '<link rel="canonical" href="https://gotthard.jubr.app/en">'),
+
+    // minified (compressHTML) attribute forms
+    'min: bare datetime replaced, not duplicated' => str_contains($rMin, '<time id="hero-updated" datetime="2026-11-09T20:00:00+00:00">')
+                                                    && substr_count($rMin, 'datetime') === 1,
+    'min: bare data-status replaced once'       => str_contains($rMin, 'id="status-badge" data-status="closed">')
+                                                    && substr_count($rMin, 'data-status="closed"') === 1
+                                                    && str_contains($rMin, 'data-id="status-badge"'),
+    'min: single-quoted data-status replaced'   => str_contains($rMin, '<span id="pass-badge" data-status="open" aria-label="is hidden now">'),
+    'min: hidden="" removed when note present'  => str_contains($rMin, '<p class="card__cause" id="pass-note-row">'),
+    'min: hidden="hidden" normalised'           => str_contains($rMin, '<span id="north-free" hidden>'),
+    'min: bare style replaced'                  => str_contains($rMin, '<div id="north-meter" style="width:100%">'),
 
     // index.php end to end (no cron/config.php -> default data, which must still replace stale markers)
     'index.php de: uses index.html template'    => str_contains($outDe, 'TEMPLATE-DE') && !str_contains($outDe, 'TEMPLATE-EN'),

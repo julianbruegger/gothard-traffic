@@ -3,6 +3,7 @@ import type { Lang } from '../lib/i18n';
 import { t } from '../lib/i18n';
 import Icon from './Icon.astro';
 import profiles from '../data/empirical-profiles.json';
+import { WEEK_TABLE_DAYS, forecastDaySummaries, forecastWeekHtml } from '../lib/forecast-days';
 
 interface Props {
   lang: Lang;
@@ -40,6 +41,11 @@ const heatmaps = (['N', 'S'] as const).map((key) => {
 
 const holiday = profiles.holiday as Record<string, { multN: number; multS: number; days: number; peakN: number; peakS: number }>;
 const easter = holiday.easter;
+
+// Server-rendered week table (index.php replaces the marker for the current day;
+// this build-day copy is the static-hosting fallback).
+const weekRows = forecastDaySummaries(new Date(), WEEK_TABLE_DAYS);
+const ssrForecast = `<!--SSR:forecast-week-->${forecastWeekHtml(weekRows, lang, weekRows[0].date)}<!--/SSR-->`;
 const labour = holiday.labourday;
 ---
 
@@ -48,6 +54,15 @@ const labour = holiday.labourday;
     <h1>{L('Wann ist am Gotthard Stau?', 'When is the Gotthard congested?')}</h1>
     <p>{t(lang, 'forecast.method')}</p>
   </div>
+
+  <!-- Next 7 days as text + table: server-rendered so crawlers and no-JS readers get it -->
+  <section class="section" aria-labelledby="fw-title">
+    <div class="section__titles">
+      <h2 class="section__title" id="fw-title">{t(lang, 'week.title')}</h2>
+    </div>
+    <div class="fc-ssr-wrap" id="forecast-week"><Fragment set:html={ssrForecast} /></div>
+    <p class="section__note">{t(lang, 'forecast.disclaimer')}</p>
+  </section>
 
   <!-- Day profile: both directions as small multiples on one scale -->
   <section class="section" aria-labelledby="dp-title">

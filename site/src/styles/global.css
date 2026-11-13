@@ -750,3 +750,11 @@ details.table-toggle > summary::-webkit-details-marker { display: none; }
 .nerd__btn--toggle { padding: 0.3rem 0.7rem; font-size: 0.8rem; }
 .nerd__btn--toggle[aria-pressed='true'] { border-color: var(--color-accent); background: var(--color-surface-alt); font-weight: 600; }
 .nerd-heat .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* ── Server-rendered forecast text + table (SSR:forecast-week / forecast-range) ── */
+
+.fc-ssr { display: flex; flex-direction: column; gap: 8px; }
+.fc-ssr__lead { font-size: 14px; line-height: 20px; color: var(--md-on-surface-variant); }
+.fc-ssr__scroll { max-height: none; }
+.fc-ssr__table th small { display: block; font-weight: 400; font-size: 12px; color: var(--md-on-surface-variant); }
+.fc-ssr__table tbody th { position: static; background: none; font-weight: 500; white-space: nowrap; }

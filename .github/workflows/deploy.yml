@@ -54,6 +54,13 @@ jobs:
           cp -r site/dist/. deploy-staging/
           rm -rf deploy-staging/data
 
+          # Build-time forecast per day (site/src/pages/forecast-days.json.ts),
+          # read by index.php for the server-rendered forecast table. It lives
+          # in the web root (not data/, which is excluded from the rsync below);
+          # .htaccess serves real files as is.
+          test -s deploy-staging/forecast-days.json \
+            || { echo "::error::dist/forecast-days.json missing - SSR forecast table would be empty"; exit 1; }
+
           # PHP SSR wrapper + shared libs + DB-backed API endpoints
           cp  server/index.php  deploy-staging/index.php
           cp -r server/lib      deploy-staging/lib

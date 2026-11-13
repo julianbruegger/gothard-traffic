@@ -1,0 +1,197 @@
+---
+// /ostern · /en/easter
+// Forecast for the Easter holidays (model, plus the SSR forecast-range marker)
+// and the historic Easter queues from the TCS reports, the same data the
+// statistics page shows. Next year: bump YEAR.
+import GuideLayout from './GuideLayout.astro';
+import ForecastRange from './ForecastRange.astro';
+import Icon from './Icon.astro';
+import { t, type Lang } from '../lib/i18n';
+import { routePath } from '../lib/routes';
+import { forecastRange, worstDay, busySpan, waitRange, hhmm, easterSundayIso, shiftIso, BUSY_MIN, type DayPeak } from '../lib/forecast-range';
+import profiles from '../data/empirical-profiles.json';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const L = (de: string, en: string) => (lang === 'de' ? de : en);
+const unit = t(lang, 'portal.minutes');
+
+const YEAR = 2027;
+const easter = easterSundayIso(YEAR);
+// Wednesday before Easter to the Monday a week after Easter Monday.
+const FROM = shiftIso(easter, -4);
+const TO = shiftIso(easter, 8);
+const days = forecastRange(FROM, TO, lang);
+
+const fmtDate = (iso: string) =>
+  new Date(iso + 'T12:00:00Z').toLocaleDateString(lang === 'de' ? 'de-CH' : 'en-GB', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'UTC' });
+const dayName = (d: DayPeak) => `${d.fullDayLabel}, ${d.dateLabel}`;
+const offsetOf = (iso: string, easterIso: string) => Math.round((Date.parse(iso) - Date.parse(easterIso)) / 86_400_000);
+const NAMED: Record<number, [string, string]> = {
+  [-3]: ['Gründonnerstag', 'Maundy Thursday'],
+  [-2]: ['Karfreitag', 'Good Friday'],
+  [-1]: ['Karsamstag', 'Holy Saturday'],
+  [0]: ['Ostersonntag', 'Easter Sunday'],
+  [1]: ['Ostermontag', 'Easter Monday'],
+};
+const named = (offset: number) => (NAMED[offset] ? L(...NAMED[offset]) : null);
+
+const worstN = worstDay(days, 'north');
+const worstS = worstDay(days, 'south');
+const span = busySpan(days);
+const hh = (h: number) => `${String(h).padStart(2, '0')}:00`;
+const label = (d: DayPeak) => named(offsetOf(d.isoDate, easter)) ?? dayName(d);
+
+// ── History: longest reported queue per year and direction (TCS reports) ──
+type PerDay = { iso: string; n: number; s: number };
+const perDay = (profiles.holiday as unknown as Record<string, { perDay: PerDay[] }>).easter.perDay;
+const years = [...new Set(perDay.map((p) => Number(p.iso.slice(0, 4))))].sort();
+const history = years.map((year) => {
+  const e = easterSundayIso(year);
+  const rows = perDay.filter((p) => p.iso.startsWith(String(year)));
+  const best = (k: 'n' | 's') => rows.reduce((a, b) => (b[k] > a[k] ? b : a));
+  const n = best('n');
+  const s = best('s');
+  return {
+    year,
+    n: n.n > 0 ? { km: n.n, offset: offsetOf(n.iso, e), iso: n.iso } : null,
+    s: s.s > 0 ? { km: s.s, offset: offsetOf(s.iso, e), iso: s.iso } : null,
+  };
+});
+const withN = history.filter((h) => h.n);
+const withS = history.filter((h) => h.s);
+const southBeforeEaster = withN.filter((h) => h.n!.offset === -3 || h.n!.offset === -2).length;
+const northEasterMonday = withS.filter((h) => h.s!.offset === 1).length;
+const record = withN.reduce((a, b) => (b.n!.km > a.n!.km ? b : a));
+const CLAMP_KM = 30; // build-empirical-profiles.mjs caps single reports at 30 km
+const cellOf = (v: { km: number; offset: number; iso: string } | null) => {
+  if (!v) return '–';
+  const day = named(v.offset) ?? new Date(v.iso + 'T12:00:00Z').toLocaleDateString(lang === 'de' ? 'de-CH' : 'en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  return `${v.km.toLocaleString(lang === 'de' ? 'de-CH' : 'en-CH')} km · ${day}`;
+};
+const missingYears = Array.from({ length: years[years.length - 1] - years[0] + 1 }, (_, i) => years[0] + i).filter((y) => !years.includes(y));
+const modelAgrees = [-3, -2].includes(offsetOf(worstN.isoDate, easter));
+
+const title = t(lang, 'meta.easter.title').replace('{year}', String(YEAR));
+const description = t(lang, 'meta.easter.description').replace('{year}', String(YEAR));
+const h1 = L(`Gotthard-Stau an Ostern ${YEAR}`, `Gotthard Easter traffic ${YEAR}`);
+const intro = L(
+  `Ostern ${YEAR} fällt auf den ${fmtDate(easter)}. Unsere Prognose für jeden Tag vom ${days[0].dateLabel} bis ${days[days.length - 1].dateLabel} und was die Osterstaus der letzten Jahre zeigen.`,
+  `Easter ${YEAR} falls on ${fmtDate(easter)}. Our forecast for every day from ${days[0].dateLabel} to ${days[days.length - 1].dateLabel} and what the Easter queues of recent years show.`,
+);
+
+const faq = [
+  {
+    q: L('Wann ist an Ostern am Gotthard am meisten Stau?', 'When is Gotthard traffic worst at Easter?'),
+    a: L(
+      `Richtung Süden vor allem am Gründonnerstag und Karfreitag: In ${southBeforeEaster} von ${withN.length} Jahren mit TCS-Meldungen lag der längste Osterstau vor dem Nordportal an einem dieser Tage. Richtung Norden ist der Ostermontag am heikelsten (${northEasterMonday} von ${withS.length} Jahren).`,
+      `Southbound mainly on Maundy Thursday and Good Friday: in ${southBeforeEaster} of ${withN.length} years with TCS reports the longest Easter queue at the north portal fell on one of those days. Northbound, Easter Monday is the critical day (${northEasterMonday} of ${withS.length} years).`,
+    ),
+  },
+  {
+    q: L('Wie lang war der längste Osterstau am Gotthard?', 'How long was the longest Easter queue at the Gotthard?'),
+    a: L(
+      `${record.n!.km} km Richtung Süden im Jahr ${record.year}, laut den ausgewerteten TCS-Staumeldungen${record.n!.km >= CLAMP_KM ? `; unsere Auswertung begrenzt einzelne Meldungen bei ${CLAMP_KM} km, der tatsächliche Stau kann länger gewesen sein` : ''}.`,
+      `${record.n!.km} km southbound in ${record.year}, according to the TCS traffic reports we analysed${record.n!.km >= CLAMP_KM ? `; our analysis caps single reports at ${CLAMP_KM} km, so the actual queue may have been longer` : ''}.`,
+    ),
+  },
+  {
+    q: L('Wann fahre ich an Ostern am besten über den Gotthard?', 'When is the best time to cross the Gotthard at Easter?'),
+    a: L(
+      `Früh am Morgen oder am Abend: ${span ? `vor ${hh(span[0])} und ab ${hh(span[1] + 1)} Uhr erwartet das Modell an allen Tagen weniger als ${BUSY_MIN} Minuten Wartezeit` : `das Modell erwartet an allen Tagen weniger als ${BUSY_MIN} Minuten`}. Richtung Süden wenn möglich nicht am Gründonnerstag oder Karfreitag tagsüber, Richtung Norden nicht am Ostermontag.`,
+      `Early in the morning or in the evening: ${span ? `before ${hh(span[0])} and from ${hh(span[1] + 1)} the model expects less than ${BUSY_MIN} minutes of waiting on every day` : `the model expects less than ${BUSY_MIN} minutes on every day`}. Southbound, avoid daytime on Maundy Thursday and Good Friday if you can; northbound, avoid Easter Monday.`,
+    ),
+  },
+  {
+    q: L(`Wann ist Ostern ${YEAR}?`, `When is Easter ${YEAR}?`),
+    a: L(
+      `Ostersonntag ist am ${fmtDate(easter)}, Karfreitag am ${fmtDate(shiftIso(easter, -2))} und Ostermontag am ${fmtDate(shiftIso(easter, 1))}.`,
+      `Easter Sunday is on ${fmtDate(easter)}, Good Friday on ${fmtDate(shiftIso(easter, -2))} and Easter Monday on ${fmtDate(shiftIso(easter, 1))}.`,
+    ),
+  },
+];
+---
+
+<GuideLayout lang={lang} guide="easter" title={title} description={description} h1={h1} intro={intro} faq={faq} dataSource={L('Verkehrsmodell und TCS-Staumeldungen', 'Traffic model and TCS traffic reports')}>
+  <Fragment slot="top">
+    <div class="tiles">
+      <div class="tile">
+        <span class="tile__label">{L('Prognose: stärkster Tag Richtung Süden', 'Forecast: busiest day southbound')}</span>
+        <span class="tile__value">{worstN.fullDayLabel.slice(0, lang === 'de' ? 2 : 3)} {worstN.dateLabel}</span>
+        <span class="tile__note">{L('ca.', 'about')} {waitRange(worstN.north)} {unit} {L('gegen', 'around')} {hhmm(worstN.north.minute)} · Göschenen</span>
+      </div>
+      <div class="tile">
+        <span class="tile__label">{L('Prognose: stärkster Tag Richtung Norden', 'Forecast: busiest day northbound')}</span>
+        <span class="tile__value">{worstS.fullDayLabel.slice(0, lang === 'de' ? 2 : 3)} {worstS.dateLabel}</span>
+        <span class="tile__note">{L('ca.', 'about')} {waitRange(worstS.south)} {unit} {L('gegen', 'around')} {hhmm(worstS.south.minute)} · Airolo</span>
+      </div>
+      <div class="tile">
+        <span class="tile__label">{L('Längster Osterstau seit', 'Longest Easter queue since')} {years[0]}</span>
+        <span class="tile__value">{record.n!.km} km</span>
+        <span class="tile__note">{record.year}, {t(lang, 'dir.south')} ({L('TCS-Meldungen', 'TCS reports')})</span>
+      </div>
+    </div>
+    <section class="section" aria-labelledby="easter-days-title">
+      <div class="section__titles">
+        <h2 class="section__title" id="easter-days-title">{L(`Prognose Ostern ${YEAR} pro Tag`, `Easter ${YEAR} forecast by day`)}</h2>
+        <p class="section__sub">{L('Erwartete Spitzenwartezeit an einem typischen Tag, je Richtung. An starken Tagen kann es deutlich mehr sein.', 'Expected peak wait on a typical day, per direction. Busy days can be considerably worse.')}</p>
+      </div>
+      <ForecastRange lang={lang} from={FROM} to={TO} />
+      <p class="section__note">{t(lang, 'forecast.disclaimer')} <a href={routePath('forecasts', lang)}>{L('Tagesverlauf in der Prognose ansehen', 'See the hour-by-hour forecast')}</a></p>
+    </section>
+  </Fragment>
+
+  <section class="section prose" aria-labelledby="easter-when-title">
+    <h2 class="section__title" id="easter-when-title">{L('Welche Tage sind am stärksten?', 'Which days are the busiest?')}</h2>
+    {lang === 'de' ? (
+      <p>Die Erfahrung ist eindeutig: Richtung Süden staut es sich vor dem Nordportal in Göschenen am Gründonnerstag und Karfreitag. In {southBeforeEaster} von {withN.length} Jahren mit Meldungen lag der längste Osterstau Richtung Süden an einem dieser beiden Tage. Die Rückreise Richtung Norden konzentriert sich auf den Ostermontag ({northEasterMonday} von {withS.length} Jahren) und, weil viele Ferien zwei Wochen dauern, auf das Wochenende danach. Unser Modell erwartet die längste Wartezeit Richtung Süden am {label(worstN)} (typisch {waitRange(worstN.north)} Minuten) und Richtung Norden am {label(worstS)} ({waitRange(worstS.south)} Minuten).{!modelAgrees && ` Dass das Modell die Tage vor Ostern ruhiger einschätzt als die Erfahrung, liegt auch daran, dass es nach Kalendermonat gewichtet und die Karwoche ${YEAR} noch in den ruhigeren März fällt. Planen Sie deshalb für beide Wochenenden mit Stau.`}</p>
+    ) : (
+      <p>Experience is clear: southbound, the queue in front of the north portal at Göschenen builds on Maundy Thursday and Good Friday. In {southBeforeEaster} of {withN.length} years with reports the longest southbound Easter queue fell on one of those two days. The return trip north concentrates on Easter Monday ({northEasterMonday} of {withS.length} years) and, because many school holidays last two weeks, on the following weekend. Our model expects the longest southbound wait on {label(worstN)} (typically {waitRange(worstN.north)} minutes) and northbound on {label(worstS)} ({waitRange(worstS.south)} minutes).{!modelAgrees && ` The model rating the days before Easter as calmer than experience suggests is partly because it weights by calendar month, and Holy Week ${YEAR} still falls in the quieter month of March. Plan for queues on both weekends.`}</p>
+    )}
+  </section>
+
+  <section class="section" aria-labelledby="easter-history-title">
+    <div class="section__titles">
+      <h2 class="section__title" id="easter-history-title">{L('Osterstaus der letzten Jahre', 'Easter queues in recent years')}</h2>
+      <p class="section__sub">{L('Längster gemeldeter Stau während der Osterferien (Mittwoch vor Ostern bis eine Woche nach Ostermontag), laut TCS-Staumeldungen', 'Longest reported queue during the Easter holidays (Wednesday before Easter to a week after Easter Monday), from TCS traffic reports')}</p>
+    </div>
+    <div class="forecast-range">
+      <table class="data-table">
+        <thead><tr><th scope="col">{L('Jahr', 'Year')}</th><th scope="col">{t(lang, 'dir.south')} <small>Göschenen</small></th><th scope="col">{t(lang, 'dir.north')} <small>Airolo</small></th></tr></thead>
+        <tbody>
+          {history.map((h) => (
+            <tr><th scope="row">{h.year}</th><td>{cellOf(h.n)}</td><td>{cellOf(h.s)}</td></tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+    <p class="section__note">{L(
+      `Meldungen kommen nur, wenn sich ein Stau ändert; «–» heisst, es wurde kein Stau gemeldet.${missingYears.length ? ` Keine Meldungen: ${missingYears.join(', ')}.` : ''} Einzelmeldungen sind bei ${CLAMP_KM} km begrenzt.`,
+      `Reports only arrive when a queue changes; "–" means no queue was reported.${missingYears.length ? ` No reports: ${missingYears.join(', ')}.` : ''} Single reports are capped at ${CLAMP_KM} km.`,
+    )} <a href={routePath('statistics', lang)}>{L('Mehr in der Statistik', 'More in the statistics')}</a></p>
+  </section>
+
+  <section class="section prose" aria-labelledby="easter-tips-title">
+    <h2 class="section__title" id="easter-tips-title">{L('Tipps für die Osterreise', 'Tips for the Easter trip')}</h2>
+    <ul>
+      {lang === 'de' ? (
+        <>
+          <li><strong>Früh oder spät fahren:</strong> {span ? `Vor ${hh(span[0])} und ab ${hh(span[1] + 1)} Uhr` : 'Den ganzen Tag'} erwartet das Modell an allen Tagen weniger als {BUSY_MIN} Minuten Wartezeit.</li>
+          <li><strong>Einen Tag verschieben:</strong> Wer am Mittwoch statt am Gründonnerstag nach Süden fährt, oder am Dienstag statt am Ostermontag zurück, umgeht meist die grössten Spitzen.</li>
+          <li><strong>Gotthardpass:</strong> An Ostern ist die Passstrasse noch in der Wintersperre. Als Umfahrung bleibt vor allem der San Bernardino (A13), siehe <a href={routePath('alternatives', lang)}>Alternativen</a>.</li>
+          <li><strong>Vor der Abfahrt prüfen:</strong> die <a href={routePath('home', lang)}>Live-Wartezeit an beiden Portalen</a> und geplante <a href={routePath('closures', lang)}>Sperrungen</a>.</li>
+        </>
+      ) : (
+        <>
+          <li><strong>Drive early or late:</strong> {span ? `before ${hh(span[0])} and from ${hh(span[1] + 1)}` : 'all day'}, the model expects less than {BUSY_MIN} minutes of waiting on every day.</li>
+          <li><strong>Shift by a day:</strong> heading south on Wednesday instead of Maundy Thursday, or returning on Tuesday instead of Easter Monday, usually avoids the worst peaks.</li>
+          <li><strong>Gotthard Pass:</strong> at Easter the pass road is still closed for winter. The main detour is the San Bernardino (A13), see <a href={routePath('alternatives', lang)}>alternative routes</a>.</li>
+          <li><strong>Check before you leave:</strong> the <a href={routePath('home', lang)}>live waiting time at both portals</a> and planned <a href={routePath('closures', lang)}>closures</a>.</li>
+        </>
+      )}
+    </ul>
+    <p class="callout"><Icon name="info" />{L('Die Prognose ist eine Modellrechnung aus Wochentag, Saison und Ferienkalender. Unfälle und Wetter können stark abweichen.', 'The forecast is a model based on weekday, season and holiday calendar. Accidents and weather can differ sharply.')}</p>
+  </section>
+</GuideLayout>

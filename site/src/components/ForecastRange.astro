@@ -1,42 +1,24 @@
 ---
-// Per-day forecast table for a date range. The table sits inside the
-// <!--SSR:forecast-range:FROM:TO--> marker: server/index.php swaps in a fresh
-// table per request; the build-time table below is the static fallback.
-import { t, type Lang } from '../lib/i18n';
-import { hhmm, waitRange, type DayPeak } from '../lib/forecast-range';
+// Per-day forecast table for a date range inside the
+// <!--SSR:forecast-range:FROM:TO--> marker. server/index.php re-renders it per
+// request (ForecastTable.php, from dist/forecast-days.json); the build-time
+// copy below comes from the same renderer (forecast-days.ts), so static and
+// server output are byte-identical. Days before today are skipped by both.
+import type { Lang } from '../lib/i18n';
+import { forecastDaySummaries, forecastRangeHtml } from '../lib/forecast-days';
+import { isoDates } from '../lib/forecast-range';
+import { swissDayInfo } from '../lib/forecast';
 
 interface Props {
   lang: Lang;
+  /** "YYYY-MM-DD", inclusive. */
   from: string;
   to: string;
-  days: DayPeak[];
-  caption: string;
 }
-const { lang, from, to, days, caption } = Astro.props;
-const unit = t(lang, 'portal.minutes');
-const L = (de: string, en: string) => (lang === 'de' ? de : en);
-const table = `<table class="data-table forecast-range__table">
-  <caption>${caption}</caption>
-  <thead><tr>
-    <th scope="col">${L('Tag', 'Day')}</th>
-    <th scope="col" class="num">${t(lang, 'dir.south')}<br /><small>${L('Göschenen, Spitze', 'Göschenen, peak')}</small></th>
-    <th scope="col" class="num">${t(lang, 'dir.north')}<br /><small>${L('Airolo, Spitze', 'Airolo, peak')}</small></th>
-    <th scope="col">${L('Kalender', 'Calendar')}</th>
-  </tr></thead>
-  <tbody>${days
-    .map(
-      (d) => `<tr>
-    <th scope="row">${d.dayLabel} ${d.dateLabel}</th>
-    <td class="num">${d.north.typ > 0 ? `${waitRange(d.north)} ${unit} <small>${L('um', 'at')} ${hhmm(d.north.minute)}</small>` : '–'}</td>
-    <td class="num">${d.south.typ > 0 ? `${waitRange(d.south)} ${unit} <small>${L('um', 'at')} ${hhmm(d.south.minute)}</small>` : '–'}</td>
-    <td>${d.context ?? ''}</td>
-  </tr>`,
-    )
-    .join('')}</tbody>
-</table>`;
-const marker = `forecast-range:${from}:${to}`;
+const { lang, from, to } = Astro.props;
+const [y, m, d] = from.split('-').map(Number);
+const rows = forecastDaySummaries(new Date(Date.UTC(y, m - 1, d, 12)), isoDates(from, to).length);
+const html = `<!--SSR:forecast-range:${from}:${to}-->${forecastRangeHtml(rows, lang, swissDayInfo(new Date()).isoDate, from, to)}<!--/SSR-->`;
 ---
 
-<div class="table-scroll forecast-range">
-  <Fragment set:html={`<!--SSR:${marker}-->${table}<!--/SSR-->`} />
-</div>
+<div class="fc-ssr-wrap"><Fragment set:html={html} /></div>

@@ -119,9 +119,9 @@ const faq = [
     <section class="section" aria-labelledby="xmas-days-title">
       <div class="section__titles">
         <h2 class="section__title" id="xmas-days-title">{L('Prognose pro Tag', 'Forecast by day')}</h2>
-        <p class="section__sub">{L('Erwartete Spitzenwartezeit je Richtung: typischer Tag – starker Tag, mit Uhrzeit der Spitze.', 'Expected peak wait per direction: typical day – busy day, with the time of the peak.')}</p>
+        <p class="section__sub">{L('Erwartete Spitzenwartezeit an einem typischen Tag, je Richtung, mit Uhrzeit der Spitze. An starken Tagen kann es deutlich mehr sein.', 'Expected peak wait on a typical day, per direction, with the time of the peak. Busy days can be considerably worse.')}</p>
       </div>
-      <ForecastRange lang={lang} from={SEASON.from} to={SEASON.to} days={days} caption={L(`Gotthard-Prognose ${days[0].dateLabel} – ${days[days.length - 1].dateLabel}`, `Gotthard forecast ${days[0].dateLabel} – ${days[days.length - 1].dateLabel}`)} />
+      <ForecastRange lang={lang} from={SEASON.from} to={SEASON.to} />
       <p class="section__note">{t(lang, 'forecast.disclaimer')} <a href={routePath('forecasts', lang)}>{L('Tagesverlauf in der Prognose ansehen', 'See the hour-by-hour forecast')}</a></p>
     </section>
   </Fragment>

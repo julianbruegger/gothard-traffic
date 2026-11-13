@@ -1,5 +1,6 @@
 ---
 import { t, type Lang } from '../lib/i18n';
+import { GUIDES, routePath } from '../lib/routes';
 
 interface Props {
   lang: Lang;
@@ -16,6 +17,10 @@ const { lang, dataSource } = Astro.props;
       <nav class="site-footer__links" aria-label="Footer">
         <a href="https://github.com/julianbruegger/gothard-traffic" rel="noopener">{t(lang, 'footer.viewSource')}</a>
         <a href="https://opentransportdata.swiss/en/road-traffic/" rel="noopener">ASTRA / opentransportdata.swiss</a>
+      </nav>
+      <nav class="site-footer__guides" aria-label={t(lang, 'guide.footer')}>
+        <span>{t(lang, 'guide.footer')}:</span>
+        {GUIDES.map((g) => <a href={routePath(g, lang)}>{t(lang, `guide.${g}.short` as any)}</a>)}
       </nav>
     </div>
   </div>

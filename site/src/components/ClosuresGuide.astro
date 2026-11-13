@@ -64,11 +64,14 @@ const faq = [
 
 <GuideLayout lang={lang} guide="closures" title={title} description={description} h1={h1} intro={intro} faq={faq} live>
   <Fragment slot="top">
-    <PlannedClosureBanner lang={lang} closures={[]} />
-    <p class="section__note">{L(
-      'Angekündigte Sperrungen erscheinen direkt hier oberhalb. Ist nichts angezeigt, liegt im ASTRA-Datenstrom gerade keine geplante Sperrung vor.',
-      'Announced closures appear right above this line. If nothing is shown, the ASTRA feed currently lists no planned closure.',
-    )}</p>
+    <section class="section" aria-labelledby="cl-planned-title">
+      <h2 class="section__title" id="cl-planned-title">{L('Geplante Sperrungen', 'Planned closures')}</h2>
+      <PlannedClosureBanner lang={lang} closures={[]} />
+      <p class="section__note">{L(
+        'Angekündigte Sperrungen erscheinen hier, sobald das ASTRA sie meldet. Steht hier keine Meldung, liegt im ASTRA-Datenstrom gerade keine geplante Sperrung vor.',
+        'Announced closures appear here as soon as ASTRA reports them. If there is no notice here, the ASTRA feed currently lists no planned closure.',
+      )}</p>
+    </section>
   </Fragment>
 
   <section class="section prose" aria-labelledby="cl-how-title">

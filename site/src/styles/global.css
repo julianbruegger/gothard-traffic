@@ -790,5 +790,5 @@ details.table-toggle > summary::-webkit-details-marker { display: none; }
 .guides__item a { font-weight: 600; font-size: 16px; line-height: 22px; }
 .guides__item p { font-size: 14px; line-height: 20px; color: var(--md-on-surface-variant); }
 
-.site-footer__guides { display: flex; flex-wrap: wrap; gap: 4px 16px; }
+.site-footer__guides { display: flex; flex-wrap: wrap; gap: 4px 16px; align-items: center; }
 .site-footer__guides a { display: inline-flex; align-items: center; min-height: 44px; }

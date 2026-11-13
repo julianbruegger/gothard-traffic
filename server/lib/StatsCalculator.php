@@ -439,11 +439,27 @@ final class StatsCalculator
 
     private function closuresOut(): array
     {
-        $out = [];
+        // Merge raw reason texts that map to the same stable key (different
+        // wordings/languages of one reason would otherwise show as duplicates).
+        $byKey = [];
         foreach ($this->closures as $reason => $v) {
+            $key = self::reasonKey((string) $reason);
+            if (!isset($byKey[$key])) {
+                $byKey[$key] = ['reason' => (string) $reason, 'seconds' => 0, 'count' => 0, 'top' => 0];
+            }
+            $byKey[$key]['count'] += $v['count'];
+            $byKey[$key]['seconds'] += $v['seconds'];
+            // Display the raw text of the longest-lasting variant.
+            if ($v['seconds'] >= $byKey[$key]['top']) {
+                $byKey[$key]['top'] = $v['seconds'];
+                $byKey[$key]['reason'] = (string) $reason;
+            }
+        }
+        $out = [];
+        foreach ($byKey as $key => $v) {
             $out[] = [
-                'reason' => (string) $reason,
-                'key'    => self::reasonKey((string) $reason),
+                'reason' => $v['reason'],
+                'key'    => $key,
                 'count'  => $v['count'],
                 'hours'  => round($v['seconds'] / 3600, 1),
             ];

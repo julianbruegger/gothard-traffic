@@ -122,7 +122,16 @@ function reasonLabel(r: { reason: string; key?: string }): string {
   return hit ? hit[lang] : r.reason;
 }
 
-function renderClosures(rows: Stats['closures']) {
+function renderClosures(raw: Stats['closures']) {
+  // Merge rows sharing a key (older stats may still carry per-wording duplicates).
+  const merged = new Map<string, (typeof raw)[number]>();
+  for (const r of raw) {
+    const k = r.key ?? r.reason;
+    const prev = merged.get(k);
+    if (prev) merged.set(k, { ...prev, count: prev.count + r.count, hours: Math.round((prev.hours + r.hours) * 10) / 10 });
+    else merged.set(k, { ...r });
+  }
+  const rows = [...merged.values()].sort((a, b) => b.hours - a.hours);
   if (rows.length === 0) {
     $('nerd-closures').innerHTML = `<p class="nerd-card__sub">${esc(t(lang, 'nerd.closures.none'))}</p>`;
     return;

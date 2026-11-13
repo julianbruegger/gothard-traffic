@@ -190,6 +190,34 @@ Languages live at real URLs (`/`, `/en`), not `?lang=`. Free-text fields from
 the feed (`cause`, pass `note`) are shown in the feed's language and are not
 translated.
 
+### Server-side rendering of every page
+
+`.htaccess` sends every extensionless URL whose `.html` exists in the build
+(`/`, `/en`, `/forecasts`, `/en/forecasts`, new landing pages, `/it`, ...) to
+`index.php?page=<path>`. `index.php` validates the path, reads the built page
+as a template and fills its markers (`server/lib/Ssr.php` documents all of
+them), so crawlers and AI fetchers that run no JavaScript get current content.
+Only the two home pages get their title/meta/canonical/JSON-LD rewritten; every
+other page keeps the head Astro built. The database is queried only when the
+page has live markers. Duplicate URLs (`/foo.html`, `/foo/`, `/?lang=en`,
+`/?lan=de`, `/index.html`) answer with a 301 to the clean URL.
+
+Markers any page can use (put them in Astro with `<Fragment set:html={...} />`):
+
+| Marker | Filled with |
+| --- | --- |
+| `<!--SSR:summary-->…<!--/SSR-->`, `status-label`, `updated-human`, `pass-status-label`, `pass-note`, `{north,south}-{queue,wait,cause,trend}` | live snapshot from the database |
+| `<!--SSR:forecast-week-->…<!--/SSR-->` | sentence + table: expected peak per direction today and the next 7 days |
+| `<!--SSR:forecast-range:2026-12-20:2027-01-04-->…<!--/SSR-->` | same for an inclusive date range (past days skipped, max 62 days) |
+
+The forecast markers read `forecast-days.json` from the web root, which the
+build writes (`site/src/pages/forecast-days.json.ts`) with the same model the
+browser uses, for the next 180 days. `site/src/lib/forecast-days.ts` renders the
+build-day fallback with identical markup (`forecastWeekHtml`,
+`forecastRangeHtml`). If the file is missing or has no row for today, the
+markers are emptied rather than showing stale numbers, so redeploy at least
+every few months.
+
 ## Known limitations
 
 - Forecast and statistics data are generated offline from a scraped

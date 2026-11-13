@@ -93,7 +93,13 @@ Check parsing against the live feed with `php server/cron/fetch-traffic.php --de
 and inspect unmatched records with `php server/cron/diagnose.php`. To load the
 last 90 days of weather once: `php cron/fetch-traffic.php --backfill-weather`.
 Optional settings (failure alert mail, health threshold, retention, weather
-switch) are documented in `config.example.php`.
+switch, IndexNow) are documented in `config.example.php`.
+
+IndexNow: with `indexnow_key` set (or `INDEXNOW_KEY` in the cron job's
+environment, since the deploy regenerates `config.php`), the collector pings
+`api.indexnow.org` with the live pages whenever the tunnel status or the
+planned closures change (at most every 30 min) and writes `<webroot>/<key>.txt`
+itself when it is missing (a deploy removes it; the next run restores it).
 
 ## Local development
 
@@ -119,6 +125,11 @@ for t in server/cron/tests/test-*.php; do php "$t" || exit 1; done
 ```
 
 The forecast model has a backtest: `cd site && npm run backtest`.
+
+The hero summary exists twice (`Format::summary()` in PHP, `buildSummary()` in
+`format.ts`) and must stay word-for-word identical; both are checked against
+`server/cron/tests/summary-fixtures.json`: `cd site && node scripts/test-summary-parity.mjs`
+(after `npm ci`).
 
 ## Deployment (GitHub Actions)
 
@@ -164,6 +175,9 @@ tables are created by `migrate.php` during the deploy.
 | `/api/stats.php` | Aggregated 365-day statistics (JSON, cached 15 min) |
 | `/api/observed.php` | Per-day hourly queues for the forecast model (JSON, cached 1 h) |
 | `/api/health.php` | Collector health for uptime monitors (HTTP 503 when stale) |
+| `/api/summary.php` | Plain-text answer for AI assistants (`?lang=de`/`en`): the hero sentence with timestamp, source and link; says so when the reading is older than 20 min |
+| `/api/badge.php` | Embeddable SVG status badge (`?lang=de`/`en`, `&dir=both`/`north`/`south`, cached 2 min) |
+| `/api/crawlers.php` | Search/AI crawler hits per day and bot, last 30 days (counts only, from `data/crawler-hits.json`) |
 | `/api/holidays.php`, `/api/train.php` | Cached proxies for school holidays and the next Göschenen-Airolo train |
 
 Example `/api/gotthard.php` response:
@@ -181,6 +195,12 @@ Example `/api/gotthard.php` response:
   },
   "pass": { "status": "closed", "note": null }
 }
+```
+
+Embed the live status badge on another site:
+
+```html
+<a href="https://gotthard.jubr.app/"><img src="https://gotthard.jubr.app/api/badge.php?lang=de" alt="Gotthard Stau aktuell"></a>
 ```
 
 `/api/history.php` returns points such as

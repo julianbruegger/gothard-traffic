@@ -63,6 +63,17 @@ DirectorySlash Off
   RewriteRule ^ - [L]
 </IfModule>
 
+# ── Caching ──────────────────────────────────────────────────────────────────
+# index.php sends its own "Cache-Control: public, max-age=60" (live data). A
+# host-level mod_expires rule for text/html would add a second, conflicting
+# Cache-Control (max-age=3600) to those responses, so switch mod_expires off for
+# PHP output; static assets keep whatever the host configures.
+<IfModule mod_expires.c>
+  <FilesMatch "\.php$">
+    ExpiresActive Off
+  </FilesMatch>
+</IfModule>
+
 # ── Security headers ─────────────────────────────────────────────────────────
 # Content-Security-Policy: the page loads nothing from other origins (the font is
 # self-hosted, third-party data goes through api/*.php), so everything is 'self'.

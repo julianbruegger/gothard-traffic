@@ -186,7 +186,21 @@
     "nerd.corr.weekendRatio": "Wochenende = {x}× Werktag",
     "nerd.corr.afterClosure": "3 Stunden nach einer Vollsperrung",
     "nerd.corr.afterClosureRatio": "{x}× Durchschnitt ({n} Sperrungen)",
-    "nerd.corr.none": "Noch zu wenig Daten."
+    "nerd.corr.none": "Noch zu wenig Daten.",
+    "guide.liveNow": "Gotthard aktuell",
+    "guide.toLive": "Zum Live-Status",
+    "guide.faqTitle": "Häufige Fragen",
+    "guide.title": "Gotthard-Ratgeber",
+    "guide.sub": "Antworten zu Feiertagen, Sperrungen, Pass und Umfahrungen – auf Basis unserer eigenen Daten.",
+    "guide.moreTitle": "Weitere Gotthard-Ratgeber",
+    "guide.footer": "Ratgeber",
+    "guide.backLive": "Live: Stau und Wartezeit am Gotthard jetzt",
+    "guide.backForecast": "Prognose für die nächsten Tage",
+    "guide.christmas.short": "Weihnachten & Neujahr",
+    "guide.christmas.link": "Gotthard-Stau an Weihnachten und Neujahr: Prognose pro Tag",
+    "guide.christmas.blurb": "Stärkste Reisetage über die Festtage, nach Richtung, und die ruhigsten Zeiten zum Fahren.",
+    "meta.christmas.title": "Gotthard Stau Weihnachten & Neujahr {season} – Gotthard Verkehr Live",
+    "meta.christmas.description": "Gotthard-Stau an Weihnachten und Neujahr {season}: Prognose für jeden Tag und beide Richtungen, stärkste Reisetage und die ruhigsten Zeiten zum Fahren."
   },
   "en": {
     "site.title": "Gotthard Traffic Live",
@@ -375,6 +389,20 @@
     "nerd.corr.weekendRatio": "weekend = {x}× weekday",
     "nerd.corr.afterClosure": "3 hours after a full closure",
     "nerd.corr.afterClosureRatio": "{x}× average ({n} closures)",
-    "nerd.corr.none": "Not enough data yet."
+    "nerd.corr.none": "Not enough data yet.",
+    "guide.liveNow": "Gotthard right now",
+    "guide.toLive": "Open the live status",
+    "guide.faqTitle": "Frequently asked questions",
+    "guide.title": "Gotthard guides",
+    "guide.sub": "Answers on holidays, closures, the pass and detours – based on our own data.",
+    "guide.moreTitle": "More Gotthard guides",
+    "guide.footer": "Guides",
+    "guide.backLive": "Live: Gotthard queues and waiting time now",
+    "guide.backForecast": "Forecast for the coming days",
+    "guide.christmas.short": "Christmas & New Year",
+    "guide.christmas.link": "Gotthard traffic at Christmas and New Year: day-by-day forecast",
+    "guide.christmas.blurb": "The busiest travel days over the holidays, by direction, and the quietest times to drive.",
+    "meta.christmas.title": "Gotthard Christmas & New Year Traffic {season} – Gotthard Traffic Live",
+    "meta.christmas.description": "Gotthard traffic at Christmas and New Year {season}: a forecast for every day and both directions, the busiest travel days and the quietest times to drive."
   }
 }

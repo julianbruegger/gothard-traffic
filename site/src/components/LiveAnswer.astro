@@ -1,0 +1,48 @@
+---
+// Compact live status for the guide pages: status chip, the quotable summary
+// sentence and the reading time. Uses the same ids and SSR markers as
+// StatusHero, so server/index.php fills it per request and live.ts keeps it
+// fresh (live.ts null-guards every element it touches, so the home-only parts
+// are simply skipped here). Never use it on a page that also has StatusHero.
+import { t, type Lang } from '../lib/i18n';
+import { statusLabel, formatUpdated, buildSummary } from '../lib/format';
+import { loadHomeData } from '../lib/load-data';
+import { routePath } from '../lib/routes';
+import Icon from './Icon.astro';
+
+interface Props {
+  lang: Lang;
+  /** Optional heading above the chip (h2); omit when the page head already says it. */
+  heading?: string;
+}
+const { lang, heading } = Astro.props;
+// Production build: neutral placeholder (status unknown, no timestamp); the
+// real values come from SSR and live.ts.
+const { data } = loadHomeData();
+const summary = data.updated ? buildSummary(data, lang) : t(lang, 'hero.staleUnavailable');
+const label = statusLabel(data.tunnel.status, lang);
+const updatedHuman = formatUpdated(data.updated, lang);
+---
+
+<section class="live-answer" aria-labelledby={heading ? 'live-answer-title' : undefined} aria-label={heading ? undefined : t(lang, 'guide.liveNow')}>
+  {heading && <h2 class="section__title" id="live-answer-title">{heading}</h2>}
+  <div class="live-answer__row">
+    <span class="chip status-chip" id="status-badge" data-status={data.tunnel.status}>
+      <Icon name="check_circle" class="icon status-icon--open" />
+      <Icon name="warning" class="icon status-icon--congested" />
+      <Icon name="error" class="icon status-icon--restricted" />
+      <Icon name="block" class="icon status-icon--closed" />
+      <Icon name="help" class="icon status-icon--unknown" />
+      <span id="status-label"><!--SSR:status-label-->{label}<!--/SSR--></span>
+    </span>
+    <span class="live-answer__meta">
+      <Icon name="schedule" size={18} />
+      {t(lang, 'hero.lastUpdated')}:
+      <time id="hero-updated" datetime={data.updated ?? ''}><!--SSR:updated-human-->{updatedHuman}<!--/SSR--></time>
+    </span>
+  </div>
+  <div aria-live="polite"><p class="hero__stale" id="hero-stale" hidden></p></div>
+  <p class="live-answer__summary" id="summary"><!--SSR:summary-->{summary}<!--/SSR--></p>
+  <a class="btn" href={routePath('home', lang)}><Icon name="live" />{t(lang, 'guide.toLive')}</a>
+</section>
+<script src="../scripts/live.ts"></script>

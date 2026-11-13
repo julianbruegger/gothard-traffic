@@ -1,31 +1,28 @@
 ---
 import { t, type Lang } from '../lib/i18n';
 import Icon from './Icon.astro';
+import { lookupPath, routePath } from '../lib/routes';
 
 interface Props {
   lang: Lang;
-  currentPage?: 'status' | 'forecasts' | 'statistics' | 'nerd';
+  /** Highlighted nav item; null for pages that are not in the main nav (guides). */
+  currentPage?: 'status' | 'forecasts' | 'statistics' | 'nerd' | null;
 }
 const { lang, currentPage = 'status' } = Astro.props;
 
-// Language-neutral path of the current page (strip any /en prefix), used to
-// build in-language nav links and the DE/EN switch that point at the real
-// per-language URLs (German at the root, English under /en) instead of a
-// ?lang= query param that served duplicate content.
-const rawPath = Astro.url.pathname.replace(/\/index\.html$/, '/').replace(/\.html$/, '');
-const path = rawPath !== '/' ? rawPath.replace(/\/$/, '') : '/';
-const logical = path === '/en' ? '/' : path.startsWith('/en/') ? path.slice(3) : path;
-
-const prefix = (l: Lang) => (l === 'de' ? '' : '/en');
-const home = (l: Lang) => prefix(l) || '/';
-const deHref = logical === '/' ? '/' : logical;
-const enHref = logical === '/' ? '/en' : '/en' + logical;
+// The DE/EN switch points at the same page in the other language, looked up in
+// the route map (slugs differ per language, e.g. /sperrungen ↔ /en/closures).
+const route = lookupPath(Astro.url.pathname);
+const langHref = (l: Lang) => routePath(route?.key ?? 'home', l);
+const deHref = langHref('de');
+const enHref = langHref('en');
+const home = (l: Lang) => routePath('home', l);
 
 const links = [
   { key: 'status', href: home(lang), label: t(lang, 'nav.live'), icon: 'live' },
-  { key: 'forecasts', href: `${prefix(lang)}/forecasts`, label: t(lang, 'nav.forecast'), icon: 'calendar' },
-  { key: 'statistics', href: `${prefix(lang)}/statistics`, label: t(lang, 'nav.stats'), icon: 'bar_chart' },
-  { key: 'nerd', href: `${prefix(lang)}/nerd`, label: t(lang, 'nav.nerd'), icon: 'table' },
+  { key: 'forecasts', href: routePath('forecasts', lang), label: t(lang, 'nav.forecast'), icon: 'calendar' },
+  { key: 'statistics', href: routePath('statistics', lang), label: t(lang, 'nav.stats'), icon: 'bar_chart' },
+  { key: 'nerd', href: routePath('nerd', lang), label: t(lang, 'nav.nerd'), icon: 'table' },
 ] as const;
 ---
 

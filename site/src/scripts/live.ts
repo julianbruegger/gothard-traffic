@@ -3,8 +3,9 @@ import { formatKm, formatWait, dataFreshness, staleMessage, type Freshness, form
 import { axesSvg, buildSparkline, type SparklineResult } from '../lib/chart';
 import { fmtTime, fmtIsoDayMonth } from '../lib/swiss-time';
 import { computeQueueTrend } from '../lib/trend';
-import { generateForecast, generateDayCurve, swissDayInfo, idxToWaitMinutes, type ForecastPoint, type TrafficLevel } from '../lib/forecast';
+import { generateForecast, generateDayCurve, swissDayInfo, type ForecastPoint, type TrafficLevel } from '../lib/forecast';
 import { iconSvg } from '../lib/icons';
+import { forecastDaySummaries } from '../lib/forecast-days';
 import { buildForecastChart, type ActualPoint, type Direction, type ForecastChartResult } from '../lib/forecast-chart';
 import { historicDatesForWeekday, historicDaySeries, historicMeta } from '../lib/historic-days';
 import { suggestDiversions } from '../lib/diversion';
@@ -698,15 +699,17 @@ function renderWeek() {
   const container = document.getElementById('week-days');
   if (!container) return;
   const days = generateForecast(new Date(), lang, 7);
+  // Peak minutes from the same per-day summary the server-rendered table below
+  // uses (forecast-days.ts), so bars and table always show the same numbers.
+  const summaries = forecastDaySummaries(new Date(), 7);
   const prefix = lang === 'de' ? '' : '/en';
-  const peaks = days.map((d) => ({
-    n: Math.max(...d.hours.map((h) => h.northIdx)),
-    s: Math.max(...d.hours.map((h) => h.southIdx)),
+  const peaks = days.map((d, i) => ({
+    n: summaries[i].north.peakMin,
+    s: summaries[i].south.peakMin,
     lv: LEVEL_ORDER[Math.max(...d.hours.map((h) => Math.max(LEVEL_ORDER.indexOf(h.northLevel), LEVEL_ORDER.indexOf(h.southLevel))))],
   }));
-  const maxWait = Math.max(30, ...peaks.map((p) => idxToWaitMinutes(Math.max(p.n, p.s))));
-  const bar = (dir: 'north' | 'south', idx: number) => {
-    const min = idxToWaitMinutes(idx);
+  const maxWait = Math.max(30, ...peaks.map((p) => Math.max(p.n, p.s)));
+  const bar = (dir: 'north' | 'south', min: number) => {
     const h = Math.max(2, Math.round((min / maxWait) * 96));
     return `<div class="week__bar week__bar--${dir}"><span>${min}</span><i style="height:${h}px"></i></div>`;
   };
@@ -715,7 +718,7 @@ function renderWeek() {
       const p = peaks[i];
       const name = i === 0 ? (lang === 'de' ? 'Heute' : 'Today') : d.dayLabel;
       const unit = lang === 'de' ? 'Min' : 'min';
-      const aria = `${d.fullDayLabel} ${d.dateLabel}: ${t(lang, 'dir.south')} ${idxToWaitMinutes(p.n)} ${unit}, ${t(lang, 'dir.north')} ${idxToWaitMinutes(p.s)} ${unit} · ${LEVEL_LABEL[p.lv][lang]}`;
+      const aria = `${d.fullDayLabel} ${d.dateLabel}: ${t(lang, 'dir.south')} ${p.n} ${unit}, ${t(lang, 'dir.north')} ${p.s} ${unit} · ${LEVEL_LABEL[p.lv][lang]}`;
       return `<a class="week__day" href="${prefix}/forecasts" aria-label="${escapeHtml(aria)}"${i === 0 ? ' data-today=""' : ''}>
         <span class="week__name">${name}</span>
         <span class="week__date">${d.dateLabel}</span>

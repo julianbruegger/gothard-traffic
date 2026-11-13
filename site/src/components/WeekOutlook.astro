@@ -1,12 +1,18 @@
 ---
 import { t, type Lang } from '../lib/i18n';
 import Icon from './Icon.astro';
+import { WEEK_TABLE_DAYS, forecastDaySummaries, forecastWeekHtml } from '../lib/forecast-days';
 
 interface Props {
   lang: Lang;
 }
 const { lang } = Astro.props;
 const prefix = lang === 'de' ? '' : '/en';
+// Text + table of the expected peaks for crawlers and no-JS readers. index.php
+// re-renders the marker for the current day on every request (date drift); the
+// build-day version here is only the fallback for static hosting.
+const rows = forecastDaySummaries(new Date(), WEEK_TABLE_DAYS);
+const ssrForecast = `<!--SSR:forecast-week-->${forecastWeekHtml(rows, lang, rows[0].date)}<!--/SSR-->`;
 ---
 
 <section class="section" id="forecast-section" aria-labelledby="week-title">
@@ -21,6 +27,7 @@ const prefix = lang === 'de' ? '' : '/en';
     </div>
   </div>
   <div class="week" id="week-days" aria-live="polite"></div>
+  <div class="fc-ssr-wrap" id="forecast-week"><Fragment set:html={ssrForecast} /></div>
   <div class="section__head" style="align-items: center">
     <p class="section__note">{t(lang, 'forecast.disclaimer')}</p>
     <a class="btn btn--text" href={`${prefix}/forecasts`}>{t(lang, 'week.more')}<Icon name="chevron_right" /></a>

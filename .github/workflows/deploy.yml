@@ -165,14 +165,28 @@ jobs:
             curl --fail --silent --show-error --location --retry 5 --retry-delay 5 \
               --retry-all-errors --max-time 30 "$1"
           }
-          status() { curl --silent --output /dev/null --max-time 30 --write-out '%{http_code}' "$1"; }
+          # HTTP status only; retries connection errors so a reset never reads as a pass.
+          status() { curl --silent --output /dev/null --retry 3 --retry-delay 3 --retry-all-errors \
+            --max-time 30 --write-out '%{http_code}' "$1" || true; }
+          # Internal paths must answer 403 or 404 – not 200, and not a failed request (000).
+          must_be_blocked() {
+            code="$(status "$base/$1")"
+            case "$code" in
+              403|404) echo "$1 -> $code" ;;
+              *) echo "::error::/$1 answered $code (expected 403 or 404)"; exit 1 ;;
+            esac
+          }
 
           for path in / /en /forecasts; do
             echo "GET $path"
             fetch "$base$path" >/dev/null
           done
 
-          fetch "$base/" | grep -q 'id="status-badge"' \
+          # Save to a file and grep that: piping into `grep -q` makes curl fail
+          # with error 23 (grep exits at the first match), which pipefail turns
+          # into a false "missing" result.
+          fetch "$base/" > home.html
+          grep -q 'id="status-badge"' home.html \
             || { echo "::error::home page lacks id=\"status-badge\""; exit 1; }
 
           fetch "$base/api/gotthard.php" > api.json
@@ -188,6 +202,7 @@ jobs:
           PY
 
           # Internal files must not be public (#53)
-          [ "$(status "$base/data/stats-cache.json")" != 200 ] || { echo "::error::data/ is public"; exit 1; }
-          [ "$(status "$base/schema.sql")" != 200 ] || { echo "::error::schema.sql is public"; exit 1; }
+          must_be_blocked data/stats-cache.json
+          must_be_blocked schema.sql
+          must_be_blocked lib/Db.php
 

@@ -53,3 +53,7 @@ jobs:
       - name: Check & build
         working-directory: site
         run: npm run build
+
+      - name: Tests (Swiss time, TS/PHP summary parity)
+        working-directory: site
+        run: npm test

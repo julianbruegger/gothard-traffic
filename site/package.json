@@ -10,6 +10,7 @@
     "preview": "astro preview",
     "astro": "astro",
     "check:seo": "node scripts/check-seo.mjs",
+    "test": "node scripts/test-swiss-time.mjs && node scripts/test-summary-parity.mjs",
     "fetch": "node scripts/fetch-data.mjs",
     "fetch:watch": "node scripts/fetch-data.mjs --watch",
     "build:profiles": "node scripts/build-empirical-profiles.mjs",

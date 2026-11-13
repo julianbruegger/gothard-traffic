@@ -89,6 +89,8 @@ jobs:
           DB_NAME:   ${{ secrets.DB_NAME }}
           DB_USER:   ${{ secrets.DB_USER }}
           DB_PASS:   ${{ secrets.DB_PASS }}
+          # Optional: enables IndexNow pings from the collector (empty = off).
+          INDEXNOW_KEY: ${{ secrets.INDEXNOW_KEY }}
         run: |
           # Use PHP itself to write the config so all values are properly escaped.
           php -r "
@@ -104,10 +106,17 @@ jobs:
                 'db_user'       => getenv('DB_USER'),
                 'db_pass'       => getenv('DB_PASS'),
                 'error_log'     => __DIR__ . '/../data/fetch-error.log',
+                'indexnow_key'  => getenv('INDEXNOW_KEY') ?: null,
             ];
             \$php = '<?php' . PHP_EOL . 'return ' . var_export(\$config, true) . ';' . PHP_EOL;
             file_put_contents('deploy-staging/cron/config.php', \$php);
             echo 'config.php generated (' . filesize('deploy-staging/cron/config.php') . ' bytes)' . PHP_EOL;
+            // IndexNow key file in the web root, so rsync --delete never removes it.
+            \$key = (string) getenv('INDEXNOW_KEY');
+            if (preg_match('/^[a-zA-Z0-9-]{8,128}\$/', \$key)) {
+                file_put_contents('deploy-staging/' . \$key . '.txt', \$key);
+                echo 'IndexNow key file written' . PHP_EOL;
+            }
           "
 
       - name: Deploy via rsync over SSH

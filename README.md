@@ -93,7 +93,13 @@ Check parsing against the live feed with `php server/cron/fetch-traffic.php --de
 and inspect unmatched records with `php server/cron/diagnose.php`. To load the
 last 90 days of weather once: `php cron/fetch-traffic.php --backfill-weather`.
 Optional settings (failure alert mail, health threshold, retention, weather
-switch) are documented in `config.example.php`.
+switch, IndexNow) are documented in `config.example.php`.
+
+IndexNow: with `indexnow_key` set (or `INDEXNOW_KEY` in the cron job's
+environment, since the deploy regenerates `config.php`), the collector pings
+`api.indexnow.org` with the live pages whenever the tunnel status or the
+planned closures change (at most every 30 min) and writes `<webroot>/<key>.txt`
+itself when it is missing (a deploy removes it; the next run restores it).
 
 ## Local development
 
@@ -102,7 +108,9 @@ cd site
 npm install
 npm run dev        # http://localhost:4321
 npm run build      # astro check + build -> site/dist/
-npm run check:seo  # after build: unique titles/descriptions, llms.txt URLs exist
+npm run check:seo  # after build: titles/descriptions, one h1, hreflang/canonical/sitemap
+                   # agreement, JSON-LD parses, internal links and llms.txt URLs resolve
+npm test           # Swiss-time formatting + TS/PHP summary parity
 ```
 
 Without PHP, the browser falls back to the sample data in
@@ -119,6 +127,11 @@ for t in server/cron/tests/test-*.php; do php "$t" || exit 1; done
 ```
 
 The forecast model has a backtest: `cd site && npm run backtest`.
+
+The hero summary exists twice (`Format::summary()` in PHP, `buildSummary()` in
+`format.ts`) and must stay word-for-word identical; both are checked against
+`server/cron/tests/summary-fixtures.json`: `cd site && node scripts/test-summary-parity.mjs`
+(after `npm ci`).
 
 ## Deployment (GitHub Actions)
 
@@ -164,6 +177,9 @@ tables are created by `migrate.php` during the deploy.
 | `/api/stats.php` | Aggregated 365-day statistics (JSON, cached 15 min) |
 | `/api/observed.php` | Per-day hourly queues for the forecast model (JSON, cached 1 h) |
 | `/api/health.php` | Collector health for uptime monitors (HTTP 503 when stale) |
+| `/api/summary.php` | Plain-text answer for AI assistants (`?lang=de`/`en`): the hero sentence with timestamp, source and link; says so when the reading is older than 20 min |
+| `/api/badge.php` | Embeddable SVG status badge (`?lang=de`/`en`, `&dir=both`/`north`/`south`, cached 2 min) |
+| `/api/crawlers.php` | Search/AI crawler hits per day and bot, last 30 days (counts only, from `data/crawler-hits.json`) |
 | `/api/holidays.php`, `/api/train.php` | Cached proxies for school holidays and the next Göschenen-Airolo train |
 
 Example `/api/gotthard.php` response:
@@ -183,12 +199,46 @@ Example `/api/gotthard.php` response:
 }
 ```
 
+Embed the live status badge on another site:
+
+```html
+<a href="https://gotthard.jubr.app/"><img src="https://gotthard.jubr.app/api/badge.php?lang=de" alt="Gotthard Stau aktuell"></a>
+```
+
 `/api/history.php` returns points such as
 `{"t":"2026-11-11T09:24:01+00:00","northQueueKm":4,"southQueueKm":null,"northWaitMinutes":40,"southWaitMinutes":null,"status":"congested"}`.
 
 Languages live at real URLs (`/`, `/en`), not `?lang=`. Free-text fields from
 the feed (`cause`, pass `note`) are shown in the feed's language and are not
 translated.
+
+### Server-side rendering of every page
+
+`.htaccess` sends every extensionless URL whose `.html` exists in the build
+(`/`, `/en`, `/forecasts`, `/en/forecasts`, new landing pages, `/it`, ...) to
+`index.php?page=<path>`. `index.php` validates the path, reads the built page
+as a template and fills its markers (`server/lib/Ssr.php` documents all of
+them), so crawlers and AI fetchers that run no JavaScript get current content.
+Only the two home pages get their title/meta/canonical/JSON-LD rewritten; every
+other page keeps the head Astro built. The database is queried only when the
+page has live markers. Duplicate URLs (`/foo.html`, `/foo/`, `/?lang=en`,
+`/?lan=de`, `/index.html`) answer with a 301 to the clean URL.
+
+Markers any page can use (put them in Astro with `<Fragment set:html={...} />`):
+
+| Marker | Filled with |
+| --- | --- |
+| `<!--SSR:summary-->…<!--/SSR-->`, `status-label`, `updated-human`, `pass-status-label`, `pass-note`, `{north,south}-{queue,wait,cause,trend}` | live snapshot from the database |
+| `<!--SSR:forecast-week-->…<!--/SSR-->` | sentence + table: expected peak per direction today and the next 7 days |
+| `<!--SSR:forecast-range:2026-12-20:2027-01-04-->…<!--/SSR-->` | same for an inclusive date range (past days skipped, max 62 days) |
+
+The forecast markers read `forecast-days.json` from the web root, which the
+build writes (`site/src/pages/forecast-days.json.ts`) with the same model the
+browser uses, for the next 180 days. `site/src/lib/forecast-days.ts` renders the
+build-day fallback with identical markup (`forecastWeekHtml`,
+`forecastRangeHtml`). If the file is missing or has no row for today, the
+markers are emptied rather than showing stale numbers, so redeploy at least
+every few months.
 
 ## Known limitations
 

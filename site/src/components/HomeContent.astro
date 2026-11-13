@@ -9,6 +9,7 @@ import DiversionSection from './DiversionSection.astro';
 import WeekOutlook from './WeekOutlook.astro';
 import InfoSection from './InfoSection.astro';
 import Faq from './Faq.astro';
+import GuideLinks from './GuideLinks.astro';
 import type { Lang } from '../lib/i18n';
 import type { GotthardData, HistoryPoint } from '../lib/types';
 import type { QueueTrend } from '../lib/trend';
@@ -40,6 +41,7 @@ const { lang, data, history, northTrend, southTrend } = Astro.props;
   <TrendChart lang={lang} history={history} />
   <WeekOutlook lang={lang} />
   <InfoSection lang={lang} />
+  <GuideLinks lang={lang} />
   <Faq lang={lang} />
 </main>
 <script src="../scripts/live.ts"></script>

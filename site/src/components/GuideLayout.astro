@@ -1,0 +1,80 @@
+---
+// Shared frame of the topic guide pages (/weihnachten-neujahr, /sperrungen, …):
+// page head with the H1, an optional live status block, the page content, a
+// visible FAQ whose FAQPage JSON-LD is built from the same items, and links
+// back to the live status and to the other guides.
+import Layout from '../layouts/Layout.astro';
+import Header from './Header.astro';
+import Footer from './Footer.astro';
+import LiveAnswer from './LiveAnswer.astro';
+import GuideLinks from './GuideLinks.astro';
+import { t, type Lang } from '../lib/i18n';
+import type { GuideKey } from '../lib/routes';
+
+export interface FaqItem {
+  q: string;
+  a: string;
+}
+
+interface Props {
+  lang: Lang;
+  guide: GuideKey;
+  title: string;
+  description: string;
+  h1: string;
+  intro: string;
+  faq: FaqItem[];
+  /** Show the compact live status (status chip + summary) below the page head. */
+  live?: boolean;
+  /** Heading of the live block; defaults to "Gotthard aktuell". */
+  liveHeading?: string;
+  /** Extra JSON-LD blocks besides WebPage/BreadcrumbList and the FAQPage. */
+  jsonLd?: Record<string, unknown>[];
+  dataSource?: string;
+}
+const { lang, guide, title, description, h1, intro, faq, live = false, liveHeading, jsonLd = [], dataSource = 'ASTRA' } = Astro.props;
+
+const faqLd = {
+  '@context': 'https://schema.org',
+  '@type': 'FAQPage',
+  mainEntity: faq.map((it) => ({
+    '@type': 'Question',
+    name: it.q,
+    acceptedAnswer: { '@type': 'Answer', text: it.a },
+  })),
+};
+---
+
+<Layout
+  lang={lang}
+  updatedIso={null}
+  title={title}
+  description={description}
+  schema="webpage"
+  breadcrumb={t(lang, `guide.${guide}.short` as any)}
+  jsonLd={[faqLd, ...jsonLd]}
+>
+  <Header lang={lang} currentPage={null} />
+  <main id="main" class="container page guide">
+    <div class="page-head">
+      <h1>{h1}</h1>
+      <p>{intro}</p>
+    </div>
+    <slot name="top" />
+    {live && <LiveAnswer lang={lang} heading={liveHeading ?? t(lang, 'guide.liveNow')} />}
+    <slot />
+    <section class="section faq" aria-labelledby="guide-faq-title">
+      <h2 class="section__title" id="guide-faq-title">{t(lang, 'guide.faqTitle')}</h2>
+      <div class="faq__list">
+        {faq.map((it, i) => (
+          <details class="faq__item" open={i === 0}>
+            <summary class="faq__q">{it.q}</summary>
+            <p class="faq__a">{it.a}</p>
+          </details>
+        ))}
+      </div>
+    </section>
+    <GuideLinks lang={lang} current={guide} />
+  </main>
+  <Footer lang={lang} dataSource={dataSource} />
+</Layout>

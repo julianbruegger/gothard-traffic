@@ -2,6 +2,9 @@
 
 declare(strict_types=1);
 
+require_once __DIR__ . '/../lib/CrawlerLog.php';
+CrawlerLog::record((string) ($_SERVER['HTTP_USER_AGENT'] ?? ''), (string) ($_SERVER['REQUEST_URI'] ?? '/api/gotthard.php'));
+
 header('Content-Type: application/json; charset=utf-8');
 header('Cache-Control: public, max-age=55');
 header('Access-Control-Allow-Origin: *');

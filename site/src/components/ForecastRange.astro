@@ -1,0 +1,24 @@
+---
+// Per-day forecast table for a date range inside the
+// <!--SSR:forecast-range:FROM:TO--> marker. server/index.php re-renders it per
+// request (ForecastTable.php, from dist/forecast-days.json); the build-time
+// copy below comes from the same renderer (forecast-days.ts), so static and
+// server output are byte-identical. Days before today are skipped by both.
+import type { Lang } from '../lib/i18n';
+import { forecastDaySummaries, forecastRangeHtml } from '../lib/forecast-days';
+import { isoDates } from '../lib/forecast-range';
+import { swissDayInfo } from '../lib/forecast';
+
+interface Props {
+  lang: Lang;
+  /** "YYYY-MM-DD", inclusive. */
+  from: string;
+  to: string;
+}
+const { lang, from, to } = Astro.props;
+const [y, m, d] = from.split('-').map(Number);
+const rows = forecastDaySummaries(new Date(Date.UTC(y, m - 1, d, 12)), isoDates(from, to).length);
+const html = `<!--SSR:forecast-range:${from}:${to}-->${forecastRangeHtml(rows, lang, swissDayInfo(new Date()).isoDate, from, to)}<!--/SSR-->`;
+---
+
+<div class="fc-ssr-wrap"><Fragment set:html={html} /></div>

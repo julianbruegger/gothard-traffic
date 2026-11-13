@@ -1,0 +1,173 @@
+---
+// /weihnachten-neujahr · /en/christmas-new-year
+// All figures come from the forecast model at build time (and from the SSR
+// forecast-range marker per request); nothing here is a hand-typed statistic.
+// Next season: bump SEASON (dates + label) once the holidays are over.
+import GuideLayout from './GuideLayout.astro';
+import ForecastRange from './ForecastRange.astro';
+import Icon from './Icon.astro';
+import { t, type Lang } from '../lib/i18n';
+import { routePath } from '../lib/routes';
+import { forecastRange, worstDay, busySpan, waitRange, hhmm, easterSundayIso, shiftIso, BUSY_MIN, type DayPeak } from '../lib/forecast-range';
+import observed from '../data/observed-days.json';
+import profiles from '../data/empirical-profiles.json';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const L = (de: string, en: string) => (lang === 'de' ? de : en);
+const unit = t(lang, 'portal.minutes');
+
+const SEASON = { from: '2026-12-19', to: '2027-01-04', label: '2026/27' };
+const days = forecastRange(SEASON.from, SEASON.to, lang);
+
+const dayName = (d: DayPeak) => `${d.fullDayLabel}, ${d.dateLabel}`;
+const list = (items: string[]) =>
+  items.length <= 1 ? items.join('') : `${items.slice(0, -1).join(', ')} ${L('und', 'and')} ${items[items.length - 1]}`;
+
+// End a sentence after a list without doubling the date's own period ("29.12.").
+const stop = (s: string) => (s.endsWith('.') ? s : s + '.');
+
+const worstN = worstDay(days, 'north');
+const worstS = worstDay(days, 'south');
+// Days within a minute of the worst one (the model repeats its weekly pattern).
+const topDays = (dir: 'north' | 'south', worst: DayPeak) => days.filter((d) => d[dir].typ >= worst[dir].typ - 1).map(dayName);
+const peakOf = (d: DayPeak) => Math.max(d.north.typ, d.south.typ);
+const quietest = [...days].sort((a, b) => peakOf(a) - peakOf(b) || a.isoDate.localeCompare(b.isoDate)).slice(0, 3)
+  .sort((a, b) => a.isoDate.localeCompare(b.isoDate));
+const span = busySpan(days);
+const seasonMax = Math.max(...days.map(peakOf));
+const holidayStart = days.find((d) => d.context);
+// Same weekday as the worst southbound day, but before the holiday window.
+const baseline = days.find((d) => !d.context && d.fullDayLabel === worstN.fullDayLabel);
+
+// Easter of the following spring with the same model, for scale.
+const easterYear = Number(SEASON.to.slice(0, 4));
+const easterIso = easterSundayIso(easterYear);
+const easterDays = forecastRange(shiftIso(easterIso, -4), shiftIso(easterIso, 8), lang);
+const easterMax = Math.max(...easterDays.map(peakOf));
+
+const measuredSince = new Date(observed.meta.firstReading).toLocaleDateString(lang === 'de' ? 'de-CH' : 'en-GB', { month: 'long', year: 'numeric', timeZone: 'Europe/Zurich' });
+const tcsFrom = profiles.meta.dateStart.slice(0, 4);
+const tcsTo = profiles.meta.dateEnd.slice(0, 4);
+
+const hh = (h: number) => `${String(h).padStart(2, '0')}:00`;
+const quietText = span
+  ? L(`vor ${hh(span[0])} oder ab ${hh(span[1] + 1)} Uhr`, `before ${hh(span[0])} or from ${hh(span[1] + 1)}`)
+  : L('zu jeder Tageszeit', 'at any time of day');
+
+const title = t(lang, 'meta.christmas.title').replace('{season}', SEASON.label);
+const description = t(lang, 'meta.christmas.description').replace('{season}', SEASON.label);
+const h1 = L(`Gotthard-Stau an Weihnachten und Neujahr ${SEASON.label}`, `Gotthard traffic at Christmas and New Year ${SEASON.label}`);
+const intro = L(
+  `Wie voll wird der Gotthard über die Festtage? Unsere Prognose für jeden Tag vom ${days[0].dateLabel} bis ${days[days.length - 1].dateLabel}, getrennt nach Richtung, mit den ruhigsten Zeiten zum Fahren.`,
+  `How busy will the Gotthard be over the holidays? Our forecast for every day from ${days[0].dateLabel} to ${days[days.length - 1].dateLabel}, by direction, with the quietest times to drive.`,
+);
+
+const faq = [
+  {
+    q: L('Wann ist an Weihnachten und Neujahr am Gotthard am meisten Stau?', 'When is Gotthard traffic worst at Christmas and New Year?'),
+    a: L(
+      `Laut unserer Prognose Richtung Süden (Göschenen) am ${list(topDays('north', worstN))} mit typisch ${waitRange(worstN.north)} Minuten Wartezeit gegen ${hhmm(worstN.north.minute)} Uhr, Richtung Norden (Airolo) am ${list(topDays('south', worstS))} mit ${waitRange(worstS.south)} Minuten gegen ${hhmm(worstS.south.minute)} Uhr.`,
+      `According to our forecast, southbound (Göschenen) on ${list(topDays('north', worstN))} with typically ${waitRange(worstN.north)} minutes of waiting around ${hhmm(worstN.north.minute)}, and northbound (Airolo) on ${list(topDays('south', worstS))} with ${waitRange(worstS.south)} minutes around ${hhmm(worstS.south.minute)}.`,
+    ),
+  },
+  {
+    q: L('Wann fahre ich über die Festtage am besten durch den Gotthard?', 'When is the best time to drive through the Gotthard over the holidays?'),
+    a: L(
+      `Am ruhigsten ${quietText}: Dann erwartet das Modell an allen Tagen weniger als ${BUSY_MIN} Minuten Wartezeit. Die ruhigsten Tage sind ${stop(list(quietest.map(dayName)))}`,
+      `Quietest ${quietText}: the model expects less than ${BUSY_MIN} minutes of waiting then on every day. The quietest days are ${stop(list(quietest.map(dayName)))}`,
+    ),
+  },
+  {
+    q: L('Ist der Gotthardpass über Weihnachten offen?', 'Is the Gotthard Pass open over Christmas?'),
+    a: L(
+      'Nein. Die Passstrasse ist im Winter geschlossen, etwa von November bis Mai. Über die Festtage führt der Weg durch den Strassentunnel.',
+      'No. The pass road is closed in winter, roughly from November to May. Over the holidays the route is through the road tunnel.',
+    ),
+  },
+  {
+    q: L('Wie zuverlässig ist die Weihnachtsprognose?', 'How reliable is the Christmas forecast?'),
+    a: L(
+      `Es ist eine Modellrechnung aus Wochentag, Saison und Ferienkalender, kalibriert mit unseren eigenen Messungen seit ${measuredSince}. Für Weihnachten selbst haben wir noch keine Messwerte. Unfälle, Pannen und Schneefall können die Lage stark verändern, deshalb vor der Fahrt die Live-Werte prüfen.`,
+      `It is a model based on weekday, season and holiday calendar, calibrated with our own measurements since ${measuredSince}. We have no measurements of Christmas itself yet. Accidents, breakdowns and snowfall can change the picture quickly, so check the live values before you set off.`,
+    ),
+  },
+];
+---
+
+<GuideLayout lang={lang} guide="christmas" title={title} description={description} h1={h1} intro={intro} faq={faq} dataSource={L('Verkehrsmodell (ASTRA-Daten)', 'Traffic model (ASTRA data)')}>
+  <Fragment slot="top">
+    <div class="tiles">
+      <div class="tile">
+        <span class="tile__label">{L('Stärkster Tag Richtung Süden', 'Busiest day southbound')}</span>
+        <span class="tile__value">{worstN.fullDayLabel.slice(0, lang === 'de' ? 2 : 3)} {worstN.dateLabel}</span>
+        <span class="tile__note">{L('ca.', 'about')} {waitRange(worstN.north)} {unit} {L('gegen', 'around')} {hhmm(worstN.north.minute)} · Göschenen</span>
+      </div>
+      <div class="tile">
+        <span class="tile__label">{L('Stärkster Tag Richtung Norden', 'Busiest day northbound')}</span>
+        <span class="tile__value">{worstS.fullDayLabel.slice(0, lang === 'de' ? 2 : 3)} {worstS.dateLabel}</span>
+        <span class="tile__note">{L('ca.', 'about')} {waitRange(worstS.south)} {unit} {L('gegen', 'around')} {hhmm(worstS.south.minute)} · Airolo</span>
+      </div>
+      <div class="tile">
+        <span class="tile__label">{L('Ruhigste Reisezeit', 'Quietest time to travel')}</span>
+        <span class="tile__value">{span ? `${hh(span[1] + 1)}–${hh(span[0])}` : L('ganztags', 'all day')}</span>
+        <span class="tile__note">{L(`an allen Tagen unter ${BUSY_MIN} ${unit} erwartet`, `under ${BUSY_MIN} ${unit} expected on every day`)}</span>
+      </div>
+    </div>
+    <section class="section" aria-labelledby="xmas-days-title">
+      <div class="section__titles">
+        <h2 class="section__title" id="xmas-days-title">{L('Prognose pro Tag', 'Forecast by day')}</h2>
+        <p class="section__sub">{L('Erwartete Spitzenwartezeit an einem typischen Tag, je Richtung, mit Uhrzeit der Spitze. An starken Tagen kann es deutlich mehr sein.', 'Expected peak wait on a typical day, per direction, with the time of the peak. Busy days can be considerably worse.')}</p>
+      </div>
+      <ForecastRange lang={lang} from={SEASON.from} to={SEASON.to} />
+      <p class="section__note">{t(lang, 'forecast.disclaimer')} <a href={routePath('forecasts', lang)}>{L('Tagesverlauf in der Prognose ansehen', 'See the hour-by-hour forecast')}</a></p>
+    </section>
+  </Fragment>
+
+  <section class="section prose" aria-labelledby="xmas-when-title">
+    <h2 class="section__title" id="xmas-when-title">{L('Wann ist über die Festtage am meisten Stau?', 'When are the queues worst over the holidays?')}</h2>
+    {lang === 'de' ? (
+      <p>Richtung Süden, also vor dem Nordportal in Göschenen, erwartet unser Modell die längsten Wartezeiten am {list(topDays('north', worstN))}: typisch rund {worstN.north.typ} Minuten, an einem starken Tag bis {worstN.north.high} Minuten, mit der Spitze gegen {hhmm(worstN.north.minute)} Uhr. Richtung Norden, vor dem Südportal in Airolo, ist es am {list(topDays('south', worstS))} am vollsten ({waitRange(worstS.south)} Minuten gegen {hhmm(worstS.south.minute)} Uhr). Das entspricht dem üblichen Wochenrhythmus am Gotthard: Hinreise in den Süden vor und am Wochenende, Rückreise am Sonntagnachmittag.</p>
+    ) : (
+      <p>Southbound, in front of the north portal at Göschenen, our model expects the longest waits on {list(topDays('north', worstN))}: typically around {worstN.north.typ} minutes, up to {worstN.north.high} minutes on a busy day, peaking around {hhmm(worstN.north.minute)}. Northbound, in front of the south portal at Airolo, {list(topDays('south', worstS))} {topDays('south', worstS).length > 1 ? 'are' : 'is'} the busiest ({waitRange(worstS.south)} minutes around {hhmm(worstS.south.minute)}). That follows the usual weekly rhythm at the Gotthard: outbound trips south before and at the weekend, return trips on Sunday afternoon.</p>
+    )}
+    {lang === 'de' ? (
+      <p>Der Grund sind die Weihnachtsferien in der Schweiz und den Nachbarländern. Unser Kalendermodell rechnet {holidayStart ? `ab dem ${holidayStart.dateLabel}` : 'über die Festtage'} mit Ferienverkehr{baseline ? `; zum Vergleich: am ${dayName(baseline)}, noch vor den Ferien, erwartet es Richtung Süden nur rund ${baseline.north.typ} Minuten` : ''}. Trotzdem bleibt der Winter am Gotthard ruhig im Vergleich zu Ostern oder dem Sommer: Über die Festtage erwartet das Modell höchstens rund {seasonMax} Minuten, an Ostern {easterYear} bis zu {easterMax} Minuten.</p>
+    ) : (
+      <p>The reason is the Christmas school holidays in Switzerland and its neighbouring countries. Our calendar model treats {holidayStart ? `the days from ${holidayStart.dateLabel}` : 'the holidays'} as holiday traffic{baseline ? `; for comparison, on ${dayName(baseline)}, before the holidays start, it expects only around ${baseline.north.typ} minutes southbound` : ''}. Even so, winter at the Gotthard stays calm compared with Easter or summer: over Christmas the model expects at most around {seasonMax} minutes, at Easter {easterYear} up to {easterMax} minutes.</p>
+    )}
+  </section>
+
+  <section class="section prose" aria-labelledby="xmas-best-title">
+    <h2 class="section__title" id="xmas-best-title">{L('Wann fahre ich am besten?', 'When should I drive?')}</h2>
+    <ul>
+      {lang === 'de' ? (
+        <>
+          <li><strong>Früh oder spät:</strong> {span ? `Vor ${hh(span[0])} und ab ${hh(span[1] + 1)} Uhr` : 'Den ganzen Tag'} erwartet das Modell an allen Tagen weniger als {BUSY_MIN} Minuten Wartezeit.</li>
+          <li><strong>Ruhige Tage wählen:</strong> Am wenigsten los ist am {stop(list(quietest.map(dayName)))}</li>
+          <li><strong>Spitzentage meiden:</strong> Richtung Süden nicht am {list(topDays('north', worstN))} um die Mittagszeit, Richtung Norden nicht am {list(topDays('south', worstS))} am Nachmittag.</li>
+          <li><strong>Kurz vor der Abfahrt nachsehen:</strong> Unfälle, Pannen und Schnee verändern die Lage schnell. Die <a href={routePath('home', lang)}>Live-Werte für beide Portale</a> werden alle paar Minuten aktualisiert.</li>
+        </>
+      ) : (
+        <>
+          <li><strong>Early or late:</strong> {span ? `before ${hh(span[0])} and from ${hh(span[1] + 1)}` : 'all day'}, the model expects less than {BUSY_MIN} minutes of waiting on every day.</li>
+          <li><strong>Pick quiet days:</strong> the quietest are {stop(list(quietest.map(dayName)))}</li>
+          <li><strong>Avoid the peaks:</strong> southbound not on {list(topDays('north', worstN))} around midday, northbound not on {list(topDays('south', worstS))} in the afternoon.</li>
+          <li><strong>Check just before you leave:</strong> accidents, breakdowns and snow change the picture quickly. The <a href={routePath('home', lang)}>live values for both portals</a> refresh every few minutes.</li>
+        </>
+      )}
+    </ul>
+  </section>
+
+  <section class="section prose" aria-labelledby="xmas-history-title">
+    <h2 class="section__title" id="xmas-history-title">{L('Was zeigen frühere Jahre?', 'What do past years show?')}</h2>
+    {lang === 'de' ? (
+      <p>Ehrlich gesagt: noch wenig. Unsere eigenen ASTRA-Messungen am Tunnel laufen seit {measuredSince}, die Festtage {SEASON.label} sind also die ersten, die wir selbst messen. Die ausgewerteten TCS-Staumeldungen {tcsFrom}–{tcsTo} enthalten keine eigene Weihnachtsauswertung. Diese Prognose stützt sich deshalb auf unser gemessenes Wochenprofil und den Ferienkalender. Nach den Festtagen fliessen die Messungen in die <a href={routePath('statistics', lang)}>Statistik</a> und in die nächste Prognose ein.</p>
+    ) : (
+      <p>Honestly: not much yet. Our own ASTRA measurements at the tunnel have been running since {measuredSince}, so the {SEASON.label} holidays are the first we measure ourselves. The TCS traffic reports {tcsFrom}–{tcsTo} that we analysed contain no separate Christmas effect. This forecast therefore rests on our measured weekly profile and the holiday calendar. After the holidays the measurements feed into the <a href={routePath('statistics', lang)}>statistics</a> and the next forecast.</p>
+    )}
+    <p class="callout"><Icon name="snow" />{L('Im Winter ist die Gotthard-Passstrasse geschlossen; als Ausweichroute bleibt vor allem der San Bernardino (A13).', 'In winter the Gotthard Pass road is closed; the main alternative is the San Bernardino (A13).')}</p>
+  </section>
+</GuideLayout>

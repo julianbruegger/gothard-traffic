@@ -1,0 +1,41 @@
+---
+// Links to the topic guides, with descriptive anchor text. On the home page it
+// lists every guide; on a guide page (`current`) it leads back to the live
+// status and the forecast first and lists the other guides.
+import { t, type Lang } from '../lib/i18n';
+import { GUIDES, routePath, type GuideKey } from '../lib/routes';
+import Icon from './Icon.astro';
+
+interface Props {
+  lang: Lang;
+  current?: GuideKey;
+}
+const { lang, current } = Astro.props;
+const guides = GUIDES.filter((g) => g !== current).map((g) => ({
+  href: routePath(g, lang),
+  link: t(lang, `guide.${g}.link` as any),
+  blurb: t(lang, `guide.${g}.blurb` as any),
+}));
+const titleId = current ? 'guides-more-title' : 'guides-title';
+---
+
+<section class="section guides" aria-labelledby={titleId}>
+  <div class="section__titles">
+    <h2 class="section__title" id={titleId}>{t(lang, current ? 'guide.moreTitle' : 'guide.title')}</h2>
+    {!current && <p class="section__sub">{t(lang, 'guide.sub')}</p>}
+  </div>
+  {current && (
+    <div class="guides__back">
+      <a class="btn" href={routePath('home', lang)}><Icon name="live" />{t(lang, 'guide.backLive')}</a>
+      <a class="btn" href={routePath('forecasts', lang)}><Icon name="calendar" />{t(lang, 'guide.backForecast')}</a>
+    </div>
+  )}
+  <ul class="guides__list">
+    {guides.map((g) => (
+      <li class="guides__item">
+        <a href={g.href}>{g.link}</a>
+        <p>{g.blurb}</p>
+      </li>
+    ))}
+  </ul>
+</section>

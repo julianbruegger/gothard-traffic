@@ -1,0 +1,158 @@
+---
+// /daten · /en/data — citable facts about source and method, plus a Dataset
+// JSON-LD with the API endpoints as distributions. Figures are taken from the
+// committed data files only (the 365-day statistics live in /api/stats.php
+// and on the Nerd Mode page; they can't be read at build time).
+import GuideLayout from './GuideLayout.astro';
+import { t, type Lang } from '../lib/i18n';
+import { routePath } from '../lib/routes';
+import { ASTRA_MIN_PER_KM } from '../lib/forecast';
+import observed from '../data/observed-days.json';
+import profiles from '../data/empirical-profiles.json';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const L = (de: string, en: string) => (lang === 'de' ? de : en);
+const loc = lang === 'de' ? 'de-CH' : 'en-GB';
+const int = (v: number) => v.toLocaleString(lang === 'de' ? 'de-CH' : 'en-CH');
+const date = (iso: string) => new Date(iso).toLocaleDateString(loc, { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Zurich' });
+const SITE = 'https://gotthard.jubr.app';
+
+const om = observed.meta;
+const pm = profiles.meta;
+
+const endpoints = [
+  { path: '/api/gotthard.php', type: 'application/json', de: 'Aktueller Status: Staulänge und Wartezeit je Portal, Tunnel- und Passstatus, geplante Sperrungen.', en: 'Current status: queue length and waiting time per portal, tunnel and pass status, planned closures.' },
+  { path: '/api/summary.php', type: 'text/plain', de: 'Der aktuelle Zustand als ein Absatz Text mit Zeitstempel (?lang=en für Englisch).', en: 'The current situation as one paragraph of text with a timestamp (?lang=en for English).' },
+  { path: '/api/history.php', type: 'application/json', de: 'Alle Messpunkte der letzten 24 Stunden.', en: 'Every reading of the last 24 hours.' },
+  { path: '/api/stats.php', type: 'application/json', de: 'Auswertung der letzten 365 Tage: Heatmap, Rekorde, Minuten pro Stau-Kilometer, Sperrungen.', en: 'Analysis of the last 365 days: heatmap, records, minutes per queue kilometre, closures.' },
+  { path: '/api/observed.php', type: 'application/json', de: 'Stündliche Staulänge pro Tag, die Grundlage der Prognose.', en: 'Hourly queue length per day, the basis of the forecast.' },
+  { path: '/forecast-days.json', type: 'application/json', de: 'Prognose der erwarteten Spitzenwartezeit pro Tag für die nächsten Monate.', en: 'Forecast of the expected peak waiting time per day for the coming months.' },
+  { path: '/api/health.php', type: 'application/json', de: 'Zustand des Datensammlers (HTTP 503, wenn er länger nichts mehr empfangen hat).', en: 'Collector health (HTTP 503 when it has not received data for a while).' },
+];
+
+const datasetLd = {
+  '@context': 'https://schema.org',
+  '@type': 'Dataset',
+  name: L('Gotthard-Strassentunnel: Staulänge, Wartezeit und Status', 'Gotthard road tunnel: queue length, waiting time and status'),
+  description: L(
+    'Live und historische Staulängen und Wartezeiten an beiden Portalen des Gotthard-Strassentunnels (Göschenen, Airolo) sowie Status von Tunnel und Gotthardpass, gesammelt etwa alle 3 Minuten aus dem ASTRA-Verkehrsdatenstrom (DATEX II).',
+    'Live and historic queue lengths and waiting times at both portals of the Gotthard road tunnel (Göschenen, Airolo) plus tunnel and Gotthard Pass status, collected about every 3 minutes from the ASTRA traffic feed (DATEX II).',
+  ),
+  url: SITE + routePath('data', lang),
+  inLanguage: lang === 'de' ? 'de-CH' : 'en',
+  isAccessibleForFree: true,
+  creditText: 'Gotthard Traffic Live (gotthard.jubr.app), data: ASTRA / opentransportdata.swiss',
+  creator: { '@type': 'Organization', name: 'Gotthard Traffic Live', url: SITE + '/' },
+  isBasedOn: { '@type': 'Dataset', name: 'ASTRA / opentransportdata.swiss Traffic Situations (DATEX II)', url: 'https://opentransportdata.swiss/en/road-traffic/' },
+  temporalCoverage: `${om.firstReading.slice(0, 10)}/..`,
+  spatialCoverage: { '@type': 'Place', name: 'Gotthard road tunnel (A2), Göschenen – Airolo, Switzerland' },
+  variableMeasured: ['queue length (km)', 'waiting time (min)', 'tunnel status', 'Gotthard Pass status', 'planned closures'],
+  measurementTechnique: 'Polling of the ASTRA DATEX II Traffic Situations feed about every 3 minutes',
+  distribution: endpoints.map((e) => ({ '@type': 'DataDownload', encodingFormat: e.type, contentUrl: SITE + e.path })),
+};
+
+const title = t(lang, 'meta.data.title');
+const description = t(lang, 'meta.data.description');
+const h1 = L('Gotthard-Verkehrsdaten: Quelle, Methode, API', 'Gotthard traffic data: source, method and API');
+const intro = L(
+  'Woher die Zahlen auf dieser Seite stammen, wie oft sie aktualisiert werden, wie die Wartezeit entsteht und wie Sie die Daten abrufen und zitieren.',
+  'Where the figures on this site come from, how often they refresh, where the waiting time comes from and how to fetch and cite the data.',
+);
+
+const faq = [
+  {
+    q: L('Woher stammen die Gotthard-Verkehrsdaten?', 'Where does the Gotthard traffic data come from?'),
+    a: L(
+      'Aus dem offiziellen Verkehrsdatenstrom des Bundesamts für Strassen (ASTRA), veröffentlicht als DATEX II auf opentransportdata.swiss. Den Status der Passstrasse gleichen wir zusätzlich mit alpen-paesse.ch ab.',
+      'From the official traffic feed of the Federal Roads Office (ASTRA), published as DATEX II on opentransportdata.swiss. The pass road status is also cross-checked with alpen-paesse.ch.',
+    ),
+  },
+  {
+    q: L('Wie oft werden die Daten aktualisiert?', 'How often is the data updated?'),
+    a: L(
+      'Unser Sammler fragt den ASTRA-Datenstrom etwa alle 3 Minuten ab. Die Live-Seite lädt die Werte im Browser jede Minute neu.',
+      'Our collector polls the ASTRA feed about every 3 minutes. The live page reloads the values in the browser every minute.',
+    ),
+  },
+  {
+    q: L('Wie wird die Wartezeit berechnet?', 'How is the waiting time calculated?'),
+    a: L(
+      `Gar nicht von uns: Das ASTRA meldet zu jedem Stau die Länge in Kilometern und den Zeitverlust in Minuten, und diese Werte zeigen wir an. Der Zeitverlust entspricht dabei ${ASTRA_MIN_PER_KM} Minuten pro Kilometer Stau.`,
+      `Not by us: ASTRA reports the length in kilometres and the delay in minutes for every queue, and we show those values. The delay corresponds to ${ASTRA_MIN_PER_KM} minutes per kilometre of queue.`,
+    ),
+  },
+  {
+    q: L('Darf ich die Daten verwenden und zitieren?', 'May I use and quote the data?'),
+    a: L(
+      'Ja. Daten und Texte dürfen frei zitiert werden, mit Quellenangabe und Link auf https://gotthard.jubr.app/.',
+      'Yes. Data and text are free to quote with attribution and a link to https://gotthard.jubr.app/.',
+    ),
+  },
+];
+---
+
+<GuideLayout lang={lang} guide="data" title={title} description={description} h1={h1} intro={intro} faq={faq} jsonLd={[datasetLd]} live liveHeading={L('Aktueller Messwert', 'Latest reading')}>
+  <div class="tiles">
+    <div class="tile"><span class="tile__label">{L('Abfrageintervall', 'Polling interval')}</span><span class="tile__value">~3 Min</span><span class="tile__note">{L('ASTRA DATEX II über opentransportdata.swiss', 'ASTRA DATEX II via opentransportdata.swiss')}</span></div>
+    <div class="tile"><span class="tile__label">{L('Zeitverlust pro km Stau', 'Delay per km of queue')}</span><span class="tile__value">{ASTRA_MIN_PER_KM} {t(lang, 'portal.minutes')}</span><span class="tile__note">{L('laut ASTRA-Meldungen', 'according to ASTRA reports')}</span></div>
+    <div class="tile"><span class="tile__label">{L('Messungen im Prognosemodell', 'Readings in the forecast model')}</span><span class="tile__value">{int(om.readings)}</span><span class="tile__note">{date(om.firstReading)} – {date(om.lastReading)}</span></div>
+    <div class="tile"><span class="tile__label">{L('TCS-Meldungen ausgewertet', 'TCS reports analysed')}</span><span class="tile__value">{int(pm.usedReports)}</span><span class="tile__note">{pm.dateStart.slice(0, 4)}–{pm.dateEnd.slice(0, 4)}, {L(`von ${int(pm.tweetCount)}`, `of ${int(pm.tweetCount)}`)}</span></div>
+  </div>
+
+  <section class="section prose" aria-labelledby="data-source-title">
+    <h2 class="section__title" id="data-source-title">{L('Quelle und Aktualisierung', 'Source and updates')}</h2>
+    {lang === 'de' ? (
+      <>
+        <p>Alle Live-Werte stammen aus dem offiziellen Verkehrsdatenstrom des Bundesamts für Strassen (ASTRA), den opentransportdata.swiss als DATEX II («Traffic Situations») veröffentlicht. Unser Sammler fragt ihn etwa alle 3 Minuten ab und speichert jede Abfrage. Die Staus vor dem Tunnel erscheinen dort als gewöhnliche A2-Meldungen «Richtung Gotthard» bei Göschenen (Nordportal, Verkehr Richtung Süden) und bei Airolo (Südportal, Verkehr Richtung Norden). Den Status der Passstrasse gleichen wir mit alpen-paesse.ch ab, weil sie im ASTRA-Datenstrom im Sommer oft fehlt.</p>
+        <p>Ist die letzte Messung älter als 20 Minuten, zeigen die Live-Seite und die Text-Schnittstelle /api/summary.php keinen «aktuellen» Zustand mehr an, sondern sagen, dass die Daten veraltet sind.</p>
+      </>
+    ) : (
+      <>
+        <p>All live values come from the official traffic feed of the Federal Roads Office (ASTRA), which opentransportdata.swiss publishes as DATEX II ("Traffic Situations"). Our collector polls it about every 3 minutes and stores every reading. The queues in front of the tunnel appear there as ordinary A2 messages "towards Gotthard" at Göschenen (north portal, southbound traffic) and at Airolo (south portal, northbound traffic). We cross-check the pass road status with alpen-paesse.ch because it is often missing from the ASTRA feed in summer.</p>
+        <p>When the latest reading is older than 20 minutes, the live page and the text endpoint /api/summary.php no longer present a "current" state but say that the data is out of date.</p>
+      </>
+    )}
+  </section>
+
+  <section class="section prose" aria-labelledby="data-method-title">
+    <h2 class="section__title" id="data-method-title">{L('Wie Wartezeit und Prognose entstehen', 'How waiting time and forecast are derived')}</h2>
+    {lang === 'de' ? (
+      <>
+        <p>Die Wartezeit rechnen wir nicht selbst aus. Das ASTRA meldet zu jedem Stau die Länge in Kilometern und einen «Zeitverlust» in Minuten, und genau diese Werte zeigen wir an. Der Zeitverlust entspricht {ASTRA_MIN_PER_KM} Minuten pro Kilometer Stau: 5 km Stau bedeuten also rund 50 Minuten. Wie viele Minuten pro Stau-Kilometer die Meldungen der letzten 365 Tage tatsächlich ergeben, je Portal, zeigt der <a href={routePath('nerd', lang)}>Nerd Mode</a>.</p>
+        <p>Die <a href={routePath('forecasts', lang)}>Prognose</a> kombiniert unsere eigenen Messungen ({int(om.readings)} Messungen vom {date(om.firstReading)} bis {date(om.lastReading)}) mit Wochentag, Saison und Ferienkalender. Saison- und Feiertagseffekte stammen aus {int(pm.usedReports)} ausgewerteten TCS-Staumeldungen der Jahre {pm.dateStart.slice(0, 4)} bis {pm.dateEnd.slice(0, 4)}; für diese älteren Meldungen rechnen wir mit rund 9 Minuten pro Kilometer. Die Prognose ist eine Modellrechnung, keine Messung.</p>
+      </>
+    ) : (
+      <>
+        <p>We do not calculate the waiting time ourselves. ASTRA reports the length in kilometres and a "delay" in minutes for every queue, and we show exactly those values. The delay corresponds to {ASTRA_MIN_PER_KM} minutes per kilometre of queue, so a 5 km queue means about 50 minutes. How many minutes per queue kilometre the reports of the last 365 days actually add up to, per portal, is shown in <a href={routePath('nerd', lang)}>Nerd Mode</a>.</p>
+        <p>The <a href={routePath('forecasts', lang)}>forecast</a> combines our own measurements ({int(om.readings)} readings from {date(om.firstReading)} to {date(om.lastReading)}) with weekday, season and holiday calendar. Seasonal and holiday effects come from {int(pm.usedReports)} analysed TCS traffic reports from {pm.dateStart.slice(0, 4)} to {pm.dateEnd.slice(0, 4)}; for those older reports we assume about 9 minutes per kilometre. The forecast is a model, not a measurement.</p>
+      </>
+    )}
+  </section>
+
+  <section class="section" aria-labelledby="data-api-title">
+    <div class="section__titles">
+      <h2 class="section__title" id="data-api-title">{L('Schnittstellen', 'Endpoints')}</h2>
+      <p class="section__sub">{L('Frei abrufbar, ohne Schlüssel. Bitte nicht öfter als einmal pro Minute abfragen; neue Werte gibt es etwa alle 3 Minuten.', 'Free to fetch, no key needed. Please poll at most once a minute; new values arrive about every 3 minutes.')}</p>
+    </div>
+    <div class="forecast-range">
+      <table class="data-table">
+        <thead><tr><th scope="col">URL</th><th scope="col">{L('Format', 'Format')}</th><th scope="col">{L('Inhalt', 'Content')}</th></tr></thead>
+        <tbody>
+          {endpoints.map((e) => (
+            <tr><th scope="row"><a href={e.path}><code>{e.path}</code></a></th><td>{e.type === 'text/plain' ? 'Text' : 'JSON'}</td><td>{lang === 'de' ? e.de : e.en}</td></tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="section prose" aria-labelledby="data-cite-title">
+    <h2 class="section__title" id="data-cite-title">{L('Zitieren', 'How to cite')}</h2>
+    <p>{L('Daten und Texte dieser Seite dürfen frei zitiert werden, mit Quellenangabe und Link auf ', 'Data and text on this site are free to quote with attribution and a link to ')}<a href="/">https://gotthard.jubr.app/</a>.</p>
+    <p>{L('Beispiel:', 'Example:')} <q>{L('Gotthard Verkehr Live (gotthard.jubr.app), Daten: ASTRA / opentransportdata.swiss, Stand ', 'Gotthard Traffic Live (gotthard.jubr.app), data: ASTRA / opentransportdata.swiss, as of ')}…</q></p>
+    <p>{L('Bitte immer den Zeitpunkt der Messung mit angeben: Stauwerte ändern sich innert Minuten. Dies ist ein unabhängiges Projekt ohne Verbindung zum ASTRA; für sicherheitsrelevante Entscheidungen gelten die offiziellen Kanäle.', 'Always include the time of the reading: queue figures change within minutes. This is an independent project with no affiliation to ASTRA; for safety-critical decisions refer to official channels.')}</p>
+  </section>
+</GuideLayout>

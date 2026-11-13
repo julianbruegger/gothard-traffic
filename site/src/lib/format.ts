@@ -1,7 +1,7 @@
 import { t, type Lang } from './i18n';
 import type { GotthardData, RoadStatus, ClosureWindow } from './types';
 import { FLAT_THRESHOLD_KM, type TrendDirection } from './trend';
-import { fmtDateTime, fmtDayMonth, fmtTime, swissIsoDate } from './swiss-time';
+import { fmtDateTime, fmtDayMonth, fmtIsoDayMonth, fmtTime, swissIsoDate } from './swiss-time';
 
 // DATEX "Ursache" / causeType values seen on Gotthard closures → friendly label.
 const CLOSURE_CAUSE: Record<string, { de: string; en: string }> = {
@@ -172,38 +172,113 @@ function waitClause(min: number | null, lang: Lang): string {
   return lang === 'de' ? `, ca. ${formatMinutes(min, lang)} Wartezeit` : `, about ${formatMinutes(min, lang)} wait`;
 }
 
-/** A single crawlable, natural-language summary sentence describing current conditions. */
-export function buildSummary(data: GotthardData, lang: Lang): string {
-  const north = data.tunnel.north;
-  const south = data.tunnel.south;
+// ─── Answer-first summary (mirrors Format::summary in server/lib/Format.php) ──
+
+function parseDate(iso: string | null | undefined): Date | null {
+  if (!iso || !iso.trim()) return null;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** "YYYY-MM-DD" of the following calendar day (pure date arithmetic, no timezone). */
+function nextIsoDay(iso: string): string {
+  const [y, m, d] = iso.split('-').map(Number);
+  return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+}
+
+/** de: "heute", "morgen", "15.07."; en: "today", "tonight" (from 18:00), "tomorrow", "15 Jul". */
+function relativeDay(d: Date, now: Date, lang: Lang): string {
+  const today = swissIsoDate(now);
+  const day = swissIsoDate(d);
+  if (day === today) {
+    if (lang === 'de') return 'heute';
+    return Number(fmtTime(d).slice(0, 2)) >= 18 ? 'tonight' : 'today';
+  }
+  if (day === nextIsoDay(today)) return lang === 'de' ? 'morgen' : 'tomorrow';
+  return fmtIsoDayMonth(day, lang);
+}
+
+/** Friendly cause label; mapped English labels are lower-cased to read inside a sentence. */
+function inlineCause(cause: string | null | undefined, lang: Lang): string | null {
+  const label = closureCauseLabel(cause, lang);
+  if (label === null) return null;
+  return lang === 'en' && label !== cause ? label.toLowerCase() : label;
+}
+
+/** First planned closure that has not ended yet (the list is sorted by start). */
+function nextClosure(closures: ClosureWindow[], now: Date): { from: Date; to: Date | null; cause: string | null } | null {
+  for (const c of closures) {
+    const from = parseDate(c?.from);
+    if (!from) continue;
+    const to = parseDate(c.to);
+    if ((to ?? from).getTime() > now.getTime()) return { from, to, cause: typeof c.cause === 'string' ? c.cause : null };
+  }
+  return null;
+}
+
+/** "heute 23:00–01:00 Uhr (Unterhaltsarbeiten)" / "tonight 23:00–01:00 (maintenance)". */
+function closurePhrase(c: { from: Date; to: Date | null; cause: string | null }, now: Date, lang: Lang): string {
+  const de = lang === 'de';
+  const day = relativeDay(c.from, now, lang);
+  const t1 = fmtTime(c.from);
+  let text: string;
+  if (!c.to) {
+    text = de ? `${day} ab ${t1} Uhr` : `${day} from ${t1}`;
+  } else if (c.to.getTime() - c.from.getTime() < 86_400_000) {
+    const t2 = fmtTime(c.to);
+    text = de ? `${day} ${t1}–${t2} Uhr` : `${day} ${t1}–${t2}`;
+  } else {
+    const day2 = relativeDay(c.to, now, lang);
+    const t2 = fmtTime(c.to);
+    text = de ? `${day} ${t1} Uhr bis ${day2} ${t2} Uhr` : `${day} ${t1} to ${day2} ${t2}`;
+  }
+  const cause = inlineCause(c.cause, lang);
+  return cause !== null ? `${text} (${cause})` : text;
+}
+
+/**
+ * Answer-first summary: one to three self-contained, quotable sentences with the
+ * Swiss-time timestamp, queue figures, pass status and the next planned closure.
+ * Crawlers, snippets, AI assistants and api/summary.php quote it (the PHP twin
+ * must produce identical strings: `node scripts/test-summary-parity.mjs`).
+ * `now` only decides "today/tomorrow" and which planned closures are over.
+ */
+export function buildSummary(data: GotthardData, lang: Lang, now: Date = new Date()): string {
+  const de = lang === 'de';
+  const tunnel = data.tunnel;
+  const north = tunnel.north;
+  const south = tunnel.south;
   const noNorthQueue = !north.queueKm || north.queueKm <= 0;
   const noSouthQueue = !south.queueKm || south.queueKm <= 0;
 
-  if (data.tunnel.status === 'closed') {
-    const reason = closureCauseLabel(data.tunnel.closureReason, lang);
-    if (lang === 'de') {
-      const lead = `Gotthard-Strassentunnel gesperrt${reason ? ` (${reason})` : ''}.`;
-      return `${lead} Gotthardpass: ${passStatusLabel(data.pass.status, lang).toLowerCase()}.`;
-    }
-    const lead = `Gotthard road tunnel closed${reason ? ` (${reason})` : ''}.`;
-    return `${lead} Gotthard Pass: ${passStatusLabel(data.pass.status, lang).toLowerCase()}.`;
-  }
+  const stamp = parseDate(data.updated) ? formatUpdated(data.updated, lang) : null;
+  const head = de
+    ? `Gotthard-Strassentunnel${stamp !== null ? `, ${stamp} Uhr` : ''}: `
+    : `Gotthard road tunnel${stamp !== null ? `, ${stamp}` : ''}: `;
 
-  if (lang === 'de') {
-    if (noNorthQueue && noSouthQueue) {
-      return `Aktuell freie Fahrt am Gotthard-Strassentunnel in beide Richtungen. Gotthardpass: ${passStatusLabel(data.pass.status, lang).toLowerCase()}.`;
-    }
+  let body: string;
+  if (tunnel.status === 'closed') {
+    const reason = inlineCause(tunnel.closureReason, lang);
+    body = `${de ? 'gesperrt' : 'closed'}${reason !== null ? ` (${reason})` : ''}`;
+  } else if (tunnel.status === 'unknown' && north.queueKm == null && south.queueKm == null) {
+    body = de ? 'Verkehrslage unbekannt' : 'traffic situation unknown';
+  } else if (noNorthQueue && noSouthQueue) {
+    body = de ? 'kein Stau in beiden Richtungen' : 'no queue in either direction';
+  } else {
     const parts: string[] = [];
-    if (!noNorthQueue) parts.push(`${formatKm(north.queueKm, lang)} Rückstau am Nordportal (Göschenen)${waitClause(north.waitMinutes, lang)}`);
-    if (!noSouthQueue) parts.push(`${formatKm(south.queueKm, lang)} Rückstau am Südportal (Airolo)${waitClause(south.waitMinutes, lang)}`);
-    return `Aktuell: ${parts.join('; ')}. Gotthardpass: ${passStatusLabel(data.pass.status, lang).toLowerCase()}.`;
+    if (!noNorthQueue) {
+      parts.push(`${formatKm(north.queueKm, lang)}${de ? ' Rückstau am Nordportal (Göschenen)' : ' queue at the north portal (Göschenen)'}${waitClause(north.waitMinutes, lang)}`);
+    }
+    if (!noSouthQueue) {
+      parts.push(`${formatKm(south.queueKm, lang)}${de ? ' Rückstau am Südportal (Airolo)' : ' queue at the south portal (Airolo)'}${waitClause(south.waitMinutes, lang)}`);
+    }
+    body = parts.join('; ');
   }
 
-  if (noNorthQueue && noSouthQueue) {
-    return `Currently clear at the Gotthard road tunnel in both directions. Gotthard Pass: ${passStatusLabel(data.pass.status, lang).toLowerCase()}.`;
-  }
-  const parts: string[] = [];
-  if (!noNorthQueue) parts.push(`${formatKm(north.queueKm, lang)} queue at the north portal (Göschenen)${waitClause(north.waitMinutes, lang)}`);
-  if (!noSouthQueue) parts.push(`${formatKm(south.queueKm, lang)} queue at the south portal (Airolo)${waitClause(south.waitMinutes, lang)}`);
-  return `Right now: ${parts.join('; ')}. Gotthard Pass: ${passStatusLabel(data.pass.status, lang).toLowerCase()}.`;
+  const pass = passStatusLabel(data.pass?.status ?? 'unknown', lang);
+  let out = `${head}${body}. ${de ? `Gotthardpass: ${pass}.` : `Gotthard Pass: ${pass.toLowerCase()}.`}`;
+
+  const next = nextClosure(Array.isArray(tunnel.plannedClosures) ? tunnel.plannedClosures : [], now);
+  if (next) out += `${de ? ' Nächste geplante Sperrung: ' : ' Next planned closure: '}${closurePhrase(next, now, lang)}.`;
+  return out;
 }

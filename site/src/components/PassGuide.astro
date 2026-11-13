@@ -1,0 +1,108 @@
+---
+// /gotthardpass · /en/gotthard-pass
+// PassCard carries the pass markers/ids (pass-badge, pass-status-label,
+// pass-note, pass-note-row) that the SSR fills and live.ts refreshes.
+import GuideLayout from './GuideLayout.astro';
+import PassCard from './PassCard.astro';
+import Icon from './Icon.astro';
+import { t, type Lang } from '../lib/i18n';
+import { routePath } from '../lib/routes';
+import { suggestDiversions, DIVERSION_THRESHOLD_MIN } from '../lib/diversion';
+import { loadHomeData } from '../lib/load-data';
+import { ASTRA_MIN_PER_KM } from '../lib/forecast';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const L = (de: string, en: string) => (lang === 'de' ? de : en);
+
+const { data } = loadHomeData();
+const routes = suggestDiversions(data, lang).routes;
+const pass = routes.find((r) => r.id === 'gotthard-pass')!;
+const sb = routes.find((r) => r.id === 'san-bernardino')!;
+const passKm = Math.round(pass.extraMinutes / ASTRA_MIN_PER_KM);
+
+const title = t(lang, 'meta.pass.title');
+const description = t(lang, 'meta.pass.description');
+const h1 = L('Ist der Gotthardpass offen?', 'Is the Gotthard Pass open?');
+const intro = L(
+  'Der aktuelle Status der Gotthard-Passstrasse (2106 m ü. M.), wann sie im Jahr typischerweise offen ist und wann sie sich als Umweg um den Tunnelstau lohnt.',
+  'The current status of the Gotthard Pass road (2,106 m), when it is typically open during the year and when it is worth it as a detour around the tunnel queue.',
+);
+
+const faq = [
+  {
+    q: L('Ist der Gotthardpass heute offen?', 'Is the Gotthard Pass open today?'),
+    a: L(
+      'Den aktuellen Status zeigt die Karte oben. Er stammt aus dem ASTRA-Verkehrsdatenstrom und wird mit alpen-paesse.ch abgeglichen; vor der Fahrt lohnt sich ein letzter Blick.',
+      'The card above shows the current status. It comes from the ASTRA traffic feed and is cross-checked with alpen-paesse.ch; take a last look before you set off.',
+    ),
+  },
+  {
+    q: L('Wann ist der Gotthardpass im Winter gesperrt?', 'When is the Gotthard Pass closed in winter?'),
+    a: L(
+      'Die Passstrasse ist eine Sommerroute und im Winter wegen Schnee gesperrt, etwa von November bis Mai. Öffnung und Schliessung hängen jedes Jahr vom Schnee ab; ein festes Datum gibt es nicht.',
+      'The pass road is a summer route and closed in winter because of snow, roughly from November to May. Opening and closing depend on the snow each year; there is no fixed date.',
+    ),
+  },
+  {
+    q: L('Lohnt sich der Pass bei Stau vor dem Tunnel?', 'Is the pass worth it when the tunnel is queued?'),
+    a: L(
+      `Erst bei längerem Stau. Wir rechnen über den Pass mit rund ${pass.extraMinutes} Minuten mehr als bei freier Fahrt durch den Tunnel. Bei 10 Minuten pro Stau-Kilometer entspricht das etwa ${passKm} km Stau vor dem Portal.`,
+      `Only for longer queues. We reckon the pass takes about ${pass.extraMinutes} minutes longer than a free-flowing tunnel. At 10 minutes per kilometre of queue that matches roughly ${passKm} km of queue in front of the portal.`,
+    ),
+  },
+  {
+    q: L('Welche Alternative gibt es, wenn der Pass zu ist?', 'What is the alternative while the pass is closed?'),
+    a: L(
+      `Vor allem den San-Bernardino-Tunnel (A13, Chur – Bellinzona), ganzjährig offen und nach unserer Schätzung rund ${sb.extraMinutes} Minuten länger als eine freie Gotthardfahrt.`,
+      `Mainly the San Bernardino tunnel (A13, Chur – Bellinzona), open all year and by our estimate about ${sb.extraMinutes} minutes longer than a free-flowing Gotthard trip.`,
+    ),
+  },
+];
+---
+
+<GuideLayout lang={lang} guide="pass" title={title} description={description} h1={h1} intro={intro} faq={faq} live liveHeading={L('Strassentunnel aktuell', 'Road tunnel right now')}>
+  <Fragment slot="top">
+    <div class="grid-auto">
+      <PassCard lang={lang} pass={data.pass} />
+    </div>
+  </Fragment>
+
+  <section class="section prose" aria-labelledby="ps-season-title">
+    <h2 class="section__title" id="ps-season-title">{L('Wann ist der Gotthardpass offen?', 'When is the Gotthard Pass open?')}</h2>
+    {lang === 'de' ? (
+      <>
+        <p>Die Passstrasse über den Gotthard verbindet Andermatt im Kanton Uri mit Airolo im Tessin und erreicht auf der Passhöhe 2106 m ü. M. Sie ist eine Sommerroute: Im Winter ist sie wegen Schnee gesperrt, typischerweise etwa von November bis Mai. Wann genau geöffnet und geschlossen wird, hängt jedes Jahr vom Schnee ab und wird kurzfristig festgelegt. Unsere Statusanzeige oben folgt dem aktuellen Stand.</p>
+        <p>Der Strassentunnel darunter ist dagegen ganzjährig die Hauptverbindung. Ist der Pass zu, gibt es am Gotthard also nur den Tunnel.</p>
+      </>
+    ) : (
+      <>
+        <p>The road over the Gotthard Pass links Andermatt in the canton of Uri with Airolo in Ticino and reaches 2,106 m at the summit. It is a summer route: in winter it is closed because of snow, typically roughly from November to May. Exactly when it opens and closes depends on the snow each year and is decided at short notice. Our status display above follows the current state.</p>
+        <p>The road tunnel underneath, by contrast, is the main link all year round. While the pass is closed, the tunnel is the only way across the Gotthard.</p>
+      </>
+    )}
+  </section>
+
+  <section class="section prose" aria-labelledby="ps-source-title">
+    <h2 class="section__title" id="ps-source-title">{L('Woher kommt der Status?', 'Where does the status come from?')}</h2>
+    {lang === 'de' ? (
+      <p>Wir lesen den Pass-Status aus dem offiziellen Verkehrsdatenstrom des ASTRA. Weil die Passstrasse dort im Sommer oft gar nicht auftaucht, solange sie einfach offen ist, gleichen wir zusätzlich mit der öffentlichen Statusanzeige von alpen-paesse.ch ab. Bei Abweichungen gilt der ASTRA-Datenstrom. Hinweise wie «nur eingeschränkt befahrbar» übernehmen wir im Wortlaut der Quelle.</p>
+    ) : (
+      <p>We read the pass status from ASTRA's official traffic feed. Because the pass road often does not appear there at all in summer while it is simply open, we also cross-check with the public status display of alpen-paesse.ch. Where they differ, the ASTRA feed wins. Notes such as restricted access are shown in the source's own wording.</p>
+    )}
+    <p class="callout"><Icon name="info" />
+      <span>{L('Offizielle und weitere Quellen: ', 'Official and further sources: ')}<a href="https://www.alpen-paesse.ch/de/alpenpaesse/gotthardpass" rel="noopener">alpen-paesse.ch</a>, <a href="https://www.tcs.ch/de/tools/verkehrsinfo-verkehrslage/" rel="noopener">{L('TCS Verkehrsinfo', 'TCS traffic information')}</a>, <a href="https://www.astra.admin.ch/" rel="noopener">ASTRA</a>.</span>
+    </p>
+  </section>
+
+  <section class="section prose" aria-labelledby="ps-detour-title">
+    <h2 class="section__title" id="ps-detour-title">{L('Pass statt Tunnel – lohnt sich das bei Stau?', 'Pass instead of tunnel – worth it in a queue?')}</h2>
+    {lang === 'de' ? (
+      <p>Im Sommer ist der Pass die naheliegende Ausweichroute bei langem Rückstau vor dem Tunnel. Die Strecke über die Passhöhe, auf der Tessiner Seite mit der historischen Tremola, ist landschaftlich schön, aber kurvig und langsam: Wir rechnen mit rund {pass.extraMinutes} Minuten mehr als bei freier Fahrt durch den Tunnel. Da das ASTRA pro Kilometer Stau rund 10 Minuten Zeitverlust angibt, lohnt sich der Pass also erst ab etwa {passKm} km Stau, und nur, wenn er selbst offen und frei ist. Ob sich gerade ein Umweg lohnt, zeigt die <a href={routePath('home', lang)}>Live-Seite</a>, sobald die Wartezeit {DIVERSION_THRESHOLD_MIN} Minuten erreicht. Weitere Umfahrungen vergleicht die Seite <a href={routePath('alternatives', lang)}>Alternativen zum Gotthard</a>.</p>
+    ) : (
+      <p>In summer the pass is the obvious detour when there is a long queue in front of the tunnel. The route over the summit, with the historic Tremola on the Ticino side, is scenic but winding and slow: we reckon on about {pass.extraMinutes} minutes more than a free-flowing tunnel. Since ASTRA puts the delay at about 10 minutes per kilometre of queue, the pass only pays off from roughly {passKm} km of queue, and only if it is open and clear itself. The <a href={routePath('home', lang)}>live page</a> shows whether a detour is worth it as soon as the wait reaches {DIVERSION_THRESHOLD_MIN} minutes. Other detours are compared on <a href={routePath('alternatives', lang)}>alternatives to the Gotthard</a>.</p>
+    )}
+  </section>
+</GuideLayout>

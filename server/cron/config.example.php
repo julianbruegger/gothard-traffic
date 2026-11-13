@@ -78,6 +78,17 @@ return [
     // derived from the Host header. Optional; defaults to the value below.
     // 'site_url' => 'https://gotthard.jubr.app',
 
+    // ── IndexNow (optional) ───────────────────────────────────────────────────
+    // When the tunnel status or the planned closures change, the collector
+    // pings https://api.indexnow.org/indexnow (Bing, Yandex, ...) with the live
+    // pages, at most once per 30 minutes. Empty/absent = disabled. The key is
+    // public by design: 8-128 characters a-z, A-Z, 0-9 and "-" (e.g. a UUID).
+    // The collector writes <web root>/<key>.txt itself when it is missing (also
+    // after a deploy removed it) and uses site_url above as host. Instead of
+    // setting it here you can pass INDEXNOW_KEY in the cron job's environment.
+    // State: data/indexnow-state.json (override with 'indexnow_state_file').
+    // 'indexnow_key' => '',
+
     // ── Error log ─────────────────────────────────────────────────────────────
     // Absolute path where fetch errors are written.
     'error_log' => __DIR__ . '/../data/fetch-error.log',

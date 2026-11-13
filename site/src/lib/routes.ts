@@ -47,7 +47,7 @@ export const HREFLANG: Record<Lang, string> = { de: 'de', en: 'en' };
 export const X_DEFAULT_LANG: Lang = 'de';
 
 /** Topic landing pages ("Gotthard guides"), in the order they are linked. */
-export const GUIDES = ['christmas'] as const satisfies readonly RouteKey[];
+export const GUIDES = ['christmas', 'closures', 'pass', 'alternatives'] as const satisfies readonly RouteKey[];
 export type GuideKey = (typeof GUIDES)[number];
 
 /** "/sperrungen.html", "/en/", "/en/index.html" → "/sperrungen", "/en". */

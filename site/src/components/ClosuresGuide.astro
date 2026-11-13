@@ -1,0 +1,113 @@
+---
+// /sperrungen · /en/closures
+// The planned closures are live data (ASTRA feed), filled per request by the
+// SSR into #planned-closures and kept fresh by live.ts. No Event /
+// SpecialAnnouncement JSON-LD here: those need real dates, which only exist at
+// request time. server/index.php could inject one per planned closure later.
+import GuideLayout from './GuideLayout.astro';
+import PlannedClosureBanner from './PlannedClosureBanner.astro';
+import Icon from './Icon.astro';
+import { t, type Lang } from '../lib/i18n';
+import { routePath } from '../lib/routes';
+import { suggestDiversions } from '../lib/diversion';
+import { loadHomeData } from '../lib/load-data';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const L = (de: string, en: string) => (lang === 'de' ? de : en);
+
+// Route data from diversion.ts (rough add-on vs. a free-flowing tunnel).
+const routes = suggestDiversions(loadHomeData().data, lang).routes;
+const sb = routes.find((r) => r.id === 'san-bernardino')!;
+
+const title = t(lang, 'meta.closures.title');
+const description = t(lang, 'meta.closures.description');
+const h1 = L('Gotthardtunnel gesperrt? Sperrungen heute Nacht und demnächst', 'Gotthard tunnel closures tonight and coming up');
+const intro = L(
+  'Geplante Sperrungen des Gotthard-Strassentunnels, sobald das ASTRA sie meldet, dazu der aktuelle Verkehrszustand und was Sie bei einer Sperrung tun können.',
+  'Planned closures of the Gotthard road tunnel as soon as ASTRA announces them, the current traffic situation and what you can do when the tunnel is closed.',
+);
+
+const faq = [
+  {
+    q: L('Ist der Gotthardtunnel heute Nacht gesperrt?', 'Is the Gotthard tunnel closed tonight?'),
+    a: L(
+      'Geplante Sperrungen für heute Nacht und die nächsten Tage stehen oben auf dieser Seite, sobald das ASTRA sie im Verkehrsdatenstrom meldet. Ist keine angezeigt, ist derzeit keine geplante Sperrung gemeldet. Kurzfristige Sperrungen nach Unfällen oder Pannen sind trotzdem jederzeit möglich.',
+      'Planned closures for tonight and the coming days appear at the top of this page as soon as ASTRA announces them in its traffic feed. If none is shown, no planned closure is currently announced. Short-notice closures after accidents or breakdowns can still happen at any time.',
+    ),
+  },
+  {
+    q: L('Warum wird der Gotthard-Strassentunnel nachts gesperrt?', 'Why is the Gotthard road tunnel closed at night?'),
+    a: L(
+      'Für Unterhalts-, Reinigungs- und Bauarbeiten sowie für Sondertransporte. Nachts ist am wenigsten Verkehr, deshalb finden solche Arbeiten meist in dieser Zeit statt.',
+      'For maintenance, cleaning and construction work and for special transports. Traffic is lightest at night, which is why such work usually happens then.',
+    ),
+  },
+  {
+    q: L('Welche Umleitung gilt bei einer Sperrung?', 'What is the diversion when the tunnel is closed?'),
+    a: L(
+      `Der Verkehr wird in der Regel über den San Bernardino (A13, Chur – Bellinzona) umgeleitet. Nach unserer groben Schätzung dauert die Fahrt so rund ${sb.extraMinutes} Minuten länger als durch einen freien Gotthardtunnel.`,
+      `Traffic is normally diverted via the San Bernardino (A13, Chur – Bellinzona). By our rough estimate that takes about ${sb.extraMinutes} minutes longer than a free-flowing Gotthard tunnel.`,
+    ),
+  },
+  {
+    q: L('Wo finde ich offizielle Informationen zu Sperrungen?', 'Where can I find official closure information?'),
+    a: L(
+      'Beim Bundesamt für Strassen (ASTRA) und in den Verkehrsinformationen des TCS. Diese Seite ist ein unabhängiges Projekt und wertet die offiziellen Daten nur aus.',
+      'From the Federal Roads Office (ASTRA) and the TCS traffic information. This site is an independent project that only analyses the official data.',
+    ),
+  },
+];
+---
+
+<GuideLayout lang={lang} guide="closures" title={title} description={description} h1={h1} intro={intro} faq={faq} live>
+  <Fragment slot="top">
+    <PlannedClosureBanner lang={lang} closures={[]} />
+    <p class="section__note">{L(
+      'Angekündigte Sperrungen erscheinen direkt hier oberhalb. Ist nichts angezeigt, liegt im ASTRA-Datenstrom gerade keine geplante Sperrung vor.',
+      'Announced closures appear right above this line. If nothing is shown, the ASTRA feed currently lists no planned closure.',
+    )}</p>
+  </Fragment>
+
+  <section class="section prose" aria-labelledby="cl-how-title">
+    <h2 class="section__title" id="cl-how-title">{L('Wie funktionieren die Sperrungen am Gotthard?', 'How do Gotthard closures work?')}</h2>
+    {lang === 'de' ? (
+      <>
+        <p>Der Gotthard-Strassentunnel (A2, Göschenen – Airolo) ist grundsätzlich rund um die Uhr offen. Für Unterhalt, Reinigung und Bauarbeiten sperrt das ASTRA ihn aber regelmässig für einzelne Nächte; der Verkehr wird dann über den San Bernardino (A13) umgeleitet. Dazu kommen kurze Sperrungen für Sondertransporte, ebenfalls meist nachts und kurz, zum Beispiel von 23 bis 1 Uhr, und ungeplante Sperrungen nach Unfällen, Pannen oder Bränden.</p>
+        <p>Geplante Sperrungen kündigt das ASTRA im offiziellen Verkehrsdatenstrom an (DATEX II über opentransportdata.swiss). Oft ist eine Arbeit als wiederkehrendes Zeitfenster über mehrere Nächte eingetragen. Wir zeigen jeweils das nächste Fenster an, sobald es bekannt ist, und markieren eine Sperrung am selben Abend als «heute Nacht». Ist der Tunnel gerade gesperrt, steht das im Live-Status oben, mit dem Grund, sofern das ASTRA einen nennt.</p>
+      </>
+    ) : (
+      <>
+        <p>The Gotthard road tunnel (A2, Göschenen – Airolo) is in principle open around the clock. For maintenance, cleaning and construction work, however, ASTRA regularly closes it for individual nights; traffic is then diverted via the San Bernardino (A13). On top of that come short closures for special transports, also mostly at night and short, for example from 23:00 to 01:00, and unplanned closures after accidents, breakdowns or fires.</p>
+        <p>ASTRA announces planned closures in the official traffic feed (DATEX II via opentransportdata.swiss). Work is often entered as a recurring time window over several nights. We show the next window as soon as it is known and flag a closure on the same evening as "tonight". If the tunnel is closed right now, the live status above says so, with the reason if ASTRA gives one.</p>
+      </>
+    )}
+    <p>{L('Wie oft und wie lange der Tunnel in den letzten zwölf Monaten voll gesperrt war, nach Grund aufgeschlüsselt, zeigt der ', 'How often and for how long the tunnel was fully closed over the last twelve months, broken down by reason, is shown in ')}<a href={routePath('nerd', lang)}>Nerd Mode</a>.</p>
+  </section>
+
+  <section class="section prose" aria-labelledby="cl-what-title">
+    <h2 class="section__title" id="cl-what-title">{L('Was tun, wenn der Tunnel gesperrt ist?', 'What to do when the tunnel is closed')}</h2>
+    <ul>
+      {lang === 'de' ? (
+        <>
+          <li><strong>Abfahrt verschieben:</strong> Bei einer geplanten Sperrung zeigt das Zeitfenster oben, ab wann der Tunnel wieder offen ist. Kurz nach der Öffnung kann sich vor den Portalen etwas Rückstau bilden.</li>
+          <li><strong>Über den San Bernardino (A13):</strong> die übliche Umleitung, ganzjährig offen; rechnen Sie mit rund {sb.extraMinutes} Minuten mehr als bei freier Fahrt durch den Gotthard.</li>
+          <li><strong>Über den Gotthardpass:</strong> nur in der Sommersaison eine Option. Den aktuellen Stand zeigt unsere Seite <a href={routePath('pass', lang)}>Gotthardpass</a>.</li>
+          <li><strong>Weitere Umfahrungen</strong> wie Simplon oder die Autoverlade Lötschberg und Furka vergleicht die Seite <a href={routePath('alternatives', lang)}>Alternativen zum Gotthard</a>.</li>
+        </>
+      ) : (
+        <>
+          <li><strong>Leave later:</strong> for a planned closure the time window above shows when the tunnel reopens. Shortly after reopening a queue can build up in front of the portals.</li>
+          <li><strong>Via the San Bernardino (A13):</strong> the usual diversion, open all year; allow about {sb.extraMinutes} minutes more than a free-flowing trip through the Gotthard.</li>
+          <li><strong>Via the Gotthard Pass:</strong> only an option in the summer season. See our <a href={routePath('pass', lang)}>Gotthard Pass</a> page for the current status.</li>
+          <li><strong>Other detours</strong> such as the Simplon or the Lötschberg and Furka car trains are compared on <a href={routePath('alternatives', lang)}>alternatives to the Gotthard</a>.</li>
+        </>
+      )}
+    </ul>
+    <p class="callout"><Icon name="info" />
+      <span>{L('Massgebend sind die offiziellen Stellen: ', 'The official sources are authoritative: ')}<a href="https://www.astra.admin.ch/" rel="noopener">{L('Bundesamt für Strassen ASTRA', 'Federal Roads Office ASTRA')}</a>{L(' und ', ' and ')}<a href="https://www.tcs.ch/de/tools/verkehrsinfo-verkehrslage/" rel="noopener">{L('TCS Verkehrsinfo', 'TCS traffic information')}</a>.</span>
+    </p>
+  </section>
+</GuideLayout>

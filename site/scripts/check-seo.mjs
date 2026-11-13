@@ -66,6 +66,13 @@ for (const file of htmlFiles) {
     else m.set(val, rel);
   }
 
+  // Ids must be unique per page (SSR and live.ts address elements by id).
+  const ids = new Set();
+  for (const m of html.matchAll(/\sid="([^"]+)"/g)) {
+    if (ids.has(m[1])) errors.push(`${rel}: duplicate id "${m[1]}"`);
+    ids.add(m[1]);
+  }
+
   const h1s = html.match(/<h1[\s>]/g)?.length ?? 0;
   if (h1s !== 1) errors.push(`${rel}: ${h1s} <h1> elements (expected exactly 1)`);
 

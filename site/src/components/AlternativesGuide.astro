@@ -1,0 +1,129 @@
+---
+// /alternativen · /en/alternative-routes
+// Extra minutes per route come from lib/diversion.ts (the same figures the live
+// comparison on the home page uses). Car trains: no prices or timetables here,
+// only links to the operators.
+import GuideLayout from './GuideLayout.astro';
+import DiversionSection from './DiversionSection.astro';
+import Icon from './Icon.astro';
+import { t, type Lang } from '../lib/i18n';
+import { routePath } from '../lib/routes';
+import { suggestDiversions, DIVERSION_THRESHOLD_MIN } from '../lib/diversion';
+import { loadHomeData } from '../lib/load-data';
+import { ASTRA_MIN_PER_KM } from '../lib/forecast';
+
+interface Props {
+  lang: Lang;
+}
+const { lang } = Astro.props;
+const L = (de: string, en: string) => (lang === 'de' ? de : en);
+const unit = t(lang, 'portal.minutes');
+const kmFor = (min: number) => (min / ASTRA_MIN_PER_KM).toLocaleString(lang === 'de' ? 'de-CH' : 'en-CH', { maximumFractionDigits: 1 });
+
+const routes = suggestDiversions(loadHomeData().data, lang).routes;
+const byId = (id: string) => routes.find((r) => r.id === id)!;
+const sb = byId('san-bernardino');
+const pass = byId('gotthard-pass');
+const west = byId('simplon');
+const table = [sb, pass, west].map((r) => ({
+  name: r.name,
+  extra: r.extraMinutes,
+  km: kmFor(r.extraMinutes),
+  when: r.id === 'san-bernardino'
+    ? L('ganzjährig; erste Wahl bei langem Stau oder Sperrung', 'all year; first choice for long queues or a closure')
+    : r.id === 'gotthard-pass'
+      ? L('nur im Sommer, wenn der Pass offen ist', 'summer only, while the pass is open')
+      : L('nur bei sehr langem Stau oder Ziel im Westen', 'only for very long queues or a destination further west'),
+}));
+
+const title = t(lang, 'meta.alternatives.title');
+const description = t(lang, 'meta.alternatives.description');
+const h1 = L('Alternativen zum Gotthard bei Stau', 'Alternative routes to the Gotthard');
+const intro = L(
+  'Welche Umfahrung wie viel Zeit kostet, ab welcher Wartezeit sie sich lohnt und wann ein Autoverlad die bessere Wahl ist.',
+  'How much time each detour costs, from which waiting time it pays off, and when a car train is the better choice.',
+);
+
+const faq = [
+  {
+    q: L('Welche Alternative zum Gotthard ist am schnellsten?', 'Which alternative to the Gotthard is fastest?'),
+    a: L(
+      `Meist der San Bernardino (A13, Chur – Bellinzona): nach unserer groben Schätzung rund ${sb.extraMinutes} Minuten länger als eine freie Gotthardfahrt und ganzjährig offen.`,
+      `Usually the San Bernardino (A13, Chur – Bellinzona): by our rough estimate about ${sb.extraMinutes} minutes longer than a free-flowing Gotthard trip, and open all year.`,
+    ),
+  },
+  {
+    q: L('Ab wie viel Stau lohnt sich der San Bernardino?', 'From how long a queue is the San Bernardino worth it?'),
+    a: L(
+      `Wenn die Wartezeit vor dem Gotthard über rund ${sb.extraMinutes} Minuten liegt. Das ASTRA rechnet mit 10 Minuten pro Stau-Kilometer, das entspricht also etwa ${kmFor(sb.extraMinutes)} km Stau. Prüfen Sie aber auch die Lage auf der A13, denn bei langen Gotthard-Staus weichen viele aus.`,
+      `When the wait in front of the Gotthard exceeds about ${sb.extraMinutes} minutes. ASTRA reckons 10 minutes per kilometre of queue, so that is roughly ${kmFor(sb.extraMinutes)} km. Check the A13 as well, though, because many drivers divert during long Gotthard queues.`,
+    ),
+  },
+  {
+    q: L('Welche Autoverlade gibt es als Alternative?', 'Which car trains are an alternative?'),
+    a: L(
+      'Den Lötschberg (Kandersteg – Goppenstein, BLS) und die Furka (Realp – Oberwald, Matterhorn Gotthard Bahn). Beide führen ins Wallis; nach Italien geht es von dort über den Simplon. Fahrplan und Preise nennen die Bahnen.',
+      'The Lötschberg (Kandersteg – Goppenstein, BLS) and the Furka (Realp – Oberwald, Matterhorn Gotthard Bahn). Both lead into the Valais; from there the Simplon leads on to Italy. The railways publish timetables and prices.',
+    ),
+  },
+];
+---
+
+<GuideLayout lang={lang} guide="alternatives" title={title} description={description} h1={h1} intro={intro} faq={faq} live>
+  <DiversionSection lang={lang} />
+
+  <section class="section" aria-labelledby="alt-table-title">
+    <div class="section__titles">
+      <h2 class="section__title" id="alt-table-title">{L('Die Umfahrungen im Überblick', 'The detours at a glance')}</h2>
+      <p class="section__sub">{L('Grobe Zusatzzeit gegenüber freier Fahrt durch den Gotthardtunnel und die Staulänge, ab der sie sich ungefähr lohnt (10 Min pro km)', 'Rough extra time compared with a free-flowing Gotthard tunnel and the queue length from which it roughly pays off (10 min per km)')}</p>
+    </div>
+    <div class="forecast-range">
+      <table class="data-table">
+        <thead><tr><th scope="col">{L('Route', 'Route')}</th><th scope="col" class="num">{L('Zusatzzeit', 'Extra time')}</th><th scope="col" class="num">{L('lohnt ab Stau', 'pays off from')}</th><th scope="col">{L('Wann sinnvoll', 'When it makes sense')}</th></tr></thead>
+        <tbody>
+          {table.map((r) => (
+            <tr><th scope="row">{r.name}</th><td class="num">+{r.extra} {unit}</td><td class="num">≈ {r.km} km</td><td>{r.when}</td></tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+    <p class="section__note">{t(lang, 'diversion.disclaimer')} {L(`Ab ${DIVERSION_THRESHOLD_MIN} Minuten Wartezeit blendet die Live-Seite einen Vergleich mit der aktuellen Wartezeit ein.`, `From ${DIVERSION_THRESHOLD_MIN} minutes of waiting the live page shows a comparison with the current wait.`)}</p>
+  </section>
+
+  <section class="section prose" aria-labelledby="alt-routes-title">
+    <h2 class="section__title" id="alt-routes-title">{L('Die Routen im Einzelnen', 'The routes in detail')}</h2>
+    {lang === 'de' ? (
+      <>
+        <h3>San Bernardino (A13)</h3>
+        <p>Die Autobahn A13 führt von Chur durch den San-Bernardino-Tunnel nach Bellinzona und ist ganzjährig offen. Sie ist die übliche Umleitung, wenn der Gotthard gesperrt ist, und die naheliegendste Wahl aus der Ostschweiz oder vom Bodensee her. Weil bei langem Gotthard-Stau viele ausweichen, kann sich auch dort Stau bilden.</p>
+        <h3>Gotthardpass</h3>
+        <p>Im Sommer führt die Passstrasse direkt über den Tunnel hinweg. Sie ist langsamer und lohnt sich erst bei längerem Stau, rund {pass.extraMinutes} Minuten Zusatzzeit. Im Winter ist sie gesperrt; den Status zeigt die Seite <a href={routePath('pass', lang)}>Gotthardpass</a>.</p>
+        <h3>Simplon und Grosser St. Bernhard</h3>
+        <p>Weiträumige Umfahrungen über die Westalpen, mit rund {west.extraMinutes} Minuten Zusatzzeit nur bei sehr langem Stau sinnvoll, oder wenn das Ziel ohnehin im Westen Norditaliens liegt.</p>
+        <h3>Autoverlad Lötschberg und Furka</h3>
+        <p>Der Lötschberg-Autoverlad (Kandersteg – Goppenstein) verbindet das Berner Oberland mit dem Wallis, der Furka-Autoverlad (Realp – Oberwald) das Urserental mit dem Goms. Vom Wallis geht es über den Simplon nach Italien. Das ist vor allem aus Bern und der Westschweiz eine Option. Fahrplan und Preise: <a href="https://www.bls.ch/de/fahren/autoverlad" rel="noopener">BLS Autoverlad Lötschberg</a>, <a href="https://www.matterhorngotthardbahn.ch/de/stories/autoverlad-furka" rel="noopener">Autoverlad Furka (MGB)</a>.</p>
+      </>
+    ) : (
+      <>
+        <h3>San Bernardino (A13)</h3>
+        <p>The A13 motorway runs from Chur through the San Bernardino tunnel to Bellinzona and is open all year. It is the usual diversion when the Gotthard is closed and the obvious choice from eastern Switzerland or Lake Constance. Because many drivers divert during long Gotthard queues, it can jam too.</p>
+        <h3>Gotthard Pass</h3>
+        <p>In summer the pass road runs right over the tunnel. It is slower and only pays off for longer queues, at about {pass.extraMinutes} minutes of extra time. In winter it is closed; see the <a href={routePath('pass', lang)}>Gotthard Pass</a> page for its status.</p>
+        <h3>Simplon and Great St Bernard</h3>
+        <p>Wide detours via the western Alps; at about {west.extraMinutes} minutes of extra time they only make sense in very long queues, or when your destination is in the west of northern Italy anyway.</p>
+        <h3>Lötschberg and Furka car trains</h3>
+        <p>The Lötschberg car train (Kandersteg – Goppenstein) links the Bernese Oberland with the Valais, the Furka car train (Realp – Oberwald) the Urseren valley with the Goms. From the Valais the Simplon leads on to Italy. This is mainly an option from Bern and western Switzerland. Timetables and prices: <a href="https://www.bls.ch/en/fahren/autoverlad" rel="noopener">BLS Lötschberg car train</a>, <a href="https://www.matterhorngotthardbahn.ch/en/stories/car-transport-furka" rel="noopener">Furka car train (MGB)</a>.</p>
+      </>
+    )}
+  </section>
+
+  <section class="section prose" aria-labelledby="alt-when-title">
+    <h2 class="section__title" id="alt-when-title">{L('Wann lohnt sich ein Umweg?', 'When does a detour pay off?')}</h2>
+    {lang === 'de' ? (
+      <p>Ein Umweg lohnt sich, wenn er weniger Zusatzzeit kostet als die aktuelle Wartezeit vor dem Tunnel. Bei 20 bis 30 Minuten Wartezeit bleibt man deshalb meist besser im Stau; ab rund {sb.extraMinutes} Minuten kann der San Bernardino gleich schnell oder schneller sein. Wichtig: Die Zusatzzeiten sind grobe Richtwerte und hängen stark von Start und Ziel ab. Ist der Tunnel gesperrt, ist jede offene Umfahrung schneller als warten. Die <a href={routePath('home', lang)}>Live-Seite</a> vergleicht das automatisch mit der aktuellen Wartezeit, die <a href={routePath('forecasts', lang)}>Prognose</a> zeigt, wann es ruhiger wird.</p>
+    ) : (
+      <p>A detour pays off when it costs less extra time than the current wait in front of the tunnel. With 20 to 30 minutes of waiting you are therefore usually better off staying in the queue; from about {sb.extraMinutes} minutes the San Bernardino can be as fast or faster. Note that the extra times are rough guides and depend heavily on where you start and where you are going. If the tunnel is closed, any open detour beats waiting. The <a href={routePath('home', lang)}>live page</a> compares this automatically with the current wait, and the <a href={routePath('forecasts', lang)}>forecast</a> shows when it will get quieter.</p>
+    )}
+    <p class="callout"><Icon name="info" /><span>{L('Ohne Auto: Zwischen Göschenen und Airolo fahren Regionalzüge durch den Gotthard; die nächste Abfahrt zeigt der ', 'Without a car: regional trains run between Göschenen and Airolo through the Gotthard; the next departure is shown in ')}<a href={routePath('nerd', lang)}>Nerd Mode</a>{L(', den Fahrplan die ', ', the timetable at ')}<a href="https://www.sbb.ch/" rel="noopener">SBB</a>.</span></p>
+  </section>
+</GuideLayout>

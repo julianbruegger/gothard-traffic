@@ -62,6 +62,43 @@ final class Format
         return '–';
     }
 
+    /** Queue figure on the live cards and in the 24 h table: "0 km" when free (mirrors formatQueue in format.ts). */
+    public static function queue(?float $km, string $lang): string
+    {
+        if ($km === null) {
+            return '–';
+        }
+        return $km <= 0 ? '0 km' : self::km($km, $lang);
+    }
+
+    /**
+     * Card figures for one portal (mirrors portalFigures in format.ts). The
+     * collector stores NULL when ASTRA reports no queue, so with a usable
+     * reading (known status, not older than UNAVAILABLE_AFTER_MIN) a missing
+     * queue is 0 km and, unless the tunnel is closed, a missing wait is 0 min.
+     * Without a usable reading the raw values are passed through.
+     *
+     * @return array{queueKm: ?float, waitMinutes: ?int}
+     */
+    public static function portalFigures(array $data, string $side, ?DateTimeImmutable $now = null): array
+    {
+        $tunnel = is_array($data['tunnel'] ?? null) ? $data['tunnel'] : [];
+        $portal = is_array($tunnel[$side] ?? null) ? $tunnel[$side] : [];
+        $queue = isset($portal['queueKm']) ? (float) $portal['queueKm'] : null;
+        $wait = isset($portal['waitMinutes']) ? (int) $portal['waitMinutes'] : null;
+        $status = (string) ($tunnel['status'] ?? 'unknown');
+        $usable = $status !== 'unknown'
+            && self::freshness($data['updated'] ?? null, $now)['level'] !== 'unavailable';
+        if (!$usable) {
+            return ['queueKm' => $queue, 'waitMinutes' => $wait];
+        }
+        $queue ??= 0.0;
+        if ($wait === null && $queue <= 0 && $status !== 'closed') {
+            $wait = 0;
+        }
+        return ['queueKm' => $queue, 'waitMinutes' => $wait];
+    }
+
     public static function statusLabel(string $status, string $lang): string
     {
         return match ($status) {
@@ -375,7 +412,7 @@ final class Format
         $answer = $fresh ? self::summary($data, $lang, $now) : self::staleSummary($data, $lang, $now);
         $source = trim((string) ($data['source'] ?? ''));
         $source = $source !== '' ? $source : 'opentransportdata.swiss (ASTRA Traffic Situations)';
-        $page = rtrim($siteUrl, '/') . ($lang === 'de' ? '/' : '/' . $lang);
+        $page = rtrim($siteUrl, '/') . ($lang === 'de' ? '/' : '/' . $lang . '/');
         return $lang === 'de'
             ? "{$answer} Quelle: {$source}. Live-Seite: {$page}"
             : "{$answer} Source: {$source}. Live page: {$page}";

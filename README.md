@@ -168,7 +168,7 @@ tables are created by `migrate.php` during the deploy.
 
 | URL | Content |
 | --- | --- |
-| `/`, `/en` | Live dashboard (status, queues, pass, planned closures, trend, FAQ) |
+| `/`, `/en/` | Live dashboard (status, queues, pass, planned closures, trend, FAQ) |
 | `/forecasts`, `/en/forecasts` | Forecast by weekday, time of day and holidays |
 | `/statistics`, `/en/statistics` | Historic statistics from TCS reports (busiest weekdays, Easter records) |
 | `/nerd`, `/en/nerd` | Nerd Mode: 365-day records, heatmap, minutes per km, closures, weather, CSV |
@@ -208,21 +208,24 @@ Embed the live status badge on another site:
 `/api/history.php` returns points such as
 `{"t":"2026-11-11T09:24:01+00:00","northQueueKm":4,"southQueueKm":null,"northWaitMinutes":40,"southWaitMinutes":null,"status":"congested"}`.
 
-Languages live at real URLs (`/`, `/en`), not `?lang=`. Free-text fields from
+Languages live at real URLs (`/`, `/en/`), not `?lang=`. The English home is
+the one URL with a trailing slash; every other page has none (`/en/forecasts`). Free-text fields from
 the feed (`cause`, pass `note`) are shown in the feed's language and are not
 translated.
 
 ### Server-side rendering of every page
 
 `.htaccess` sends every extensionless URL whose `.html` exists in the build
-(`/`, `/en`, `/forecasts`, `/en/forecasts`, new landing pages, `/it`, ...) to
+(`/`, `/en/`, `/forecasts`, `/en/forecasts`, new landing pages, `/it`, ...) to
 `index.php?page=<path>`. `index.php` validates the path, reads the built page
 as a template and fills its markers (`server/lib/Ssr.php` documents all of
 them), so crawlers and AI fetchers that run no JavaScript get current content.
 Only the two home pages get their title/meta/canonical/JSON-LD rewritten; every
 other page keeps the head Astro built. The database is queried only when the
-page has live markers. Duplicate URLs (`/foo.html`, `/foo/`, `/?lang=en`,
-`/?lan=de`, `/index.html`) answer with a 301 to the clean URL.
+page has live markers. Duplicate URLs (`/foo.html`, `/foo/`, `/en`, `/?lang=en`,
+`/?lan=de`, `/index.html`, `http://`) answer with a 301 to the clean URL. The
+24 h table on the home pages is server-rendered as one row per hour; the
+browser only builds the full per-reading table when it is opened.
 
 Markers any page can use (put them in Astro with `<Fragment set:html={...} />`):
 

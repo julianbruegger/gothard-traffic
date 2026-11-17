@@ -1,7 +1,6 @@
 ---
 import { t, type Lang } from '../lib/i18n';
 import { axesSvg, buildSparkline } from '../lib/chart';
-import { formatKm, formatUpdated } from '../lib/format';
 import type { HistoryPoint } from '../lib/types';
 import Icon from './Icon.astro';
 
@@ -52,22 +51,15 @@ const chart = buildSparkline(history);
         <caption>{t(lang, 'trend.title')}</caption>
         <thead>
           <tr>
-            <th scope="col">{t(lang, 'hero.lastUpdated')}</th>
+            <th scope="col">{t(lang, 'trend.time')}</th>
             <th scope="col" class="num">{t(lang, 'dir.south')}</th>
             <th scope="col" class="num">{t(lang, 'dir.north')}</th>
             <th scope="col">{t(lang, 'nav.status')}</th>
           </tr>
         </thead>
-        <tbody id="trend-table-body">
-          {history.map((point) => (
-            <tr data-closed={point.status === 'closed' ? '' : undefined}>
-              <td>{formatUpdated(point.t, lang)}</td>
-              <td class="num">{point.status === 'closed' ? '–' : formatKm(point.northQueueKm, lang)}</td>
-              <td class="num">{point.status === 'closed' ? '–' : formatKm(point.southQueueKm, lang)}</td>
-              <td>{point.status === 'closed' ? t(lang, 'status.closed') : '–'}</td>
-            </tr>
-          ))}
-        </tbody>
+        <!-- index.php fills the marker with one summary row per hour (Ssr::renderTrendTable);
+             live.ts swaps in every reading only while this <details> is open. -->
+        <tbody id="trend-table-body"><Fragment set:html={'<!--SSR:trend-table--><!--/SSR-->'} /></tbody>
       </table>
     </div>
   </details>

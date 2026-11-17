@@ -96,6 +96,29 @@ export function formatWait(portal: { queueKm: number | null; waitMinutes: number
   return '–';
 }
 
+/** Queue figure on the live cards and in the 24 h table: "0 km" when free (mirrors Format::queue). */
+export function formatQueue(km: number | null, lang: Lang): string {
+  if (km === null || km === undefined) return '–';
+  return km <= 0 ? '0 km' : formatKm(km, lang);
+}
+
+/**
+ * Card figures for one portal (mirrors Format::portalFigures). The collector
+ * stores null when ASTRA reports no queue, so with a usable reading (known
+ * status, not unavailable) a missing queue is 0 km and, unless the tunnel is
+ * closed, a missing wait is 0 min. Otherwise the raw values pass through.
+ */
+export function portalFigures(data: GotthardData, side: 'north' | 'south', now: Date = new Date()): { queueKm: number | null; waitMinutes: number | null } {
+  const portal = data.tunnel[side];
+  let queueKm = portal?.queueKm ?? null;
+  let waitMinutes = portal?.waitMinutes ?? null;
+  const status = data.tunnel.status;
+  if (status === 'unknown' || dataFreshness(data.updated, now).level === 'unavailable') return { queueKm, waitMinutes };
+  queueKm ??= 0;
+  if (waitMinutes === null && queueKm <= 0 && status !== 'closed') waitMinutes = 0;
+  return { queueKm, waitMinutes };
+}
+
 // ─── Data freshness ───────────────────────────────────────────────────────────
 
 /** Older than this, a reading is flagged as stale. */

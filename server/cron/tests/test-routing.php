@@ -112,7 +112,7 @@ function req(int $port, string $uri, string $ua = 'test-agent'): array
 }
 
 [$sDe, $hDe, $bDe] = req($port, '/');
-[$sEn, , $bEn] = req($port, '/en');
+[$sEn, , $bEn] = req($port, '/en/');
 [$sFc, $hFc, $bFc] = req($port, '/forecasts', 'Mozilla/5.0 (compatible; GPTBot/1.2)');
 [$sEnFc, , $bEnFc] = req($port, '/en/forecasts');
 [$sIt, , $bIt] = req($port, '/it');
@@ -129,8 +129,8 @@ $assertions = [
                                                     && str_contains($bDe, 'datetime="' . $today->format('Y-m-d') . '">Heute, ')
                                                     && !str_contains($bDe, 'BUILD DAY'),
     'home de: cache headers'                    => ($hDe['cache-control'] ?? '') === 'public, max-age=60',
-    'home en: 200, en template, canonical /en'  => $sEn === 200 && str_contains($bEn, 'TEMPLATE-EN')
-                                                    && str_contains($bEn, '<link rel="canonical" href="https://gotthard.jubr.app/en">')
+    'home en: 200, en template, canonical /en/' => $sEn === 200 && str_contains($bEn, 'TEMPLATE-EN')
+                                                    && str_contains($bEn, '<link rel="canonical" href="https://gotthard.jubr.app/en/">')
                                                     && str_contains($bEn, 'Forecast today, '),
     'forecasts: own title/description/canonical' => $sFc === 200 && str_contains($bFc, '<title>Gotthard Stau Prognose</title>')
                                                     && str_contains($bFc, 'content="Own description"')
@@ -157,14 +157,18 @@ $assertions = [
     'page=index -> 301 /'                       => $redir('/index.php?page=index') === '/',
     'page=404 -> 404'                           => $status('/index.php?page=404') === 404,
 
-    '?lang=en -> /en'                           => $redir('/?lang=en') === '/en',
-    '?lan=en -> /en'                            => $redir('/?lan=en') === '/en',
+    '?lang=en -> /en/'                          => $redir('/?lang=en') === '/en/',
+    '?lan=en -> /en/'                           => $redir('/?lan=en') === '/en/',
     '?lang=de -> /'                             => $redir('/?lang=de') === '/',
     '?lang=xx -> /'                             => $redir('/?lang=xx') === '/',
     '/en?lang=de -> /'                          => $redir('/en?lang=de') === '/',
-    '/en?lang=en -> /en'                        => $redir('/en?lang=en') === '/en',
+    '/en?lang=en -> /en/'                       => $redir('/en?lang=en') === '/en/',
+    '/en/?lang=en -> /en/'                      => $redir('/en/?lang=en') === '/en/',
+    '/en/?lang=de -> /'                         => $redir('/en/?lang=de') === '/',
     '/forecasts?lang=en -> /forecasts'          => $redir('/forecasts?lang=en') === '/forecasts',
-    'trailing slash /en/ -> /en'                => $redir('/en/') === '/en',
+    '/en -> /en/'                               => $redir('/en') === '/en/',
+    '/en?x=1 -> /en/?x=1'                       => $redir('/en?x=1') === '/en/?x=1',
+    'trailing slash /forecasts/ -> no slash'    => $redir('/forecasts/') === '/forecasts',
     'trailing slash /en/forecasts/ -> no slash' => $redir('/en/forecasts/?a=1') === '/en/forecasts?a=1',
     'other query params do not redirect'        => $status('/?utm_source=x') === 200,
 ];

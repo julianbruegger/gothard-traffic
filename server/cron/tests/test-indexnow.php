@@ -64,7 +64,7 @@ $a['payload'] = ($calls[0]['url'] ?? '') === 'https://api.indexnow.org/indexnow'
     && $body['keyLocation'] === "https://gotthard.jubr.app/{$key}.txt"
     && $body['urlList'] === [
         'https://gotthard.jubr.app/',
-        'https://gotthard.jubr.app/en',
+        'https://gotthard.jubr.app/en/',
         'https://gotthard.jubr.app/sperrungen',
         'https://gotthard.jubr.app/en/closures',
     ];

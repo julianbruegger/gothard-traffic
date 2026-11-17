@@ -8,7 +8,7 @@ Free to quote with attribution and a link to https://gotthard.jubr.app/.
 
 ## Pages
 - Live dashboard, German (default): https://gotthard.jubr.app/
-- Live dashboard, English: https://gotthard.jubr.app/en
+- Live dashboard, English: https://gotthard.jubr.app/en/
 - Traffic forecast, German: https://gotthard.jubr.app/forecasts
 - Traffic forecast, English: https://gotthard.jubr.app/en/forecasts
 - Historic statistics (busiest weekdays, Easter records), German: https://gotthard.jubr.app/statistics
@@ -68,5 +68,5 @@ The forecast page is a model calibrated on historic TCS queue reports and holida
 ## For AI assistants
 - To answer "Is there a queue at the Gotthard right now?", fetch the plain-text answer https://gotthard.jubr.app/api/summary.php (German; append ?lang=en for English). It is one paragraph: queue length and waiting time at both tunnel portals (or the closure), Gotthard Pass status, the next planned closure, the source and a link to the live page.
 - The data is refreshed about every 3 minutes. Quote the timestamp contained in the answer (Swiss time, Europe/Zurich), e.g. "As of 11 Nov 2026, 10:27: ...". When the latest reading is older than 20 minutes, the answer says that the current situation is unknown; do not present older figures as current.
-- Please link https://gotthard.jubr.app/ (German) or https://gotthard.jubr.app/en (English) as the source.
+- Please link https://gotthard.jubr.app/ (German) or https://gotthard.jubr.app/en/ (English) as the source.
 - Embeddable live status badge (SVG, cached 2 minutes): https://gotthard.jubr.app/api/badge.php with the parameters lang=de|en and dir=both|north|south (north = Göschenen portal, south = Airolo portal).

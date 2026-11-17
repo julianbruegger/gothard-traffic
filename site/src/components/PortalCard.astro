@@ -1,6 +1,6 @@
 ---
 import { t, type Lang } from '../lib/i18n';
-import { formatKm, formatWait, formatTrendDelta } from '../lib/format';
+import { formatQueue, formatWait, formatTrendDelta } from '../lib/format';
 import { buildSparkline } from '../lib/chart';
 import type { HistoryPoint, PortalStatus } from '../lib/types';
 import type { QueueTrend } from '../lib/trend';
@@ -44,7 +44,7 @@ const close = `<!--/SSR-->`;
     </p>
     <p>
       <span class="visually-hidden">{t(lang, 'portal.queue')}: </span>
-      <span class="card__km" id={`${side}-queue`}><Fragment set:html={open('queue')} />{formatKm(portal.queueKm, lang)}<Fragment set:html={close} /></span>
+      <span class="card__km" id={`${side}-queue`}><Fragment set:html={open('queue')} />{formatQueue(portal.queueKm, lang)}<Fragment set:html={close} /></span>
     </p>
     <span class="trend-badge" id={`${side}-trend`} data-direction={trend?.direction} hidden={!trend}>
       <Icon name="trending_up" size={18} class="icon trend-icon trend-icon--up" />

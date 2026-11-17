@@ -119,17 +119,25 @@ const webPageLd = {
       description,
       url: canonical,
       dateModified: updatedIso ?? undefined,
+      isAccessibleForFree: true,
+      license: abs(routePath('data', lang)),
       creator: {
         '@type': 'Organization',
         name: 'Gotthard Traffic Live',
-        url: siteUrl,
+        url: siteUrl + '/',
       },
-      isBasedOn: {
-        '@type': 'Dataset',
-        name: 'ASTRA / opentransportdata.swiss Traffic Situations',
-        url: 'https://opentransportdata.swiss/en/road-traffic/',
-      },
-      variableMeasured: ['queue length (km)', 'waiting time (min)', 'road status'],
+      // A plain URL: a nested Dataset would itself need a description.
+      isBasedOn: 'https://opentransportdata.swiss/en/road-traffic/',
+      // Same names as the live block index.php writes (Ssr::replaceJsonLd); the
+      // values are only known per request, so the static default lists none.
+      variableMeasured: [
+        { '@type': 'PropertyValue', name: 'northPortalQueueLengthKm', unitCode: 'KMT', unitText: 'km' },
+        { '@type': 'PropertyValue', name: 'northPortalWaitMinutes', unitCode: 'MIN', unitText: 'min' },
+        { '@type': 'PropertyValue', name: 'southPortalQueueLengthKm', unitCode: 'KMT', unitText: 'km' },
+        { '@type': 'PropertyValue', name: 'southPortalWaitMinutes', unitCode: 'MIN', unitText: 'min' },
+        { '@type': 'PropertyValue', name: 'tunnelStatus' },
+        { '@type': 'PropertyValue', name: 'passStatus' },
+      ],
       distribution: [
         { '@type': 'DataDownload', encodingFormat: 'application/json', contentUrl: siteUrl + '/api/gotthard.php' },
         { '@type': 'DataDownload', encodingFormat: 'application/json', contentUrl: siteUrl + '/api/history.php' },

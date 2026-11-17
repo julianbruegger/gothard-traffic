@@ -2,7 +2,9 @@
 #
 # The site is built with Astro `build.format: 'file'`, so pages are emitted as
 # `forecasts.html`, `en.html`, `en/forecasts.html`, … while links, canonicals
-# and the sitemap use clean, extensionless URLs (`/forecasts`, `/en`).
+# and the sitemap use clean, extensionless URLs (`/forecasts`, `/en/forecasts`).
+# The one exception is the English home: its canonical URL is `/en/` (with
+# slash; src/lib/routes.ts), served from en.html.
 #
 # SSR: EVERY page is answered by index.php (index.php?page=<path>), which reads
 # the built .html as a template and fills its live markers (current status,
@@ -11,9 +13,9 @@
 # *.xml, *.txt, images) and directories are served untouched.
 DirectoryIndex index.php index.html
 Options -Indexes
-# "/en" is also a directory (en/ holds /en/forecasts). With DirectorySlash on,
-# Apache 301s /en -> /en/ before any rewrite runs, so the canonical /en URL would
-# always be a redirect. Turn it off and route /en ourselves below.
+# "/en" is also a directory (en/ holds /en/forecasts). Apache's DirectorySlash
+# would 301 /en -> /en/ on its own, but then /en/ maps to the directory, not to
+# en.html. Turn it off and do both (redirect and routing) explicitly below.
 DirectorySlash Off
 
 <IfModule mod_rewrite.c>
@@ -24,34 +26,51 @@ DirectorySlash Off
   # ever fire for client requests, never for our own internal rewrite to
   # index.php. index.php repeats the lang / trailing-slash checks defensively.
 
+  # http -> https. The host already redirects port 80 itself; this is the
+  # fallback should that setting ever be switched off. Skipped behind a proxy
+  # that terminates TLS and says so, to never loop.
+  RewriteCond %{HTTPS} !=on
+  RewriteCond %{HTTP:X-Forwarded-Proto} !=https
+  RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L,NE]
+
   # /index.html, /index.php -> /
   RewriteCond %{THE_REQUEST} \s/index\.(?:html|php)(?:\?\S*)?\s [NC]
   RewriteCond %{QUERY_STRING} ^$
   RewriteRule ^index\.(?:html|php)$ / [R=301,L]
 
-  # Legacy language switch on a home page: /?lang=en, /?lan=en, /en?lang=en
-  # -> /en; any other value (de, unknown) -> /. The query is dropped.
+  # Legacy language switch on a home page: /?lang=en, /?lan=en, /en?lang=en,
+  # /en/?lang=en -> /en/; any other value (de, unknown) -> /. The query is dropped.
   RewriteCond %{THE_REQUEST} ^\S+\s/(?:en/?)?\?\S*\s
   RewriteCond %{QUERY_STRING} (?:^|&)lang?=en(?:&|$) [NC]
-  RewriteRule ^(?:en/?)?$ /en? [R=301,L]
+  RewriteRule ^(?:en/?)?$ /en/? [R=301,L]
   RewriteCond %{THE_REQUEST} ^\S+\s/(?:en/?)?\?\S*\s
   RewriteCond %{QUERY_STRING} (?:^|&)lang?= [NC]
   RewriteRule ^(?:en/?)?$ /? [R=301,L]
 
-  # Trailing slash: /en/ -> /en, /forecasts/ -> /forecasts (trailingSlash: 'never').
+  # English home: /en -> /en/ (query kept).
+  RewriteCond %{THE_REQUEST} ^\S+\s/en(?:\?\S*)?\s
+  RewriteRule ^en$ /en/ [R=301,L]
+
+  # Trailing slash on every other page: /forecasts/ -> /forecasts,
+  # /en/forecasts/ -> /en/forecasts (trailingSlash: 'never'). /en/ is excluded.
   RewriteCond %{THE_REQUEST} ^\S+\s/[^?\s]+/(?:\?\S*)?\s
+  RewriteCond $1 !^en$
   RewriteCond %{DOCUMENT_ROOT}/$1.html -f
   RewriteRule ^([a-z0-9-]+(?:/[a-z0-9-]+)?)/$ /$1 [R=301,L]
 
-  # Direct .html requests: /forecasts.html -> /forecasts, /en.html -> /en.
+  # Direct .html requests: /forecasts.html -> /forecasts, /en.html -> /en/.
+  RewriteCond %{THE_REQUEST} ^\S+\s/en\.html(?:\?\S*)?\s
+  RewriteRule ^ /en/ [R=301,L]
   RewriteCond %{THE_REQUEST} ^\S+\s/([a-z0-9-]+(?:/[a-z0-9-]+)?)\.html(?:\?\S*)?\s
   RewriteRule ^ /%1 [R=301,L]
 
   # ── Pages -> index.php (SSR) ───────────────────────────────────────────────
   # "/" (German home, index.html template).
   RewriteRule ^$ index.php [L]
+  # "/en/" (English home, en.html template).
+  RewriteRule ^en/$ index.php?page=en [L,QSA]
   # Any extensionless path of one or two segments whose .html exists:
-  # /en, /forecasts, /en/forecasts, future /it, /it/..., landing pages.
+  # /forecasts, /en/forecasts, future /it, /it/..., landing pages.
   # Checked before the real-directory passthrough below because /en is both
   # en.html and the directory en/.
   RewriteCond %{DOCUMENT_ROOT}/$1.html -f

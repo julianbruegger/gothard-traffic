@@ -1,6 +1,6 @@
 // Single source of truth for page URLs per language.
 //
-// German lives at the root, English under /en, and the slugs are translated
+// German lives at the root, English under /en/, and the slugs are translated
 // (/sperrungen ↔ /en/closures), so "the same page in another language" can't be
 // derived by adding or stripping a prefix. Layout (canonical + hreflang),
 // Header (language switch), Footer/guide links and the sitemap (astro.config.mjs)
@@ -28,7 +28,10 @@ export type RouteKey =
   | 'data';
 
 export const ROUTES: Record<RouteKey, Partial<Record<Lang, string>>> = {
-  home: { de: '/', en: '/en' },
+  // The English home is "/en/" (with slash): it is a directory-like section root,
+  // and one fixed form everywhere (canonical, hreflang, sitemap, language switch)
+  // avoids Google picking its own. Every other page has no trailing slash.
+  home: { de: '/', en: '/en/' },
   forecasts: { de: '/forecasts', en: '/en/forecasts' },
   statistics: { de: '/statistics', en: '/en/statistics' },
   nerd: { de: '/nerd', en: '/en/nerd' },
@@ -50,7 +53,7 @@ export const X_DEFAULT_LANG: Lang = 'de';
 export const GUIDES = ['christmas', 'easter', 'closures', 'pass', 'alternatives', 'data'] as const satisfies readonly RouteKey[];
 export type GuideKey = (typeof GUIDES)[number];
 
-/** "/sperrungen.html", "/en/", "/en/index.html" → "/sperrungen", "/en". */
+/** "/sperrungen.html", "/en/", "/en/index.html", "/en" → "/sperrungen", "/en". Comparison key only. */
 export function normalizePath(pathname: string): string {
   const p = pathname.replace(/\/index\.html$/, '/').replace(/\.html$/, '');
   return p !== '/' ? p.replace(/\/+$/, '') || '/' : '/';
@@ -61,7 +64,7 @@ export function lookupPath(pathname: string): { key: RouteKey; lang: Lang } | nu
   const path = normalizePath(pathname);
   for (const key of Object.keys(ROUTES) as RouteKey[]) {
     for (const [lang, p] of Object.entries(ROUTES[key]) as [Lang, string][]) {
-      if (p === path) return { key, lang };
+      if (normalizePath(p) === path) return { key, lang };
     }
   }
   return null;

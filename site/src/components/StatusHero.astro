@@ -17,7 +17,7 @@ const prefix = lang === 'de' ? '' : '/en';
 
 <section class="hero" aria-labelledby="hero-heading">
   <div class="hero__main">
-    <h1 id="hero-heading" class="visually-hidden">{t(lang, 'site.h1')}</h1>
+    <h1 id="hero-heading" class="hero__title">{t(lang, 'site.h1')}</h1>
     <div class="hero__chips">
       <span class="chip status-chip" id="status-badge" data-status={data.tunnel.status}>
         <Icon name="check_circle" class="icon status-icon--open" />

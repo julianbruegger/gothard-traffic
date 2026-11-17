@@ -115,7 +115,7 @@ $sumXx = run_api($deploy . '/api/summary.php', ['lang' => ['x']], 'curl/8');
 $a['summary.php de without db'] = str_starts_with($sumDe, 'Gotthard-Strassentunnel: Live-Verkehrsdaten sind derzeit nicht verfügbar')
     && str_contains($sumDe, 'Live-Seite: https://gotthard.jubr.app/');
 $a['summary.php en without db'] = str_starts_with($sumEn, 'Gotthard road tunnel: live traffic data is currently not available')
-    && str_contains($sumEn, 'Live page: https://gotthard.jubr.app/en');
+    && str_contains($sumEn, 'Live page: https://gotthard.jubr.app/en/');
 $a['summary.php bad lang -> de'] = str_starts_with($sumXx, 'Gotthard-Strassentunnel:');
 run_api($deploy . '/api/gotthard.php', [], 'GPTBot/1.2');
 $crawlers = json_decode(run_api($deploy . '/api/crawlers.php', [], 'Mozilla/5.0'), true);

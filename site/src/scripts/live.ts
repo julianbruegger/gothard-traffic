@@ -1,5 +1,5 @@
 import { isLang, DEFAULT_LANG, t } from '../lib/i18n';
-import { formatKm, formatWait, dataFreshness, staleMessage, type Freshness, formatUpdated, formatTrendDelta, statusLabel, passStatusLabel, buildSummary, closureTitle, closureDetail } from '../lib/format';
+import { formatKm, formatQueue, portalFigures, formatWait, dataFreshness, staleMessage, type Freshness, formatUpdated, formatTrendDelta, statusLabel, passStatusLabel, buildSummary, closureTitle, closureDetail } from '../lib/format';
 import { axesSvg, buildSparkline, type SparklineResult } from '../lib/chart';
 import { fmtTime, fmtIsoDayMonth } from '../lib/swiss-time';
 import { computeQueueTrend } from '../lib/trend';
@@ -91,9 +91,10 @@ function renderData(data: GotthardData) {
 
   for (const side of ['north', 'south'] as const) {
     // Stale readings must not be shown as current: blank the figures.
-    const portal = isFresh ? data.tunnel[side] : { queueKm: null, waitMinutes: null, cause: null, closures: [] as string[] };
-    setText(`${side}-queue`, formatKm(portal.queueKm, lang));
-    setText(`${side}-wait`, formatWait(portal, lang, !isFresh));
+    const portal = isFresh ? { ...data.tunnel[side], ...portalFigures(data, side) } : { queueKm: null, waitMinutes: null, cause: null, closures: [] as string[] };
+    const closedNoWait = isFresh && data.tunnel.status === 'closed' && portal.waitMinutes === null;
+    setText(`${side}-queue`, formatQueue(portal.queueKm, lang));
+    setText(`${side}-wait`, closedNoWait ? statusLabel('closed', lang) : formatWait(portal, lang, !isFresh));
     setText(`${side}-cause`, portal.cause ?? '');
     document.getElementById(`${side}-cause-row`)?.toggleAttribute('hidden', !portal.cause);
     // Queue meter: 0–15 km track (longer queues pin the bar full).
@@ -225,6 +226,23 @@ function chartWidth(svg: Element, fallback: number): number {
   return w > 0 ? Math.round(Math.max(300, Math.min(1200, w))) : fallback;
 }
 
+// The 24 h table holds one row per reading (several hundred). It is only built
+// while its <details> is open; closed, the page keeps the hourly summary rows
+// that index.php rendered, so crawlers never see hundreds of rows.
+let lastTableHistory: HistoryPoint[] | null = null;
+function renderTrendTable() {
+  const tbody = document.getElementById('trend-table-body');
+  const details = tbody?.closest('details');
+  if (!tbody || !lastTableHistory || (details && !details.open)) return;
+  tbody.innerHTML = lastTableHistory
+    .map((point) => {
+      const isClosed = point.status === 'closed';
+      return `<tr${isClosed ? ' data-closed=""' : ''}><td><time datetime="${escapeHtml(point.t)}">${formatUpdated(point.t, lang)}</time></td><td class="num">${formatQueue(point.northQueueKm ?? 0, lang)}</td><td class="num">${formatQueue(point.southQueueKm ?? 0, lang)}</td><td>${escapeHtml(statusLabel(point.status ?? 'unknown', lang))}</td></tr>`;
+    })
+    .join('');
+}
+document.getElementById('trend-table-body')?.closest('details')?.addEventListener('toggle', renderTrendTable);
+
 function renderHistory(history: HistoryPoint[]) {
   const trendSvg = document.getElementById('trend-svg');
   const chart = buildSparkline(history, trendSvg ? chartWidth(trendSvg, 640) : 640, 220);
@@ -244,16 +262,8 @@ function renderHistory(history: HistoryPoint[]) {
   const axes = document.getElementById('trend-axes');
   if (axes) axes.innerHTML = axesSvg(chart);
 
-  const tbody = document.getElementById('trend-table-body');
-  if (tbody) {
-    const closedCell = escapeHtml(t(lang, 'status.closed'));
-    tbody.innerHTML = history
-      .map((point) => {
-        const isClosed = point.status === 'closed';
-        return `<tr${isClosed ? ' data-closed=""' : ''}><td>${formatUpdated(point.t, lang)}</td><td class="num">${isClosed ? '–' : formatKm(point.northQueueKm, lang)}</td><td class="num">${isClosed ? '–' : formatKm(point.southQueueKm, lang)}</td><td>${isClosed ? closedCell : '–'}</td></tr>`;
-      })
-      .join('');
-  }
+  lastTableHistory = history;
+  renderTrendTable();
 
   trendChartState = { chart };
   const svg = document.getElementById('trend-svg');

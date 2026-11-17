@@ -24,7 +24,7 @@ final class IndexNow
     public const ENDPOINT = 'https://api.indexnow.org/indexnow';
     public const MIN_INTERVAL = 1800;
     /** Pages whose content follows the live status. */
-    public const PATHS = ['/', '/en', '/sperrungen', '/en/closures'];
+    public const PATHS = ['/', '/en/', '/sperrungen', '/en/closures'];
 
     /** @var callable(string, string): int */
     private $sender;

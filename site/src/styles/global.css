@@ -427,6 +427,7 @@ details.table-toggle > summary::-webkit-details-marker { display: none; }
   display: flex; flex-wrap: wrap; gap: 24px 32px; align-items: flex-end; justify-content: space-between;
 }
 .hero__main { flex: 999 1 520px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+.hero__title { font-size: 16px; line-height: 1.4; font-weight: 500; letter-spacing: 0.1px; }
 .hero__chips { display: flex; flex-wrap: wrap; gap: 8px; }
 .hero__chips .chip { background: var(--md-sc-lowest); }
 .hero__stale {

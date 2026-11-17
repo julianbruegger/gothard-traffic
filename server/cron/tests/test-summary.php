@@ -67,7 +67,7 @@ $assertions['age 120 en'] = Format::age(120, 'en') === '2 h';
 // Plain-text answer for api/summary.php.
 $fresh = Format::plainAnswer($base, 'en', 'https://gotthard.jubr.app/', $now);
 $assertions['plain en: answer + source + page'] = $fresh === Format::summary($base, 'en', $now)
-    . ' Source: opentransportdata.swiss (ASTRA Traffic Situations). Live page: https://gotthard.jubr.app/en';
+    . ' Source: opentransportdata.swiss (ASTRA Traffic Situations). Live page: https://gotthard.jubr.app/en/';
 $assertions['plain de: live page is /'] = str_ends_with(Format::plainAnswer($base, 'de', 'https://gotthard.jubr.app', $now), 'Quelle: opentransportdata.swiss (ASTRA Traffic Situations). Live-Seite: https://gotthard.jubr.app/');
 
 $late = new DateTimeImmutable('2026-11-11T10:12:00Z'); // 45 min after the reading

@@ -91,7 +91,42 @@ $tplDe  = (string) file_get_contents($tmp . '/index.html');
 
 $rCalm   = Ssr::render($tplDe, $calm, 'de', 'https://gotthard.jubr.app/');
 $rClosed = Ssr::render($tplDe, $closed, 'de', 'https://gotthard.jubr.app/');
-$rClosedEn = Ssr::render((string) file_get_contents($tmp . '/en.html'), $closed, 'en', 'https://gotthard.jubr.app/en');
+$rClosedEn = Ssr::render((string) file_get_contents($tmp . '/en.html'), $closed, 'en', 'https://gotthard.jubr.app/en/');
+
+// (c) fresh readings as the collector stores them when ASTRA reports no queue:
+// NULL queue and wait. Cards must read "0 km" / "0 Min", the JSON-LD numbers.
+$nowUtc = new DateTimeImmutable('now', new DateTimeZone('UTC'));
+$freshNull = SnapshotMapper::fromRow(array_replace($calmRow, [
+    'fetched_at' => $nowUtc->modify('-2 minutes')->format('Y-m-d H:i:s'),
+    'north_queue_km' => null, 'south_queue_km' => null,
+]));
+$freshClosed = SnapshotMapper::fromRow(array_replace($closedRow, [
+    'fetched_at' => $nowUtc->modify('-2 minutes')->format('Y-m-d H:i:s'),
+    'north_queue_km' => null, 'south_queue_km' => null, 'south_wait_min' => null, 'planned_closures' => null,
+]));
+$trendTpl = '<html lang="de" data-lang="de"><body><table><tbody id="trend-table-body"><!--SSR:trend-table--><tr><td>BUILD</td></tr><!--/SSR--></tbody></table></body></html>';
+// 3 readings in one Swiss hour (one with NULL = no queue), 1 closed reading in the next.
+$historyRows = [
+    ['fetched_at' => '2026-11-09 07:03:00', 'tunnel_status' => 'open', 'north_queue_km' => null, 'south_queue_km' => null],
+    ['fetched_at' => '2026-11-09 07:30:00', 'tunnel_status' => 'congested', 'north_queue_km' => '2.5', 'south_queue_km' => null],
+    ['fetched_at' => '2026-11-09 07:57:00', 'tunnel_status' => 'open', 'north_queue_km' => '1.0', 'south_queue_km' => '0'],
+    ['fetched_at' => '2026-11-09 08:10:00', 'tunnel_status' => 'closed', 'north_queue_km' => null, 'south_queue_km' => null],
+];
+$manyRows = [];
+for ($i = 0; $i < 480; $i++) { // 24 h every 3 min
+    $manyRows[] = ['fetched_at' => $nowUtc->modify('-' . (1440 - $i * 3) . ' minutes')->format('Y-m-d H:i:s'), 'tunnel_status' => 'open', 'north_queue_km' => null, 'south_queue_km' => null];
+}
+$rFresh = Ssr::render($tplDe, $freshNull, 'de', 'https://gotthard.jubr.app/');
+$rFreshClosed = Ssr::render($tplDe, $freshClosed, 'de', 'https://gotthard.jubr.app/');
+$rTrend = Ssr::render($trendTpl, $calm, 'de', '', ['head' => false, 'history' => $historyRows]);
+$rTrendMany = Ssr::render($trendTpl, $calm, 'de', '', ['head' => false, 'history' => $manyRows]);
+$rTrendNone = Ssr::render($trendTpl, $calm, 'de', '', ['head' => false]);
+$ld = static function (string $html): array {
+    preg_match('/<script type="application\/ld\+json" id="ld-traffic">(.*?)<\/script>/s', $html, $m);
+    return json_decode($m[1] ?? 'null', true) ?? [];
+};
+$ldFresh = $ld($rFresh);
+$ldValues = array_column($ldFresh['variableMeasured'] ?? [], 'value', 'name');
 
 // Minified template as Astro's compressHTML emits it: empty attributes become
 // bare (`datetime`, `hidden`), single quotes, plus traps (data-id, "hidden" inside
@@ -116,7 +151,7 @@ function run_index(string $dir, string $lang, string $uri): string
 }
 
 $outDe = run_index($tmp, '', '/index.php/foo');
-$outEn = run_index($tmp, 'en', '/en');
+$outEn = run_index($tmp, 'en', '/en/');
 
 $assertions = [
     'mapper keeps plannedClosures'              => count($closed['tunnel']['plannedClosures']) === 2,
@@ -166,7 +201,35 @@ $assertions = [
     'format: summary with wait'                 => str_contains(Format::summary(array_replace_recursive($calm, ['tunnel' => ['south' => ['queueKm' => 2.0, 'waitMinutes' => 12]]]), 'de'), 'ca. 12 Min Wartezeit'),
     'closed: english closure title'             => str_contains($rClosedEn, 'Planned tunnel closure'),
     'canonical fixed (given url)'               => str_contains($rClosed, '<link rel="canonical" href="https://gotthard.jubr.app/">')
-                                                    && str_contains($rClosedEn, '<link rel="canonical" href="https://gotthard.jubr.app/en">'),
+                                                    && str_contains($rClosedEn, '<link rel="canonical" href="https://gotthard.jubr.app/en/">'),
+
+    // (c) fresh NULL readings: real values, no dashes
+    'fresh null: cards read 0 km / 0 Min'       => str_contains($rFresh, '<!--SSR:north-queue-->0 km<!--/SSR-->')
+                                                    && str_contains($rFresh, '<!--SSR:south-queue-->0 km<!--/SSR-->')
+                                                    && str_contains($rFresh, '<!--SSR:north-wait-->0 Min<!--/SSR-->')
+                                                    && str_contains($rFresh, '<!--SSR:south-wait-->0 Min<!--/SSR-->'),
+    'fresh null: free chips visible'            => !preg_match('/id="north-free"[^>]*\bhidden\b/', $rFresh),
+    'fresh null: JSON-LD numbers, no null'      => $ldValues === ['northPortalQueueLengthKm' => 0, 'northPortalWaitMinutes' => 0,
+                                                    'southPortalQueueLengthKm' => 0, 'southPortalWaitMinutes' => 0,
+                                                    'tunnelStatus' => 'open', 'passStatus' => 'closed']
+                                                    && !str_contains(json_encode($ldFresh), 'null'),
+    'JSON-LD: isBasedOn URL, license, desc'     => ($ldFresh['isBasedOn'] ?? null) === 'https://opentransportdata.swiss/en/road-traffic/'
+                                                    && ($ldFresh['license'] ?? null) === 'https://gotthard.jubr.app/daten'
+                                                    && ($ldFresh['description'] ?? '') !== '',
+    'JSON-LD en: license /en/data'              => ($ld($rClosedEn)['license'] ?? null) === 'https://gotthard.jubr.app/en/data',
+    'JSON-LD: no reading -> values omitted'     => !str_contains(json_encode($ld(Ssr::render($tplDe, ['updated' => null, 'tunnel' => ['status' => 'unknown'], 'pass' => ['status' => 'unknown']], 'de', 'https://gotthard.jubr.app/'))), 'null'),
+    'fresh closed: wait says Gesperrt, 0 km'    => str_contains($rFreshClosed, '<!--SSR:north-wait-->Gesperrt<!--/SSR-->')
+                                                    && str_contains($rFreshClosed, '<!--SSR:north-queue-->0 km<!--/SSR-->')
+                                                    && (bool) preg_match('/id="north-free"[^>]*\bhidden\b/', $rFreshClosed),
+
+    // 24 h table: hourly summary rows only
+    'trend: one row per hour with data'         => substr_count($rTrend, '<tr') === 2 && !str_contains($rTrend, 'BUILD'),
+    'trend: hour max + worst status'            => str_contains($rTrend, '<time datetime="2026-11-09T08:00:00+01:00">09.11., 08:00–09:00</time></td><td class="num">2.5 km</td><td class="num">0 km</td><td>Rückstau</td>'),
+    'trend: closed hour marked'                 => str_contains($rTrend, '<tr data-closed=""><td><time datetime="2026-11-09T09:00:00+01:00">')
+                                                    && str_contains($rTrend, '<td>Gesperrt</td>'),
+    'trend: no dashes'                          => !str_contains($rTrend, '–<') && !str_contains($rTrend, '>–'),
+    'trend: 480 readings -> at most 24 rows'    => substr_count($rTrendMany, '<tr') <= 24 && substr_count($rTrendMany, '<tr') >= 23,
+    'trend: no history -> empty marker'         => str_contains($rTrendNone, '<!--SSR:trend-table--><!--/SSR-->'),
 
     // minified (compressHTML) attribute forms
     'min: bare datetime replaced, not duplicated' => str_contains($rMin, '<time id="hero-updated" datetime="2026-11-09T20:00:00+00:00">')
@@ -186,7 +249,7 @@ $assertions = [
     'index.php de: stale snapshot gone'         => !str_contains($outDe, '14.07.2026, 19:07') && !str_contains($outDe, 'Hohes Verkehrsaufkommen'),
     'index.php en: uses en.html template'       => str_contains($outEn, 'TEMPLATE-EN') && !str_contains($outEn, 'TEMPLATE-DE'),
     'index.php en: no redirect, html lang=en'   => str_contains($outEn, '<html lang="en" data-lang="en">'),
-    'index.php en: canonical is /en'            => str_contains($outEn, '<link rel="canonical" href="https://gotthard.jubr.app/en">')
+    'index.php en: canonical is /en/'           => str_contains($outEn, '<link rel="canonical" href="https://gotthard.jubr.app/en/">')
                                                     && !str_contains($outEn, 'evil.example'),
     'index.php en: english text'                => str_contains($outEn, 'Gotthard'),
 ];

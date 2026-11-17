@@ -13,7 +13,7 @@ function readJson<T>(path: string, fallback: T): T {
 }
 
 /**
- * Data for the home pages (`/` and `/en`).
+ * Data for the home pages (`/` and `/en/`).
  *
  * Production build: a NEUTRAL placeholder (status 'unknown', no timestamp, no
  * causes/notes, empty history). Nothing time-sensitive is baked into the static

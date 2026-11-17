@@ -193,7 +193,7 @@ jobs:
             esac
           }
 
-          for path in / /en /forecasts; do
+          for path in / /en/ /forecasts; do
             echo "GET $path"
             fetch "$base$path" >/dev/null
           done

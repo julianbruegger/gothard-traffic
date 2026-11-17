@@ -21,11 +21,19 @@ require_once __DIR__ . '/ForecastTable.php';
  *     <!--SSR:status-label-->…<!--/SSR-->     tunnel status label
  *     <!--SSR:updated-human-->…<!--/SSR-->    "12.11.2026, 19:42"
  *     <!--SSR:{north|south}-{queue|wait|trend|cause}-->…<!--/SSR-->
+ *         queue/wait read "0 km" / "0 Min" when the reading reports no queue
+ *         (Format::portalFigures), "–" only without a usable reading
  *     <!--SSR:pass-status-label-->…<!--/SSR-->, <!--SSR:pass-note-->…<!--/SSR-->
  *     id-based: status-badge / pass-badge (data-status), hero-updated
  *     (datetime), {side}-meter (style width), {side}-cause-row, {side}-free,
  *     {side}-trend, pass-note-row (hidden), <section id="planned-closures">.
  *   Each marker/id is filled once (the first occurrence on the page).
+ *
+ *   24 h table (option 'history': DB rows of SnapshotStore::history()):
+ *     <!--SSR:trend-table-->…<!--/SSR-->
+ *         one <tr> per Swiss-time hour that has readings (max queue per side,
+ *         worst status), at most 24 rows; empty without history. The full
+ *         per-reading table is rendered by live.ts when the <details> opens.
  *
  *   Forecast (from forecast-days.json, built with the browser's model; see
  *   ForecastTable.php). Empty when the file is missing or has no row for today:
@@ -55,9 +63,10 @@ final class Ssr
     ];
 
     /**
-     * @param array{head?: bool, forecast?: ?array, now?: DateTimeImmutable} $options
+     * @param array{head?: bool, forecast?: ?array, history?: ?array, now?: DateTimeImmutable} $options
      *   head      rewrite title/meta/canonical/html lang/JSON-LD (default true; home pages)
      *   forecast  day rows from ForecastTable::load() (null: forecast markers are emptied)
+     *   history   snapshot rows, oldest first (SnapshotStore::history); null/[]: trend table emptied
      *   now       reference time for the forecast markers (default: current time)
      */
     public static function render(string $html, array $data, string $lang, string $canonicalUrl = '', array $options = []): string
@@ -66,6 +75,7 @@ final class Ssr
             $html = self::renderHead($html, $data, $lang, $canonicalUrl);
         }
         $html = self::renderLive($html, $data, $lang);
+        $html = self::renderTrendTable($html, $options['history'] ?? null, $lang);
         return self::renderForecast(
             $html,
             $options['forecast'] ?? null,
@@ -78,6 +88,12 @@ final class Ssr
     public static function needsSnapshot(string $html): bool
     {
         return (bool) preg_match('/<!--SSR:(?!forecast-)|\sid="(?:planned-closures|status-badge|pass-badge|hero-updated)"/', $html);
+    }
+
+    /** True when the page contains the 24 h table marker (index.php then loads the history). */
+    public static function needsHistory(string $html): bool
+    {
+        return str_contains($html, '<!--SSR:trend-table-->');
     }
 
     /** True when the page contains a forecast marker. */
@@ -142,6 +158,7 @@ final class Ssr
             return $html;
         }
         $tunnel = $data['tunnel'] ?? [];
+        $status = (string) ($tunnel['status'] ?? 'unknown');
         $html = self::replaceMarker($html, 'status-label', Format::statusLabel((string) ($tunnel['status'] ?? 'unknown'), $lang));
         $html = self::replaceMarker($html, 'summary', Format::summary($data, $lang));
         $html = self::replaceMarker($html, 'updated-human', Format::updated($data['updated'] ?? null, $lang));
@@ -150,20 +167,20 @@ final class Ssr
         // into the static build can never survive as a stale "current" value.
         foreach (['north', 'south'] as $side) {
             $portal = $tunnel[$side] ?? [];
-            $queue = $portal['queueKm'] ?? null;
-            $queue = $queue !== null ? (float) $queue : null;
-            $wait = $portal['waitMinutes'] ?? null;
-            $wait = $wait !== null ? (int) $wait : null;
+            ['queueKm' => $queue, 'waitMinutes' => $wait] = Format::portalFigures($data, $side);
             $cause = trim((string) ($portal['cause'] ?? ''));
 
-            $html = self::replaceMarker($html, "{$side}-queue", Format::km($queue, $lang));
-            $html = self::replaceMarker($html, "{$side}-wait", Format::wait($queue, $wait, $lang));
+            $html = self::replaceMarker($html, "{$side}-queue", Format::queue($queue, $lang));
+            // Closed without a reported wait: say so instead of "0 Min".
+            $html = self::replaceMarker($html, "{$side}-wait", $status === 'closed' && $wait === null
+                ? Format::statusLabel('closed', $lang)
+                : Format::wait($queue, $wait, $lang));
             // The static build bakes no trend (no history); never leave one behind.
             $html = self::replaceMarker($html, "{$side}-trend", '');
             $html = self::setHidden($html, "{$side}-trend", true);
             $html = self::replaceMarker($html, "{$side}-cause", $cause);
             $html = self::setHidden($html, "{$side}-cause-row", $cause === '');
-            $free = $queue !== null && $queue <= 0;
+            $free = $queue !== null && $queue <= 0 && $status !== 'closed';
             $html = self::setHidden($html, "{$side}-free", !$free);
             $html = self::setStyleWidth($html, "{$side}-meter", self::meterPercent($queue));
         }
@@ -181,6 +198,64 @@ final class Ssr
         $html = self::renderPlannedClosures($html, $tunnel['plannedClosures'] ?? [], $lang);
 
         return $html;
+    }
+
+    /** Worst first: an hour shows the worst status seen in it. */
+    private const STATUS_RANK = ['closed' => 4, 'restricted' => 3, 'congested' => 2, 'open' => 1, 'unknown' => 0];
+
+    /**
+     * Hourly summary of the last 24 h (Swiss time): one row per hour that has
+     * readings, max queue per side (NULL = no queue reported = 0 km) and the
+     * worst status. Never more than 24 rows, never a row without data.
+     */
+    private static function renderTrendTable(string $html, ?array $rows, string $lang): string
+    {
+        if (!self::needsHistory($html)) {
+            return $html;
+        }
+        $tz = new DateTimeZone('Europe/Zurich');
+        $hours = [];
+        foreach ($rows ?? [] as $row) {
+            if (!is_array($row) || empty($row['fetched_at'])) {
+                continue;
+            }
+            try {
+                $t = (new DateTimeImmutable((string) $row['fetched_at'], new DateTimeZone('UTC')))->setTimezone($tz);
+            } catch (Exception) {
+                continue;
+            }
+            $key = $t->format('Y-m-d H');
+            $status = (string) ($row['tunnel_status'] ?? 'unknown');
+            $h = $hours[$key] ?? ['start' => $t->setTime((int) $t->format('G'), 0), 'north' => 0.0, 'south' => 0.0, 'status' => 'unknown'];
+            $h['north'] = max($h['north'], (float) ($row['north_queue_km'] ?? 0));
+            $h['south'] = max($h['south'], (float) ($row['south_queue_km'] ?? 0));
+            if ((self::STATUS_RANK[$status] ?? 0) > (self::STATUS_RANK[$h['status']] ?? 0)) {
+                $h['status'] = $status;
+            }
+            $hours[$key] = $h;
+        }
+        ksort($hours);
+        $hours = array_slice($hours, -24);
+
+        $out = '';
+        foreach ($hours as $h) {
+            $start = $h['start'];
+            $end = $start->modify('+1 hour');
+            $label = ($lang === 'de' ? $start->format('d.m.') : $start->format('j M')) . ', '
+                . $start->format('H:i') . '–' . $end->format('H:i');
+            $out .= '<tr' . ($h['status'] === 'closed' ? ' data-closed=""' : '') . '>'
+                . '<td><time datetime="' . $start->format(DateTimeInterface::ATOM) . '">' . htmlspecialchars($label, ENT_QUOTES) . '</time></td>'
+                . '<td class="num">' . htmlspecialchars(Format::queue($h['north'], $lang), ENT_QUOTES) . '</td>'
+                . '<td class="num">' . htmlspecialchars(Format::queue($h['south'], $lang), ENT_QUOTES) . '</td>'
+                . '<td>' . htmlspecialchars(Format::statusLabel($h['status'], $lang), ENT_QUOTES) . '</td>'
+                . '</tr>';
+        }
+        return preg_replace_callback(
+            '/<!--SSR:trend-table-->.*?<!--\/SSR-->/s',
+            static fn (): string => '<!--SSR:trend-table-->' . $out . '<!--/SSR-->',
+            $html,
+            1,
+        ) ?? $html;
     }
 
     /** Same 0-15 km scale as the client-side meter. */
@@ -292,55 +367,42 @@ final class Ssr
 
     private static function replaceJsonLd(string $html, array $data, string $lang, string $canonicalUrl, string $description): string
     {
-        $ld = [
+        $origin = preg_match('#^https?://[^/]+#', $canonicalUrl, $m) ? $m[0] : '';
+        // Numeric readings only when known (never null); status strings always.
+        $measured = [];
+        foreach (['north' => 'northPortal', 'south' => 'southPortal'] as $side => $prefix) {
+            $fig = Format::portalFigures($data, $side);
+            if ($fig['queueKm'] !== null) {
+                $measured[] = ['@type' => 'PropertyValue', 'name' => $prefix . 'QueueLengthKm', 'value' => $fig['queueKm'], 'unitCode' => 'KMT', 'unitText' => 'km'];
+            }
+            if ($fig['waitMinutes'] !== null) {
+                $measured[] = ['@type' => 'PropertyValue', 'name' => $prefix . 'WaitMinutes', 'value' => $fig['waitMinutes'], 'unitCode' => 'MIN', 'unitText' => 'min'];
+            }
+        }
+        $measured[] = ['@type' => 'PropertyValue', 'name' => 'tunnelStatus', 'value' => (string) ($data['tunnel']['status'] ?? 'unknown')];
+        $measured[] = ['@type' => 'PropertyValue', 'name' => 'passStatus', 'value' => (string) ($data['pass']['status'] ?? 'unknown')];
+
+        $ld = array_filter([
             '@context' => 'https://schema.org',
             '@type' => 'Dataset',
             'name' => 'Gotthard Tunnel & Pass Traffic Status',
             'description' => $description,
             'url' => $canonicalUrl,
             'dateModified' => $data['updated'] ?? null,
+            'isAccessibleForFree' => true,
+            'license' => $origin . ($lang === 'de' ? '/daten' : '/en/data'),
             'creator' => [
                 '@type' => 'Organization',
                 'name' => 'Gotthard Traffic Live',
+                'url' => $origin . '/',
             ],
-            'isBasedOn' => [
-                '@type' => 'Dataset',
-                'name' => 'ASTRA / opentransportdata.swiss Traffic Situations',
-                'url' => 'https://opentransportdata.swiss/en/road-traffic/',
+            'isBasedOn' => 'https://opentransportdata.swiss/en/road-traffic/',
+            'variableMeasured' => $measured,
+            'distribution' => [
+                ['@type' => 'DataDownload', 'encodingFormat' => 'application/json', 'contentUrl' => $origin . '/api/gotthard.php'],
+                ['@type' => 'DataDownload', 'encodingFormat' => 'application/json', 'contentUrl' => $origin . '/api/history.php'],
             ],
-            'variableMeasured' => [
-                [
-                    '@type' => 'PropertyValue',
-                    'name' => 'northPortalQueueLengthKm',
-                    'value' => $data['tunnel']['north']['queueKm'] ?? null,
-                ],
-                [
-                    '@type' => 'PropertyValue',
-                    'name' => 'northPortalWaitMinutes',
-                    'value' => $data['tunnel']['north']['waitMinutes'] ?? null,
-                ],
-                [
-                    '@type' => 'PropertyValue',
-                    'name' => 'southPortalQueueLengthKm',
-                    'value' => $data['tunnel']['south']['queueKm'] ?? null,
-                ],
-                [
-                    '@type' => 'PropertyValue',
-                    'name' => 'southPortalWaitMinutes',
-                    'value' => $data['tunnel']['south']['waitMinutes'] ?? null,
-                ],
-                [
-                    '@type' => 'PropertyValue',
-                    'name' => 'tunnelStatus',
-                    'value' => $data['tunnel']['status'] ?? 'unknown',
-                ],
-                [
-                    '@type' => 'PropertyValue',
-                    'name' => 'passStatus',
-                    'value' => $data['pass']['status'] ?? 'unknown',
-                ],
-            ],
-        ];
+        ], static fn ($v): bool => $v !== null);
         $json = json_encode($ld, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
         $pattern = '/<script type="application\/ld\+json" id="ld-traffic">.*?<\/script>/s';
         $replacement = '<script type="application/ld+json" id="ld-traffic">' . $json . '</script>';

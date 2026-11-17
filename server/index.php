@@ -6,7 +6,7 @@ declare(strict_types=1);
  * Front controller for every HTML page. Deployed to the web root alongside the
  * static Astro build (index.html, en.html, forecasts.html, en/forecasts.html,
  * _astro/, ...). .htaccess rewrites every extensionless URL whose .html exists
- * to index.php?page=<path> ("/" and "/en" included); this script reads that
+ * to index.php?page=<path> ("/" and "/en/" included); this script reads that
  * built page as a template and fills its live markers (see lib/Ssr.php) before
  * sending it, so crawlers and AI fetchers (no JavaScript) get current content.
  *
@@ -14,7 +14,7 @@ declare(strict_types=1);
  * with their build-time fallback content.
  *
  * Query parameters (set by .htaccess, never by links):
- *   page  "forecasts", "en/forecasts", "en", ... (empty = German home)
+ *   page  "forecasts", "en/forecasts", "en" (= /en/), ... (empty = German home)
  *   lang  legacy alias: lang=en without page = English home
  */
 
@@ -94,13 +94,18 @@ $isHome = $page === '' || $page === 'en';
 // language's home, on any other page the parameter is dropped.
 $queryLang = $requestQuery['lang'] ?? $requestQuery['lan'] ?? null;
 if ($queryLang !== null) {
-    ssr_redirect($isHome ? ($queryLang === 'en' ? '/en' : '/') : '/' . $page);
+    ssr_redirect($isHome ? ($queryLang === 'en' ? '/en/' : '/') : '/' . $page);
 }
-// Trailing-slash variant ("/en/", "/forecasts/") -> no slash (trailingSlash: 'never').
-if ($requestPath !== '/' && str_ends_with($requestPath, '/') && !str_contains($requestPath, '..')) {
+// The English home lives at "/en/" (with slash); every other page has none
+// (trailingSlash: 'never'): "/en" -> "/en/", "/forecasts/" -> "/forecasts".
+$query = (string) (parse_url($requestUri, PHP_URL_QUERY) ?? '');
+$query = $query !== '' ? '?' . $query : '';
+if ($requestPath === '/en') {
+    ssr_redirect('/en/' . $query);
+}
+if ($requestPath !== '/' && $requestPath !== '/en/' && str_ends_with($requestPath, '/') && !str_contains($requestPath, '..')) {
     $clean = rtrim($requestPath, '/');
-    $query = (string) (parse_url($requestUri, PHP_URL_QUERY) ?? '');
-    ssr_redirect(($clean === '' ? '/' : $clean) . ($query !== '' ? '?' . $query : ''));
+    ssr_redirect(($clean === '' ? '/' : $clean) . $query);
 }
 
 // Resolve the template strictly inside the web root.
@@ -153,12 +158,16 @@ if (is_file($configPath)) {
         $config = null;
     }
 }
-if (is_array($config) && Ssr::needsSnapshot($template)) {
+$history = null;
+if (is_array($config) && (Ssr::needsSnapshot($template) || Ssr::needsHistory($template))) {
     try {
         $store = new SnapshotStore(Db::connect($config));
         $row   = $store->latest();
         if ($row !== null) {
             $data = SnapshotMapper::fromRow($row);
+        }
+        if (Ssr::needsHistory($template)) {
+            $history = $store->history(24);
         }
     } catch (Throwable) {
         // Fall through to default data — DB unavailable or not yet configured.
@@ -168,13 +177,14 @@ if (is_array($config) && Ssr::needsSnapshot($template)) {
 $forecast = Ssr::needsForecast($template) ? ForecastTable::load(__DIR__ . '/forecast-days.json') : null;
 
 // Home pages: canonical from a fixed base (never HTTP_HOST / REQUEST_URI),
-// "<base>/" for de, "<base>/en" for en. Other pages keep Astro's own head.
+// "<base>/" for de, "<base>/en/" for en. Other pages keep Astro's own head.
 $siteUrl      = rtrim((string) $siteUrl, '/');
-$canonicalUrl = $page === 'en' ? $siteUrl . '/en' : $siteUrl . '/';
+$canonicalUrl = $page === 'en' ? $siteUrl . '/en/' : $siteUrl . '/';
 
 $html = Ssr::render($template, $data, $ssrLang, $canonicalUrl, [
     'head'     => $isHome,
     'forecast' => $forecast,
+    'history'  => $history,
 ]);
 
 header('Content-Type: text/html; charset=utf-8');
